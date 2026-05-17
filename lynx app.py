@@ -13,7 +13,7 @@ from contextlib import contextmanager
 from dateutil.relativedelta import relativedelta
 import bcrypt
 
-# ReportLab import for PDF generation
+# ReportLab import for PDF generation safely wrapped
 try:
     from reportlab.lib.pagesizes import letter
     from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
@@ -126,9 +126,8 @@ st.markdown("""
     """, unsafe_allow_html=True)
 
 # ==========================================
-# 3. DIRECT DATABASE ENGINE (FIXED MASTER POOLER CONNECTION)
+# 3. DIRECT DATABASE ENGINE (MASTER CONNECTION)
 # ==========================================
-# Yahan bypass engine direct 5432 session port connect karega bina secrets dependency ke
 DB_URL = "postgresql://postgres:ry84GdKQLfu*%40@aws-1-ap-southeast-1.pooler.supabase.com:5432/postgres?sslmode=require"
 
 @contextmanager
@@ -203,7 +202,7 @@ try:
 except Exception as e:
     st.error(f"Schema Builder Failed: {e}")
 
-# High efficiency caching strategy
+# Live Context High efficiency caching
 @st.cache_data(ttl=60)
 def fetch_live_matrix():
     try:
@@ -354,8 +353,16 @@ if routing_node == "📊 Core Analytics Dashboard":
                     segment = df_matrix[df_matrix['area'].str.lower() == current_hub.lower()]
                     
                     active_segment = segment[segment['status'] != 'SUSPENDED']
-                    hub_bill = active_segment['billamount'].sum()
-                    hub_arrears = segment['balanceshift'].sum()
+                    
+                    try:
+                        hub_bill = int(pd.to_numeric(active_segment['billamount'], errors='coerce').sum())
+                    except:
+                        hub_bill = 0
+                        
+                    try:
+                        hub_arrears = int(pd.to_numeric(segment['balanceshift'], errors='coerce').sum())
+                    except:
+                        hub_arrears = 0
                     
                     hub_paid_count = len(segment[segment['status'] == 'PAID'])
                     hub_partial_count = len(segment[segment['status'] == 'PARTIAL'])
@@ -395,7 +402,10 @@ if routing_node == "📊 Core Analytics Dashboard":
         else:
             total_active = len(base_df)
             total_paid = len(base_df[base_df['status'] == 'PAID'])
-            total_arrears = base_df['balanceshift'].sum()
+            try:
+                total_arrears = int(pd.to_numeric(base_df['balanceshift'], errors='coerce').sum())
+            except:
+                total_arrears = 0
             total_suspended = len(base_df[base_df['status'] == 'SUSPENDED'])
             
             col_b1, col_b2, col_b3, col_b4 = st.columns(4)
@@ -416,7 +426,7 @@ if routing_node == "📊 Core Analytics Dashboard":
             if st.session_state['dashboard_filter'] == "PAID":
                 analysis_df = analysis_df[analysis_df['status'] == 'PAID']
             elif st.session_state['dashboard_filter'] == "ARREARS":
-                analysis_df = analysis_df[analysis_df['balanceshift'] > 0]
+                analysis_df = analysis_df[pd.to_numeric(analysis_df['balanceshift'], errors='coerce').fillna(0) > 0]
             elif st.session_state['dashboard_filter'] == "SUSPENDED":
                 analysis_df = analysis_df[analysis_df['status'] == 'SUSPENDED']
             
@@ -438,7 +448,11 @@ if routing_node == "📊 Core Analytics Dashboard":
                 phone_num = str(row_dict.get('phone', ''))
                 pure_digits = re.sub(r"\D", "", phone_num)
                 cust_name = row_dict.get('customername', '')
-                curr_bal = row_dict.get('balanceshift', 0)
+                
+                try:
+                    curr_bal = int(float(row_dict.get('balanceshift', 0)))
+                except:
+                    curr_bal = 0
                 exp_dt = row_dict.get('expirydate', '')
                 
                 if len(pure_digits) >= 10:
@@ -460,14 +474,10 @@ if routing_node == "📊 Core Analytics Dashboard":
                         icon = {"PAID": "🟢", "PARTIAL": "🟡", "UNPAID": "🔴", "SUSPENDED": "⚫"}.get(raw_val, "⚪")
                         html_rows.append(f"<td style='color:{s_color}; font-weight:bold;'>{icon} {escaped_val}</td>")
                     elif col == 'balanceshift':
-                        try:
-                            val_int = int(float(raw_val))
-                        except:
-                            val_int = 0
-                        if val_int < 0:
-                            html_rows.append(f"<td style='color:#10b981; font-weight:bold;'>CR Rs. {abs(val_int)}</td>")
+                        if curr_bal < 0:
+                            html_rows.append(f"<td style='color:#10b981; font-weight:bold;'>CR Rs. {abs(curr_bal)}</td>")
                         else:
-                            html_rows.append(f"<td style='color:#f43f5e; font-weight:bold;'>Rs. {val_int}</td>")
+                            html_rows.append(f"<td style='color:#f43f5e; font-weight:bold;'>Rs. {curr_bal}</td>")
                     elif col == 'onuserialnumber':
                         html_rows.append(f"<td style='color:#60a5fa; font-weight:bold;'>{escaped_val}</td>")
                     else:
@@ -552,7 +562,7 @@ elif routing_node == "👥 Operational Billing Center":
                                     VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, 'BILL_PAYMENT', %s, %s)
                                 """, (invoice_uuid, resolved_uid.strip().lower(), node_row_dict.get('customername', ''), node_row_dict.get('area', ''), node_row_dict.get('phone', ''), datetime.now().strftime("%Y-%m-%d %H:%M:%S"), f"{node_row_dict.get('package', '')} ({billing_months}M Advance)", cash_inflow, future_shift, pay_method, discount_value))
                             conn.commit()
-                        st.success(f"🎉 Transaction Posted!")
+                        st.success(f"🎉 Transaction Posted Successfully!")
                         st.cache_data.clear()
                         st.rerun()
                         
@@ -579,7 +589,7 @@ elif routing_node == "👥 Operational Billing Center":
                             with conn.cursor() as cursor:
                                 cursor.execute("SELECT COUNT(*) FROM customers WHERE username = %s", (in_id,))
                                 if cursor.fetchone()[0] > 0:
-                                    st.error("❌ Username exists!")
+                                    st.error("❌ Username already exists!")
                                 else:
                                     default_expiry = (datetime.now() + timedelta(days=30)).strftime("%Y-%m-%d")
                                     try:
@@ -591,7 +601,7 @@ elif routing_node == "👥 Operational Billing Center":
                                         st.success("✅ Added Profile Successfully!")
                                         st.cache_data.clear(); st.rerun()
                                     except psycopg2.IntegrityError:
-                                        st.error("❌ Phone Number already allocated!")
+                                        st.error("❌ Phone Number already allocated to another client!")
                                         
         current_tab_idx += 1
         with tabs[current_tab_idx]:
@@ -660,7 +670,7 @@ elif routing_node == "👥 Operational Billing Center":
                                     except Exception as ex:
                                         cursor.execute(f"ROLLBACK TO SAVEPOINT {savepoint_id}"); skip_count += 1
                         st.success("🎉 **Excel file data kamyabi se upload aur live database mein safe ho chuka hai!**")
-                        st.cache_data.clear(); st.stop()
+                        st.cache_data.clear(); st.rerun()
                 except Exception as e:
                     st.error(f"❌ Mapping Error: {e}")
                     
@@ -709,7 +719,7 @@ elif routing_node == "👥 Operational Billing Center":
                                         UPDATE customers SET customername=%s, phone=%s, cnic=%s, package=%s, billamount=%s, area=%s, address=%s, onuserialnumber=%s, balanceshift=%s, expirydate=%s, status=%s WHERE username=%s
                                     """, (up_name, clean_and_validate_phone(up_phone), up_cnic, up_pkg, up_rate, up_area, up_address, up_sn, up_arrears, up_expiry, up_status, edit_row_dict['username']))
                                 conn.commit()
-                            st.success("🎉 Changes Saved!")
+                            st.success("🎉 Changes Saved Successfully!")
                             st.cache_data.clear(); st.rerun()
                     with col_e2:
                         if st.form_submit_button("🚨 PERMANENTLY WIPE CLIENT", use_container_width=True, disabled=not is_admin):
@@ -717,6 +727,7 @@ elif routing_node == "👥 Operational Billing Center":
                                 with conn.cursor() as cursor:
                                     cursor.execute("DELETE FROM customers WHERE username=%s", (edit_row_dict['username'],))
                                 conn.commit()
+                            st.success("💥 Profile Deleted!")
                             st.cache_data.clear(); st.rerun()
 
 # ==========================================
@@ -805,7 +816,7 @@ elif routing_node == "🔐 System Access Control":
                             with conn.cursor() as cursor:
                                 cursor.execute("DROP TABLE IF EXISTS billing_history CASCADE; DROP TABLE IF EXISTS customers CASCADE;")
                         build_database_schema()
-                        st.success("🚀 System success fully reset ho chuka hai!")
+                        st.success("🚀 System successfully reset ho chuka hai!")
                         st.session_state['purge_requested'] = False
                         st.cache_data.clear(); st.rerun()
                 with col_purge2:
@@ -817,62 +828,80 @@ elif routing_node == "🔐 System Access Control":
                 new_admin_user = st.text_input("New Admin Username").strip().lower()
                 new_admin_pass = st.text_input("New Admin Password", type="password").strip()
                 if st.form_submit_button("➕ Create Admin", use_container_width=True):
-                    with get_db_connection() as conn:
-                        with conn.cursor() as cursor:
-                            try:
-                                cursor.execute("INSERT INTO users VALUES (%s, %s, 'Admin', 'ALL')", (new_admin_user, hash_password(new_admin_pass)))
-                                conn.commit(); st.success("Created!")
-                            except:
-                                st.error("Exists!")
+                    if new_admin_user and new_admin_pass:
+                        with get_db_connection() as conn:
+                            with conn.cursor() as cursor:
+                                try:
+                                    cursor.execute("INSERT INTO users VALUES (%s, %s, 'Admin', 'ALL')", (new_admin_user, hash_password(new_admin_pass)))
+                                    conn.commit(); st.success("Admin Created Successfully!")
+                                except:
+                                    st.error("Username already exists!")
+                    else:
+                        st.error("Fields cannot be blank.")
                                 
             with st.form("new_staff_form_v50"):
                 new_user = st.text_input("New Staff Username").strip().lower()
                 new_pass = st.text_input("New Staff Password", type="password").strip()
                 new_area_lock = st.selectbox("Assign & Lock System Area", all_system_areas)
                 if st.form_submit_button("🚀 Add Staff Account & Lock Area", use_container_width=True):
-                    with get_db_connection() as conn:
-                        with conn.cursor() as cursor:
-                            try:
-                                cursor.execute("INSERT INTO users VALUES (%s, %s, 'Staff', %s)", (new_user, hash_password(new_pass), new_area_lock))
-                                conn.commit(); st.success("Created!")
-                            except:
-                                st.error("Exists!")
+                    if new_user and new_pass:
+                        with get_db_connection() as conn:
+                            with conn.cursor() as cursor:
+                                try:
+                                    cursor.execute("INSERT INTO users VALUES (%s, %s, 'Staff', %s)", (new_user, hash_password(new_pass), new_area_lock))
+                                    conn.commit(); st.success("Staff Created Successfully!")
+                                except:
+                                    st.error("Username already exists!")
+                    else:
+                        st.error("Fields cannot be blank.")
                                 
         with adm_tab3:
             with st.form("add_package_form"):
                 p_name = st.text_input("Package Profile Name").strip()
                 p_rate = st.number_input("Fixed Monthly Rate (Rs.)", min_value=0, value=1500)
                 if st.form_submit_button("💾 Save Fixed Package to System", use_container_width=True):
-                    with get_db_connection() as conn:
-                        with conn.cursor() as cursor:
-                            cursor.execute("INSERT INTO packages VALUES (%s, %s) ON CONFLICT (packagename) DO UPDATE SET packagerate = EXCLUDED.packagerate", (p_name, p_rate))
-                            conn.commit()
-                    st.cache_data.clear(); st.rerun()
+                    if p_name:
+                        with get_db_connection() as conn:
+                            with conn.cursor() as cursor:
+                                cursor.execute("INSERT INTO packages VALUES (%s, %s) ON CONFLICT (packagename) DO UPDATE SET packagerate = EXCLUDED.packagerate", (p_name, p_rate))
+                                conn.commit()
+                        st.success("Package Saved!")
+                        st.cache_data.clear(); st.rerun()
+                    else:
+                        st.error("Package name is required.")
                     
         with adm_tab4:
             with st.form("dynamic_add_area_form"):
                 fresh_area_name = st.text_input("Enter New Area Name").strip()
                 if st.form_submit_button("➕ REGISTER NEW AREA NODE", use_container_width=True):
-                    with get_db_connection() as conn:
-                        with conn.cursor() as cursor:
-                            try:
-                                cursor.execute("INSERT INTO areas VALUES (%s)", (fresh_area_name,))
-                                conn.commit()
-                            except:
-                                pass
-                    st.cache_data.clear(); st.rerun()
+                    if fresh_area_name:
+                        with get_db_connection() as conn:
+                            with conn.cursor() as cursor:
+                                try:
+                                    cursor.execute("INSERT INTO areas VALUES (%s)", (fresh_area_name,))
+                                    conn.commit()
+                                    st.success("Area Registered!")
+                                except:
+                                    st.error("Area already exists.")
+                        st.cache_data.clear(); st.rerun()
+                    else:
+                        st.error("Area name is required.")
                     
         with adm_tab5:
             with st.form("admin_profile_form"):
                 up_admin_user = st.text_input("Change Admin Username", value=st.session_state['username']).strip().lower()
                 up_admin_pass = st.text_input("New Admin Password", type="password").strip()
                 if st.form_submit_button("🔒 Securely Update Admin Profile", use_container_width=True):
-                    with get_db_connection() as conn:
-                        with conn.cursor() as cursor:
-                            cursor.execute("DELETE FROM users WHERE username = %s", (st.session_state['username'],))
-                            cursor.execute("INSERT INTO users VALUES (%s, %s, 'Admin', 'ALL')", (up_admin_user, hash_password(up_admin_pass)))
-                        conn.commit()
-                    st.session_state['authenticated'] = False; st.rerun()
+                    if up_admin_user and up_admin_pass:
+                        with get_db_connection() as conn:
+                            with conn.cursor() as cursor:
+                                cursor.execute("DELETE FROM users WHERE username = %s", (st.session_state['username'],))
+                                cursor.execute("INSERT INTO users VALUES (%s, %s, 'Admin', 'ALL')", (up_admin_user, hash_password(up_admin_pass)))
+                            conn.commit()
+                        st.success("Profile Updated! Please log in again.")
+                        st.session_state['authenticated'] = False; st.rerun()
+                    else:
+                        st.error("Fields cannot be empty.")
 
 # ==========================================
 # VIEW 5: CLIENT PORTAL
