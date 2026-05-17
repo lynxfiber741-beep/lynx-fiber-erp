@@ -128,7 +128,6 @@ st.markdown("""
 # ==========================================
 # 3. DIRECT DATABASE ENGINE (MASTER CONNECTION)
 # ==========================================
-# Naya Database Password yahan update kar diya gaya hai
 DB_URL = "postgresql://postgres:cMSUKBCwAy6dyGPr@aws-1-ap-southeast-1.pooler.supabase.com:5432/postgres?sslmode=require"
 
 @contextmanager
@@ -501,10 +500,13 @@ elif routing_node == "👥 Operational Billing Center":
     if st.session_state['assigned_area'] != "ALL":
         df_matrix = df_matrix[df_matrix['area'].str.lower() == st.session_state['assigned_area'].lower()]
         
-    tabs_list = ["💳 Capital Collection Hub", "🛠️ Edit Terminal Profile"]
+    # --- Dynamic Tabs Dynamic Construction ---
+    tabs_list = ["💳 Capital Collection Hub"]
     if is_admin:
-        tabs_list.insert(1, "➕ Provision New Client")
-        tabs_list.insert(2, "📥 Bulk Import Excel/CSV")
+        tabs_list.append("➕ Provision New Client")
+        tabs_list.append("📥 Bulk Import Excel/CSV")
+    tabs_list.append("🛠️ Edit Terminal Profile")
+    
     tabs = st.tabs(tabs_list)
     
     sub_map = {}
@@ -515,6 +517,7 @@ elif routing_node == "👥 Operational Billing Center":
             if pd.notna(uid) and str(uid).strip() != "" and str(uid).lower() != "nan":
                 sub_map[f"[{uid}] - {row_dict.get('customername', '')} ({row_dict.get('phone', '')})"] = uid
                 
+    # Tab 0: Capital Collection Hub
     with tabs[0]:
         if not sub_map:
             st.info("No active subscriber nodes found for your system area.")
@@ -567,8 +570,10 @@ elif routing_node == "👥 Operational Billing Center":
                         st.cache_data.clear()
                         st.rerun()
                         
+    # --- Strict Handling For Admin Only Features ---
     current_tab_idx = 1
     if is_admin:
+        # Tab 1: Provision New Client
         with tabs[current_tab_idx]:
             with st.form("add_client_form_v50", clear_on_submit=True):
                 in_id = (st.text_input("Desired Username Key") or "").strip().lower()
@@ -605,6 +610,7 @@ elif routing_node == "👥 Operational Billing Center":
                                         st.error("❌ Phone Number already allocated to another client!")
                                         
         current_tab_idx += 1
+        # Tab 2: Bulk Import Excel/CSV
         with tabs[current_tab_idx]:
             st.markdown("### 📥 BULK EXCEL / CSV UPLOADER ENGINE")
             uploaded_file = st.file_uploader("Choose Excel or CSV File", type=['xlsx', 'csv'], key="bulk_file_uploader_master")
@@ -677,6 +683,7 @@ elif routing_node == "👥 Operational Billing Center":
                     
         current_tab_idx += 1
         
+    # Last Tab: Edit Terminal Profile (Accessible to both Admin & Staff on custom index)
     with tabs[current_tab_idx]:
         if not sub_map:
             st.info("No active terminals.")
