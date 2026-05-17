@@ -92,13 +92,16 @@ div.stButton > button:hover, div.stFormSubmitButton > button:hover { background:
 """, unsafe_allow_html=True)
 
 # ==========================================
-# 3. DIRECT DATABASE ENGINE (UPDATED CREDENTIALS)
+# 3. DIRECT DATABASE ENGINE (FIXED & UPDATED)
 # ==========================================
 try:
     DB_URL = st.secrets["DB_URL"]
 except Exception:
-    encoded_pass = urllib.parse.quote_plus("cMSUKBCwAy6dyGPr")
-    DB_URL = f"postgresql://postgres.ehykfrzymkzlxzkhxlww:{encoded_pass}@aws-1-ap-southeast-1.pooler.supabase.com:5432/postgres?sslmode=require"
+    # FIXED: Corrected Connection String
+    # User: postgres.ehykfrzymkzlxzkhxlww
+    # Pass: cMSUKBCwAy6dyGPr
+    # Host: aws-1-ap-southeast-1.pooler.supabase.com
+    DB_URL = "postgresql://postgres.ehykfrzymkzlxzkhxlww:cMSUKBCwAy6dyGPr@aws-1-ap-southeast-1.pooler.supabase.com:5432/postgres?sslmode=require"
 
 @contextmanager
 def get_db_connection():
