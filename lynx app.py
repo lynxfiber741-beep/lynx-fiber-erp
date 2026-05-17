@@ -97,7 +97,6 @@ div.stButton > button:hover, div.stFormSubmitButton > button:hover { background:
 try:
     DB_URL = st.secrets["DB_URL"]
 except Exception:
-    # Naya password aur perfect port mapping config ho gayi hai yahan
     encoded_pass = urllib.parse.quote_plus("cMSUKBCwAy6dyGPr")
     DB_URL = f"postgresql://postgres.ehykfrzymkzlxzkhxlww:{encoded_pass}@aws-1-ap-southeast-1.pooler.supabase.com:5432/postgres?sslmode=require"
 
@@ -472,10 +471,12 @@ elif routing_node == "👥 Operational Billing Center":
     if st.session_state['assigned_area'] != "ALL":
         df_matrix = df_matrix[df_matrix['area'].str.lower() == st.session_state['assigned_area'].lower()]
         
-    tabs_list = ["💳 Capital Collection Hub", "🛠️ Edit Terminal Profile"]
+    tabs_list = ["💳 Capital Collection Hub"]
     if is_admin:
-        tabs_list.insert(1, "➕ Provision New Client")
-        tabs_list.insert(2, "📥 Bulk Import Excel/CSV")
+        tabs_list.append("➕ Provision New Client")
+        tabs_list.append("📥 Bulk Import Excel/CSV")
+    tabs_list.append("🛠️ Edit Terminal Profile")
+    
     tabs = st.tabs(tabs_list)
     
     sub_map = {}
