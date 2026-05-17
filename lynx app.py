@@ -443,8 +443,9 @@ if routing_node == "📊 Core Analytics Dashboard":
                 html_rows.append(f"<th>{col.replace('_', ' ').upper()}</th>")
             html_rows.append("<th>ACTIONS</th></tr>")
             
-            for row in analysis_df.itertuples(index=False):
-                row_dict = dict(zip(analysis_df.columns, row))
+            # FIXED NamedTuple iteration parsing issue here: using explicit index-based mapping
+            for idx, row in analysis_df.iterrows():
+                row_dict = row.to_dict()
                 phone_num = str(row_dict.get('phone', ''))
                 pure_digits = re.sub(r"\D", "", phone_num)
                 cust_name = row_dict.get('customername', '')
@@ -508,8 +509,8 @@ elif routing_node == "👥 Operational Billing Center":
     
     sub_map = {}
     if not df_matrix.empty:
-        for row in df_matrix.itertuples(index=False):
-            row_dict = dict(zip(df_matrix.columns, row))
+        for idx, row in df_matrix.iterrows():
+            row_dict = row.to_dict()
             uid = row_dict.get('username')
             if pd.notna(uid) and str(uid).strip() != "" and str(uid).lower() != "nan":
                 sub_map[f"[{uid}] - {row_dict.get('customername', '')} ({row_dict.get('phone', '')})"] = uid
