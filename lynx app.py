@@ -92,16 +92,17 @@ div.stButton > button:hover, div.stFormSubmitButton > button:hover { background:
 """, unsafe_allow_html=True)
 
 # ==========================================
-# 3. DIRECT DATABASE ENGINE (FIXED & UPDATED)
+# 3. DIRECT DATABASE ENGINE (FINAL CORRECTED VERSION)
 # ==========================================
 try:
+    # Ideally, load from secrets
     DB_URL = st.secrets["DB_URL"]
 except Exception:
-    # FIXED: Corrected Connection String
+    # FALLBACK CONNECTION STRING
+    # IMPORTANT: Changed Port to 6543 to match the Pooler User
     # User: postgres.ehykfrzymkzlxzkhxlww
     # Pass: cMSUKBCwAy6dyGPr
-    # Host: aws-1-ap-southeast-1.pooler.supabase.com
-    DB_URL = "postgresql://postgres.ehykfrzymkzlxzkhxlww:cMSUKBCwAy6dyGPr@aws-1-ap-southeast-1.pooler.supabase.com:5432/postgres?sslmode=require"
+    DB_URL = "postgresql://postgres.ehykfrzymkzlxzkhxlww:cMSUKBCwAy6dyGPr@aws-1-ap-southeast-1.pooler.supabase.com:6543/postgres?sslmode=require"
 
 @contextmanager
 def get_db_connection():
