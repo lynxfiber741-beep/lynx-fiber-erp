@@ -1,0 +1,9 @@
+streamlit
+pandas
+psycopg2-binary
+bcrypt
+python-dateutil
+xlsxwriter
+reportlab
+openpyxl
+xlsxwriter
