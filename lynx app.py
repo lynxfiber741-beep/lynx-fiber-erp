@@ -10,6 +10,7 @@ import io
 import os
 from datetime import datetime, timedelta
 from contextlib import contextmanager
+from sqlalchemy import create_engine, text  # ایڈوانسڈ پولنگ کے لیے شامل کیا گیا
 
 # ReportLab import for PDF generation
 try:
@@ -187,20 +188,28 @@ st.markdown("""
     """, unsafe_allow_html=True)
 
 # ==========================================
-# 3. DIRECT DATABASE ENGINE (SUPABASE POSTGRES)
+# 3. DIRECT DATABASE ENGINE (SQLALCHEMY POOLING)
 # ==========================================
-try:
-    DB_URL = st.secrets["DB_URL"]
-except Exception:
-    # FIXED: Password integrated properly, brackets removed, and port set to 6543 for connection pooling
-    encoded_pass = urllib.parse.quote_plus("Sh0yZvfteqsQAqUc")
-    DB_URL = f"postgresql://postgres.ehykfrzymkzlxzkhxlww:{encoded_pass}@aws-1-ap-southeast-1.pooler.supabase.com:6543/postgres"
+encoded_pass = urllib.parse.quote_plus("Sh0yZvfteqsQAqUc")
+DB_URL = f"postgresql://postgres.ehykfrzymkzlxzkhxlww:{encoded_pass}@aws-1-ap-southeast-1.pooler.supabase.com:6543/postgres"
+
+# پینل کو مستقل اور تیز ترین بنانے کے لیے ایڈوانس کنکشن پولر سیٹ اپ
+@st.cache_resource
+def get_sqlalchemy_engine():
+    return create_engine(
+        DB_URL,
+        pool_size=10,             # ایک وقت میں 10 کنکشنز اوپن رہ سکتے ہیں
+        max_overflow=20,          # رش کی صورت میں مزید 20 کنکشنز کی اجازت
+        pool_timeout=30,          # 30 سیکنڈ ٹائم آؤٹ پروٹیکشن
+        pool_recycle=1800         # ادھے گھنٹے بعد کنکشن خود بخود ریفریش ہو جائے گا
+    )
 
 @contextmanager
 def get_db_connection():
+    engine = get_sqlalchemy_engine()
     conn = None
     try:
-        conn = psycopg2.connect(DB_URL, connect_timeout=10)
+        conn = engine.raw_connection()
         yield conn
     except Exception as e:
         st.error(f"🔴 Critical Database Connection Error: {e}")
@@ -328,8 +337,8 @@ if not st.session_state['column_order']:
 
 def fetch_live_matrix():
     try:
-        with get_db_connection() as conn:
-            df = pd.read_sql_query("SELECT * FROM customers ORDER BY customername ASC", conn)
+        engine = get_sqlalchemy_engine()
+        df = pd.read_sql_query("SELECT * FROM customers ORDER BY customername ASC", engine)
         if not df.empty:
             df.columns = [c.lower() for c in df.columns]
             extended_cols = GLOBAL_TARGET_ORDER + [c for c in df.columns if c not in GLOBAL_TARGET_ORDER]
@@ -339,16 +348,16 @@ def fetch_live_matrix():
         return pd.DataFrame()
 
 def fetch_system_packages():
-    with get_db_connection() as conn:
-        df = pd.read_sql_query("SELECT * FROM packages ORDER BY PackageRate ASC", conn)
+    engine = get_sqlalchemy_engine()
+    df = pd.read_sql_query("SELECT * FROM packages ORDER BY PackageRate ASC", engine)
     if not df.empty:
         df.columns = ['packagename', 'packagerate']
         return dict(zip(df['packagename'], df['packagerate']))
     return {"15 Mbps Fiber": 1500}
 
 def fetch_active_areas():
-    with get_db_connection() as conn:
-        df = pd.read_sql_query("SELECT AreaName FROM areas ORDER BY AreaName ASC", conn)
+    engine = get_sqlalchemy_engine()
+    df = pd.read_sql_query("SELECT AreaName FROM areas ORDER BY AreaName ASC", engine)
     if not df.empty:
         return df.iloc[:, 0].tolist()
     return ["Sanghoi System", "Saeela System"]
@@ -455,15 +464,15 @@ if routing_node == "📊 Core Analytics Dashboard":
     if df_matrix.empty:
         st.warning("⚠️ Operational Database is currently empty.")
     else:
-        with get_db_connection() as conn:
-            df_hist_calc = pd.read_sql_query("SELECT CustomerID, AmountPaid, DateTimestamp FROM billing_history", conn)
-            if not df_hist_calc.empty:
-                df_hist_calc.columns = ["customerid", "amountpaid", "datetimestamp"]
-                df_hist_calc['customerid'] = df_hist_calc['customerid'].astype(str).str.lower().str.strip()
-                df_hist_calc['datetimestamp'] = pd.to_datetime(df_hist_calc['datetimestamp'], errors='coerce')
-                
-                current_month_str = datetime.now().strftime("%Y-%m")
-                df_hist_calc = df_hist_calc[df_hist_calc['datetimestamp'].dt.strftime("%Y-%m") == current_month_str]
+        engine = get_sqlalchemy_engine()
+        df_hist_calc = pd.read_sql_query("SELECT CustomerID, AmountPaid, DateTimestamp FROM billing_history", engine)
+        if not df_hist_calc.empty:
+            df_hist_calc.columns = ["customerid", "amountpaid", "datetimestamp"]
+            df_hist_calc['customerid'] = df_hist_calc['customerid'].astype(str).str.lower().str.strip()
+            df_hist_calc['datetimestamp'] = pd.to_datetime(df_hist_calc['datetimestamp'], errors='coerce')
+            
+            current_month_str = datetime.now().strftime("%Y-%m")
+            df_hist_calc = df_hist_calc[df_hist_calc['datetimestamp'].dt.strftime("%Y-%m") == current_month_str]
             
         st.markdown("### 🌐 Active System Node Overview")
         for i in range(0, len(all_system_areas), 2):
@@ -835,14 +844,14 @@ elif routing_node == "👥 Operational Billing Center":
                         st.rerun()
 
 # ==========================================
-# VIEW 3: LIFETIME LEDGER HISTORY (FIXED DELETIONS)
+# VIEW 3: LIFETIME LEDGER HISTORY
 # ==========================================
 elif routing_node == "📜 Lifetime Ledger History":
     st.markdown("<div class='main-title'>📜 ACCOUNT LEDGER METRICS & AUDIT TRAIL</div>", unsafe_allow_html=True)
     
     all_system_areas = fetch_active_areas()
-    with get_db_connection() as conn:
-        df_ledger = pd.read_sql_query("SELECT * FROM billing_history ORDER BY DateTimestamp DESC", conn)
+    engine = get_sqlalchemy_engine()
+    df_ledger = pd.read_sql_query("SELECT * FROM billing_history ORDER BY DateTimestamp DESC", engine)
         
     if df_ledger.empty:
         st.info("No transaction tracking history recorded yet.")
@@ -1003,9 +1012,9 @@ elif routing_node == "🔐 System Access Control":
                                 except psycopg2.IntegrityError: st.error("❌ Username already exists!")
                                 
             st.write("---")
-            st.markdown("### 📋 All Registered Accounts")
-            with get_db_connection() as conn:
-                users_df = pd.read_sql_query("SELECT Username, Password, Role, AssignedArea FROM users", conn)
+            st.markdown("### 👥 All Registered Accounts")
+            engine = get_sqlalchemy_engine()
+            users_df = pd.read_sql_query("SELECT Username, Password, Role, AssignedArea FROM users", engine)
             st.dataframe(users_df, use_container_width=True, hide_index=True)
 
         with adm_tab3:
@@ -1076,9 +1085,9 @@ elif routing_node == "📱 Client Portal":
         search_term = portal_input.strip()
         clean_phone = clean_and_validate_phone(search_term)
         
-        with get_db_connection() as conn:
-            query = "SELECT * FROM customers WHERE LOWER(username) = LOWER(%s) OR phone = %s OR cnic = %s"
-            client = pd.read_sql_query(query, conn, params=[search_term, clean_phone, search_term])
+        engine = get_sqlalchemy_engine()
+        query = "SELECT * FROM customers WHERE LOWER(username) = LOWER(%s) OR phone = %s OR cnic = %s"
+        client = pd.read_sql_query(query, engine, params=[search_term, clean_phone, search_term])
             
         if client.empty: 
             st.error("❌ No registered record found matching your input. Please check your details.")
