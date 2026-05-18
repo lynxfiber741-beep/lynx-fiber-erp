@@ -132,6 +132,7 @@ st.markdown("""
 # 3. DIRECT DATABASE ENGINE (SQLALCHEMY POOLING)
 # ==========================================
 encoded_pass = urllib.parse.quote_plus("DlLaglY98SkOzDq2")
+# یہاں ڈیٹا بیس کا نام درست کر کے آخر میں صرف '/postgres' رکھا گیا ہے تاکہ کنکشن ایرر ختم ہو جائے
 DB_URL = f"postgresql://postgres.hvnqenuoyaefojzshvik:{encoded_pass}@aws-1-ap-southeast-1.pooler.supabase.com:6543/postgres"
 
 @st.cache_resource
@@ -497,12 +498,12 @@ if routing_node == "📊 Core Analytics Dashboard":
                 phone_num = str(row_dict.get('phone', ''))
                 pure_digits = re.sub(r"\D", "", phone_num)
                 cust_name = row_dict.get('customername', '')
-                curr_bal = row_dict.get('balanceshift', 0)
+                pure_bal = row_dict.get('balanceshift', 0)
                 exp_dt = row_dict.get('expirydate', '')
                 
                 if len(pure_digits) >= 10:
                     wa_number = "92" + pure_digits[-10:]
-                    wa_payload = f"Dear {cust_name}, Lynx Fiber System Update. Outstanding Arrears: Rs.{curr_bal}. Please clear dues before expiry: {exp_dt}."
+                    wa_payload = f"Dear {cust_name}, Lynx Fiber System Update. Outstanding Arrears: Rs.{pure_bal}. Please clear dues before expiry: {exp_dt}."
                     wa_url = f"https://wa.me/{wa_number}?text={urllib.parse.quote(wa_payload)}"
                     wa_action_html = f"""<a href="{wa_url}" target="_blank" class="btn-action btn-w">💬 WA</a>"""
                 else:
@@ -543,7 +544,6 @@ elif routing_node == "👥 Operational Billing Center":
     if st.session_state['assigned_area'] != "ALL":
         df_matrix = df_matrix[df_matrix['area'].str.lower() == st.session_state['assigned_area'].lower()]
         
-    # CRITICAL FIX: Named dict mapping for safe tabs generation without relying on hardcoded indices
     tab_objects = {}
     if is_admin:
         t_col1, t_col2, t_col3, t_col4 = st.tabs(["💳 Capital Collection Hub", "➕ Provision New Client", "📥 Bulk Import Excel/CSV", "🛠️ Edit Terminal Profile"])
@@ -691,7 +691,7 @@ elif routing_node == "👥 Operational Billing Center":
                         st.rerun()
                 except Exception as e: st.error(f"❌ Error during file alignment mapping: {e}")
 
-    # Edit Terminal Profile (Uses safe mapping)
+    # Edit Terminal Profile
     with tab_objects["edit"]:
         st.markdown("### 🛠️ TERMINAL MANIPULATION ENGINE")
         if not sub_map: 
