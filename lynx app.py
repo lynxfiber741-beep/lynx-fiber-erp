@@ -530,7 +530,7 @@ if routing_node == "📊 Core Analytics Dashboard":
             st.markdown(html_grid_code + "</table></div>", unsafe_allow_html=True)
 
 # ==========================================
-# VIEW 2: OPERATIONS CENTER
+# VIEW 2: OPERATIONS CENTER (FIXED SECURE INDEX)
 # ==========================================
 elif routing_node == "👥 Operational Billing Center":
     st.markdown("<div class='main-title'>👥 TRANSACTION & TERMINAL OPERATIONS</div>", unsafe_allow_html=True)
@@ -543,18 +543,23 @@ elif routing_node == "👥 Operational Billing Center":
     if st.session_state['assigned_area'] != "ALL":
         df_matrix = df_matrix[df_matrix['area'].str.lower() == st.session_state['assigned_area'].lower()]
         
-    # FIX: Dynamic Tabs assignment to completely avoid Slicing / IndexErrors
-    tabs_list = ["💳 Capital Collection Hub"]
+    # CRITICAL FIX: Named dict mapping for safe tabs generation without relying on hardcoded indices
+    tab_objects = {}
     if is_admin:
-        tabs_list.append("➕ Provision New Client")
-        tabs_list.append("📥 Bulk Import Excel/CSV")
-    tabs_list.append("🛠️ Edit Terminal Profile")
+        t_col1, t_col2, t_col3, t_col4 = st.tabs(["💳 Capital Collection Hub", "➕ Provision New Client", "📥 Bulk Import Excel/CSV", "🛠️ Edit Terminal Profile"])
+        tab_objects["collection"] = t_col1
+        tab_objects["provision"] = t_col2
+        tab_objects["import"] = t_col3
+        tab_objects["edit"] = t_col4
+    else:
+        t_staff1, t_staff2 = st.tabs(["💳 Capital Collection Hub", "🛠️ Edit Terminal Profile"])
+        tab_objects["collection"] = t_staff1
+        tab_objects["edit"] = t_staff2
         
-    tabs = st.tabs(tabs_list)
     sub_map = {f"[{row.username}] - {row.customername} ({row.phone})" : row.username for row in df_matrix.itertuples(index=False)}
     
-    # Tab 0: Collection Hub (For Both Admin & Staff)
-    with tabs[0]:
+    # Tab: Collection Hub
+    with tab_objects["collection"]:
         if not sub_map: 
             st.info("No active subscriber nodes found for your system area.")
         else:
@@ -609,10 +614,9 @@ elif routing_node == "👥 Operational Billing Center":
                     st.success(f"🎉 Transaction Posted Successfully! Status set to {new_state}")
                     st.rerun()
 
-    # Dynamic rendering logic depending on User Type
+    # Admin Only Tabs Configuration
     if is_admin:
-        # Tab 1: Provisioning (Admin Only)
-        with tabs[1]:
+        with tab_objects["provision"]:
             with st.form("add_client_form_v50", clear_on_submit=True):
                 in_id = (st.text_input("Desired Username Key") or "").strip()
                 in_name = (st.text_input("Customer Name") or "").strip()
@@ -641,8 +645,7 @@ elif routing_node == "👥 Operational Billing Center":
                         st.success("✅ Added Profile Successfully!")
                         st.rerun()
 
-        # Tab 2: Bulk Upload (Admin Only)
-        with tabs[2]:
+        with tab_objects["import"]:
             st.markdown("### 📥 BULK EXCEL / CSV UPLOADER ENGINE")
             uploaded_file = st.file_uploader("Choose Excel or CSV File", type=['xlsx', 'csv'])
             if uploaded_file is not None:
@@ -687,14 +690,9 @@ elif routing_node == "👥 Operational Billing Center":
                         st.success(f"🎉 Processed entries securely. Successfully Saved: {success_count} | Duplicates Skipped: {conflict_count}")
                         st.rerun()
                 except Exception as e: st.error(f"❌ Error during file alignment mapping: {e}")
-        
-        # Admin Target Modification Tab
-        modify_tab_object = tabs[3]
-    else:
-        # Staff Target Modification Tab
-        modify_tab_object = tabs[1]
 
-    with modify_tab_object:
+    # Edit Terminal Profile (Uses safe mapping)
+    with tab_objects["edit"]:
         st.markdown("### 🛠️ TERMINAL MANIPULATION ENGINE")
         if not sub_map: 
             st.info("No active terminals.")
