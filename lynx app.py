@@ -193,7 +193,7 @@ try:
     DB_URL = st.secrets["DB_URL"]
 except Exception:
     # UPDATED CONFIGURATION WITH YOUR NEW PASSWORD & PROPER CONNECTION POOLING PORT
-    encoded_pass = urllib.parse.quote_plus("cMSUKBCwAy6dyGPr")
+    encoded_pass = urllib.parse.quote_plus("Sh0yZvfteqsQAqUc")
     DB_URL = f"postgresql://postgres.ehykfrzymkzlxzkhxlww:{encoded_pass}@aws-1-ap-southeast-1.pooler.supabase.com:6543/postgres?sslmode=require"
 
 @contextmanager
