@@ -10,7 +10,7 @@ import io
 import os
 from datetime import datetime, timedelta
 from contextlib import contextmanager
-from sqlalchemy import create_engine, text  # ایڈوانسڈ پولنگ کے لیے شامل کیا گیا
+from sqlalchemy import create_engine, text
 
 # ReportLab import for PDF generation
 try:
@@ -59,101 +59,57 @@ GLOBAL_TARGET_ORDER = [
 # 2. CORE THEME & PREMIUM MOBILE CSS ENGINE
 # ==========================================
 st.set_page_config(
-    page_title="LYNX Fiber Enterprise ERP v54.1", 
+    page_title="LYNX Fiber Enterprise ERP v54.2", 
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
 st.markdown("""
     <style>
-    .stApp [data-testid="stHeader"] {
-        background: transparent !important;
-        height: 50px !important;
-    }
-    .stApp .block-container {
-        padding-top: 0.5rem !important;
-        padding-bottom: 1rem !important;
-        max-width: 100% !important;
-    }
+    .stApp [data-testid="stHeader"] { background: transparent !important; height: 50px !important; }
+    .stApp .block-container { padding-top: 0.5rem !important; padding-bottom: 1rem !important; max-width: 100% !important; }
     .stApp { background-color: #0b0f19; color: #f1f5f9; font-family: sans-serif; }
     [data-testid="stSidebar"] { background-color: #111827; border-right: 1px solid #1f2937; }
     
     div[data-testid="stTextInput"] input, 
     div[data-testid="stNumberInput"] input,
     div[data-testid="stTextArea"] textarea {
-        color: #000000 !important;
-        background-color: #ffffff !important;
-        font-weight: bold !important;
-        font-size: 16px !important;
-        border: 2px solid #3b82f6 !important;
-        border-radius: 8px !important;
+        color: #000000 !important; background-color: #ffffff !important;
+        font-weight: bold !important; font-size: 16px !important;
+        border: 2px solid #3b82f6 !important; border-radius: 8px !important;
     }
     div[data-testid="stTextInput"] input[disabled],
     div[data-testid="stNumberInput"] input[disabled] {
-        color: #4b5563 !important;
-        background-color: #e5e7eb !important;
-        border: 2px solid #9ca3af !important;
+        color: #4b5563 !important; background-color: #e5e7eb !important; border: 2px solid #9ca3af !important;
     }
     div[data-baseweb="select"] > div {
-        background-color: #ffffff !important;
-        color: #000000 !important;
-        font-weight: bold !important;
-        font-size: 16px !important;
-        border: 2px solid #3b82f6 !important;
-        border-radius: 8px !important;
+        background-color: #ffffff !important; color: #000000 !important;
+        font-weight: bold !important; font-size: 16px !important;
+        border: 2px solid #3b82f6 !important; border-radius: 8px !important;
     }
-    div[data-baseweb="select"] span, 
-    div[data-baseweb="select"] div {
-        color: #000000 !important;
-    }
-    ul[role="listbox"] li {
-        color: #000000 !important;
-        background-color: #ffffff !important;
-        font-weight: 600 !important;
-    }
-    ul[role="listbox"] li:hover {
-        background-color: #3b82f6 !important;
-        color: #ffffff !important;
-    }
-    label, p, .stMarkdown div {
-        color: #e5e7eb !important;
-        font-weight: 500;
-    }
+    div[data-baseweb="select"] span, div[data-baseweb="select"] div { color: #000000 !important; }
+    ul[role="listbox"] li { color: #000000 !important; background-color: #ffffff !important; font-weight: 600 !important; }
+    ul[role="listbox"] li:hover { background-color: #3b82f6 !important; color: #ffffff !important; }
+    label, p, .stMarkdown div { color: #e5e7eb !important; font-weight: 500; }
+    
     div.stButton > button, div.stFormSubmitButton > button {
         background: linear-gradient(135deg, #1e293b 0%, #111827 100%) !important;
-        color: #3b82f6 !important;
-        border: 2px solid #3b82f6 !important;
-        border-radius: 12px !important;
-        padding: 15px !important;
-        font-weight: bold !important;
-        font-size: 15px !important;
-        transition: all 0.3s ease;
-        box-shadow: 0 4px 10px rgba(0,0,0,0.3) !important;
-        width: 100% !important;
-        display: flex !important;
-        align-items: center !important;
-        justify-content: center !important;
+        color: #3b82f6 !important; border: 2px solid #3b82f6 !important;
+        border-radius: 12px !important; padding: 15px !important;
+        font-weight: bold !important; font-size: 15px !important;
+        transition: all 0.3s ease; box-shadow: 0 4px 10px rgba(0,0,0,0.3) !important;
+        width: 100% !important; display: flex !important; align-items: center !important; justify-content: center !important;
     }
     div.stButton > button:hover, div.stFormSubmitButton > button:hover {
-        background: #3b82f6 !important;
-        color: #ffffff !important;
-        border: 2px solid #60a5fa !important;
+        background: #3b82f6 !important; color: #ffffff !important; border: 2px solid #60a5fa !important;
         box-shadow: 0 0 15px rgba(59, 130, 246, 0.5) !important;
     }
     [data-testid="stSidebar"] div.stButton > button {
-        background: #111827 !important;
-        color: #9ca3af !important;
-        border: 1px solid #374151 !important;
-        border-radius: 8px !important;
-        padding: 10px !important;
-        text-align: left !important;
-        justify-content: flex-start !important;
+        background: #111827 !important; color: #9ca3af !important; border: 1px solid #374151 !important;
+        border-radius: 8px !important; padding: 10px !important; text-align: left !important; justify-content: flex-start !important;
     }
-    [data-testid="stSidebar"] div.stButton > button:hover {
-        background: #10b981 !important;
-        color: white !important;
-        border: 1px solid #10b981 !important;
-    }
+    [data-testid="stSidebar"] div.stButton > button:hover { background: #10b981 !important; color: white !important; border: 1px solid #10b981 !important; }
+    
     .table-wrapper { overflow-x: auto; width: 100%; -webkit-overflow-scrolling: touch; margin-top: 15px; }
     .premium-table { width: 100%; border-collapse: collapse; border-radius: 12px; overflow: hidden; background: #111827; }
     .premium-table th { background: #1f2937; color: #10b981; padding: 14px; text-align: left; font-size: 13px; border-bottom: 2px solid #374151; white-space: nowrap; text-transform: uppercase;}
@@ -164,24 +120,9 @@ st.markdown("""
     .btn-disabled { background-color: #4b5563; color: #9ca3af !important; cursor: not-allowed; }
     .client-card { background: #1f2937; padding: 20px; border-radius: 12px; border: 1px solid #374151; margin-bottom: 15px; }
     .main-title { color: #10b981; font-size: 28px; font-weight: 800; text-align: center; margin-bottom: 25px; }
-    .front-login-box { 
-        max-width: 450px; 
-        margin: 60px auto; 
-        background: #111827; 
-        padding: 40px; 
-        border-radius: 16px; 
-        border: 1px solid #10b981; 
-        box-shadow: 0 15px 35px rgba(16, 185, 129, 0.2); 
-    }
+    .front-login-box { max-width: 450px; margin: 60px auto; background: #111827; padding: 40px; border-radius: 16px; border: 1px solid #10b981; box-shadow: 0 15px 35px rgba(16, 185, 129, 0.2); }
     .nav-header { font-size: 12px; font-weight: bold; color: #6b7280; text-transform: uppercase; margin-bottom: 10px; padding-left: 5px; }
-    .system-card {
-        background: #1e293b;
-        border: 1px solid #475569;
-        border-radius: 10px;
-        padding: 15px;
-        margin-bottom: 15px;
-        text-align: center;
-    }
+    .system-card { background: #1e293b; border: 1px solid #475569; border-radius: 10px; padding: 15px; margin-bottom: 15px; text-align: center; }
     .system-card h4 { margin: 0 0 10px 0; color: #3b82f6; font-size: 16px; font-weight: bold;}
     .system-card p { margin: 5px 0; font-size: 14px; }
     </style>
@@ -190,18 +131,18 @@ st.markdown("""
 # ==========================================
 # 3. DIRECT DATABASE ENGINE (SQLALCHEMY POOLING)
 # ==========================================
+# ⚠️ NOTE: Agar aap bilkul naya Supabase project bana rahe hain, to niche apni naye DB details lazmi dalein
 encoded_pass = urllib.parse.quote_plus("Sh0yZvfteqsQAqUc")
 DB_URL = f"postgresql://postgres.ehykfrzymkzlxzkhxlww:{encoded_pass}@aws-1-ap-southeast-1.pooler.supabase.com:6543/postgres"
 
-# پینل کو مستقل اور تیز ترین بنانے کے لیے ایڈوانس کنکشن پولر سیٹ اپ
 @st.cache_resource
 def get_sqlalchemy_engine():
     return create_engine(
         DB_URL,
-        pool_size=10,             # ایک وقت میں 10 کنکشنز اوپن رہ سکتے ہیں
-        max_overflow=20,          # رش کی صورت میں مزید 20 کنکشنز کی اجازت
-        pool_timeout=30,          # 30 سیکنڈ ٹائم آؤٹ پروٹیکشن
-        pool_recycle=1800         # ادھے گھنٹے بعد کنکشن خود بخود ریفریش ہو جائے گا
+        pool_size=15,             
+        max_overflow=25,          
+        pool_timeout=30,          
+        pool_recycle=1800         
     )
 
 @contextmanager
@@ -221,6 +162,7 @@ def get_db_connection():
 def build_database_schema():
     with get_db_connection() as conn:
         with conn.cursor() as cursor:
+            # Drop command hatadi hai taake normal flow me data wipe na ho, schema handle rahe.
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS areas (
                     AreaName TEXT PRIMARY KEY
@@ -262,7 +204,6 @@ def build_database_schema():
                     AssignedArea TEXT DEFAULT 'ALL'
                 )
             """)
-            
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS billing_history (
                     InvoiceID TEXT PRIMARY KEY,
@@ -280,6 +221,7 @@ def build_database_schema():
                 )
             """)
             
+            # Default Data Injection (If project is brand new)
             cursor.execute("SELECT COUNT(*) FROM areas")
             if cursor.fetchone()[0] == 0:
                 cursor.execute("INSERT INTO areas VALUES ('Sanghoi System')")
@@ -315,25 +257,6 @@ try:
     build_database_schema()
 except Exception as e:
     st.error(f"Schema Builder Failed: {e}")
-
-def get_db_columns():
-    return GLOBAL_TARGET_ORDER
-
-def save_column_order(order_list):
-    val = ",".join([c.lower() for c in order_list])
-    with get_db_connection() as conn:
-        with conn.cursor() as cursor:
-            cursor.execute("""
-                INSERT INTO app_settings (SettingKey, SettingValue) VALUES ('col_order', %s)
-                ON CONFLICT (SettingKey) DO UPDATE SET SettingValue = EXCLUDED.SettingValue
-            """, (val,))
-        conn.commit()
-
-def load_column_order():
-    return GLOBAL_TARGET_ORDER
-
-if not st.session_state['column_order']:
-    st.session_state['column_order'] = GLOBAL_TARGET_ORDER
 
 def fetch_live_matrix():
     try:
@@ -376,10 +299,7 @@ def clean_and_validate_phone(phone_str: str) -> str:
 col_port1, col_port2 = st.columns([1, 4])
 
 with col_port1:
-    if st.button(
-        "📱 Client Portal" if not st.session_state['portal_mode'] else "🖥️ ERP Panel",
-        use_container_width=True
-    ):
+    if st.button("📱 Client Portal" if not st.session_state['portal_mode'] else "🖥️ ERP Panel", use_container_width=True):
         st.session_state['portal_mode'] = not st.session_state['portal_mode']
         st.rerun()
 
@@ -391,7 +311,7 @@ else:
     if not st.session_state['authenticated']:
         st.markdown("<div class='front-login-box'>", unsafe_allow_html=True)
         st.markdown("<h2 style='text-align:center; color:#10b981; font-weight:900; margin-bottom:5px;'>LYNX FIBER NET</h2>", unsafe_allow_html=True)
-        st.markdown("<p style='text-align:center; color:#9ca3af; margin-bottom:30px;'>Enterprise ERP System v54.1 (Cloud Master Mode)</p>", unsafe_allow_html=True)
+        st.markdown("<p style='text-align:center; color:#9ca3af; margin-bottom:30px;'>Enterprise ERP System v54.2 (Cloud Master Mode)</p>", unsafe_allow_html=True)
         
         user_input = (st.text_input("Username Key", key="front_user") or "").strip().lower()
         pass_input = st.text_input("Security Password", type="password", key="front_pass")
@@ -465,14 +385,16 @@ if routing_node == "📊 Core Analytics Dashboard":
         st.warning("⚠️ Operational Database is currently empty.")
     else:
         engine = get_sqlalchemy_engine()
-        df_hist_calc = pd.read_sql_query("SELECT CustomerID, AmountPaid, DateTimestamp FROM billing_history", engine)
-        if not df_hist_calc.empty:
-            df_hist_calc.columns = ["customerid", "amountpaid", "datetimestamp"]
-            df_hist_calc['customerid'] = df_hist_calc['customerid'].astype(str).str.lower().str.strip()
-            df_hist_calc['datetimestamp'] = pd.to_datetime(df_hist_calc['datetimestamp'], errors='coerce')
-            
-            current_month_str = datetime.now().strftime("%Y-%m")
-            df_hist_calc = df_hist_calc[df_hist_calc['datetimestamp'].dt.strftime("%Y-%m") == current_month_str]
+        try:
+            df_hist_calc = pd.read_sql_query("SELECT CustomerID, AmountPaid, DateTimestamp FROM billing_history", engine)
+            if not df_hist_calc.empty:
+                df_hist_calc.columns = ["customerid", "amountpaid", "datetimestamp"]
+                df_hist_calc['customerid'] = df_hist_calc['customerid'].astype(str).str.lower().str.strip()
+                df_hist_calc['datetimestamp'] = pd.to_datetime(df_hist_calc['datetimestamp'], errors='coerce')
+                current_month_str = datetime.now().strftime("%Y-%m")
+                df_hist_calc = df_hist_calc[df_hist_calc['datetimestamp'].dt.strftime("%Y-%m") == current_month_str]
+        except:
+            df_hist_calc = pd.DataFrame()
             
         st.markdown("### 🌐 Active System Node Overview")
         for i in range(0, len(all_system_areas), 2):
@@ -679,18 +601,9 @@ elif routing_node == "👥 Operational Billing Center":
                                 )
                                 VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                             """, (
-                                invoice_uuid, 
-                                resolved_uid, 
-                                node_row['customername'], 
-                                node_row['area'],
-                                node_row['phone'],
-                                datetime.now().strftime("%Y-%m-%d %H:%M:%S"), 
-                                f"{node_row['package']} ({billing_months}M Advance)", 
-                                cash_inflow, 
-                                future_shift, 
-                                "BILL_PAYMENT", 
-                                pay_method, 
-                                discount_value
+                                invoice_uuid, resolved_uid, node_row['customername'], node_row['area'], node_row['phone'],
+                                datetime.now().strftime("%Y-%m-%d %H:%M:%S"), f"{node_row['package']} ({billing_months}M Advance)", 
+                                cash_inflow, future_shift, "BILL_PAYMENT", pay_method, discount_value
                             ))
                     st.success(f"🎉 Transaction Posted Successfully! Status set to {new_state}")
                     st.rerun()
@@ -744,7 +657,6 @@ elif routing_node == "👥 Operational Billing Center":
                                 for index, row in import_df.iterrows():
                                     try:
                                         row_dict = {str(k).lower().strip(): v for k, v in row.to_dict().items()}
-                                        
                                         uid = str(row_dict.get('username', '')).strip().lower()
                                         cname = str(row_dict.get('customername', row_dict.get('name', ''))).strip()
                                         cphone = clean_and_validate_phone(str(row_dict.get('phone', '')))
@@ -759,27 +671,17 @@ elif routing_node == "👥 Operational Billing Center":
                                         cursor.execute("""
                                             INSERT INTO customers (username, customername, phone, cnic, package, billamount, area, address, onuserialnumber, balanceshift, status, expirydate)
                                             VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, 0, 'UNPAID', %s)
-                                            ON CONFLICT (username) DO NOTHING
-                                            RETURNING username
+                                            ON CONFLICT (username) DO NOTHING RETURNING username
                                         """, (
-                                            uid, cname, cphone, 
-                                            str(row_dict.get('cnic', '')).strip(),
-                                            str(row_dict.get('package', '15 Mbps Fiber')).strip(),
-                                            b_amt,
-                                            str(row_dict.get('area', 'Main Hub')).strip(),
-                                            str(row_dict.get('address', '')).strip(),
-                                            str(row_dict.get('onuserialnumber', row_dict.get('onu_sn', ''))).strip(),
-                                            default_expiry
+                                            uid, cname, cphone, str(row_dict.get('cnic', '')).strip(),
+                                            str(row_dict.get('package', '15 Mbps Fiber')).strip(), b_amt,
+                                            str(row_dict.get('area', 'Main Hub')).strip(), str(row_dict.get('address', '')).strip(),
+                                            str(row_dict.get('onuserialnumber', row_dict.get('onu_sn', ''))).strip(), default_expiry
                                         ))
-                                        
-                                        inserted_status = cursor.fetchone()
-                                        if inserted_status:
-                                            success_count += 1
-                                        else:
-                                            conflict_count += 1
+                                        if cursor.fetchone(): success_count += 1
+                                        else: conflict_count += 1
                                     except Exception:
                                         conflict_count += 1
-                                        pass
                         st.success(f"🎉 Processed entries securely. Successfully Saved: {success_count} | Duplicates Skipped: {conflict_count}")
                         st.rerun()
                 except Exception as e: st.error(f"❌ Error during file alignment mapping: {e}")
@@ -802,6 +704,7 @@ elif routing_node == "👥 Operational Billing Center":
                 up_address = st.text_input("Update Address", value=edit_row_dict.get('address', ''))
                 up_sn = st.text_input("Update Onu SN", value=edit_row_dict.get('onuserialnumber', ''))
                 
+                all_system_areas = fetch_active_areas()
                 current_area_name = edit_row_dict.get('area', all_system_areas[0] if all_system_areas else '')
                 if current_area_name not in all_system_areas: all_system_areas.append(current_area_name)
                 up_area = st.selectbox("System Area Hub", all_system_areas, index=all_system_areas.index(current_area_name))
@@ -851,13 +754,15 @@ elif routing_node == "📜 Lifetime Ledger History":
     
     all_system_areas = fetch_active_areas()
     engine = get_sqlalchemy_engine()
-    df_ledger = pd.read_sql_query("SELECT * FROM billing_history ORDER BY DateTimestamp DESC", engine)
+    try:
+        df_ledger = pd.read_sql_query("SELECT * FROM billing_history ORDER BY DateTimestamp DESC", engine)
+    except:
+        df_ledger = pd.DataFrame()
         
     if df_ledger.empty:
         st.info("No transaction tracking history recorded yet.")
     else:
         df_ledger.columns = [c.lower() for c in df_ledger.columns]
-        
         df_ledger['datetime'] = pd.to_datetime(df_ledger['datetimestamp'], errors='coerce')
         df_ledger['Month'] = df_ledger['datetime'].dt.strftime('%Y-%m')
         df_ledger['Year'] = df_ledger['datetime'].dt.strftime('%Y')
@@ -876,24 +781,19 @@ elif routing_node == "📜 Lifetime Ledger History":
             
         st.markdown("### 📊 Enterprise Financial Graphs Overview")
         col_g1, col_g2 = st.columns(2)
-        
         clean_graph_ledger = filtered_ledger.dropna(subset=['invoiceid']).drop_duplicates(subset=['invoiceid'])
         
         with col_g1:
             st.markdown("<h4 style='text-align:center; color:#3b82f6;'>📅 Monthly Collection Breakdown</h4>", unsafe_allow_html=True)
             monthly_data = clean_graph_ledger.groupby('Month')['amountpaid'].sum().reset_index()
-            if not monthly_data.empty:
-                st.bar_chart(data=monthly_data, x='Month', y='amountpaid', color="#3b82f6", use_container_width=True)
-            else:
-                st.info("No month data available.")
+            if not monthly_data.empty: st.bar_chart(data=monthly_data, x='Month', y='amountpaid', color="#3b82f6", use_container_width=True)
+            else: st.info("No month data available.")
                 
         with col_g2:
             st.markdown("<h4 style='text-align:center; color:#10b981;'>🏦 Annually Collection Volume</h4>", unsafe_allow_html=True)
             yearly_data = clean_graph_ledger.groupby('Year')['amountpaid'].sum().reset_index()
-            if not yearly_data.empty:
-                st.bar_chart(data=yearly_data, x='Year', y='amountpaid', color="#10b981", use_container_width=True)
-            else:
-                st.info("No annual records parsed.")
+            if not yearly_data.empty: st.bar_chart(data=yearly_data, x='Year', y='amountpaid', color="#10b981", use_container_width=True)
+            else: st.info("No annual records parsed.")
                 
         st.write("---")
         st.markdown("### 📋 Complete Master Ledger Sheet (Excel Row View)")
@@ -907,11 +807,9 @@ elif routing_node == "📜 Lifetime Ledger History":
         buffer.seek(0)
         
         st.download_button(
-            label="📥 Export Full Audit Trail to Excel Sheet (.xlsx)",
-            data=buffer,
+            label="📥 Export Full Audit Trail to Excel Sheet (.xlsx)", data=buffer,
             file_name=f"LYNX_Master_Ledger_{datetime.now().strftime('%Y-%m-%d')}.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            use_container_width=True
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True
         )
         st.dataframe(excel_sheet_df, use_container_width=True, hide_index=True)
 
@@ -923,7 +821,6 @@ elif routing_node == "🔐 System Access Control":
         st.error("🔴 Access Denied!")
     else:
         st.markdown("<div class='main-title'>🔐 LYNX FIBER ACCESS CONTROL PANEL</div>", unsafe_allow_html=True)
-        
         all_system_areas = fetch_active_areas()
         adm_tab1, adm_tab2, adm_tab3, adm_tab4, adm_tab5 = st.tabs([
             "🛠️ Master Schema Settings", "⚙️ Access Accounts", "📦 Fixed Packages", "🗺️ Dynamic Area Hubs", "👤 Security Admin"
@@ -932,14 +829,12 @@ elif routing_node == "🔐 System Access Control":
         with adm_tab1:
             st.markdown("### 👑 Master Database Schema Engineering")
             st.markdown("#### 🚨 Database Structural Purge Engine")
-            st.info("Agar aapka schema length aage piche hai, to is button ko dabayein. Purana data backup ho kar new 2026 scheme me safely update ho jayega.")
+            st.info("Agar aapka schema length aage piche hai, to is button ko dabayein. Purana data wipe ho kar new target sequence locked ho jayega.")
             
             if st.button("🚨 FORCE CLEAN & PURGE LIVE DATABASE STRUCTURE", use_container_width=True):
                 try:
                     with get_db_connection() as conn:
                         with conn.cursor() as cursor:
-                            cursor.execute("DROP TABLE IF EXISTS customers_backup CASCADE")
-                            cursor.execute("CREATE TABLE IF NOT EXISTS customers_backup AS SELECT * FROM customers")
                             cursor.execute("DROP TABLE IF EXISTS customers CASCADE")
                             cursor.execute("""
                                 CREATE TABLE customers (
@@ -954,24 +849,17 @@ elif routing_node == "🔐 System Access Control":
                                     onuserialnumber TEXT DEFAULT '',
                                     balanceshift INTEGER NOT NULL DEFAULT 0,
                                     status TEXT NOT NULL DEFAULT 'UNPAID',
-                                    expirydate TEXT NOT NULL,
-                                    installationdate TEXT DEFAULT '',
-                                    lastpaymentdate TEXT DEFAULT ''
+                                    expirydate TEXT NOT NULL
                                 )
                             """)
                             default_expiry = (datetime.now() + timedelta(days=30)).strftime("%Y-%m-%d")
-                            dummy_data = [
-                                ('ghafoor01', 'Abdul Ghafoor', '03465803040', '37301-1102406-3', '15 Mbps Fiber', 1500, 'Sanghoi System', 'Sanghoi Main Bazar', 'HWTC5B11296B', 0, 'PAID', default_expiry, '', '')
-                            ]
-                            for row in dummy_data:
-                                cursor.execute("""
-                                    INSERT INTO customers (username, customername, phone, cnic, package, billamount, area, address, onuserialnumber, balanceshift, status, expirydate, installationdate, lastpaymentdate)
-                                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                                """, row)
-                    st.success("🚀 System fully rebuilt successfully! Safe backup snapshot preserved inside 'customers_backup' table.")
+                            cursor.execute("""
+                                INSERT INTO customers (username, customername, phone, cnic, package, billamount, area, address, onuserialnumber, balanceshift, status, expirydate)
+                                VALUES ('ghafoor01', 'Abdul Ghafoor', '03465803040', '37301-1102406-3', '15 Mbps Fiber', 1500, 'Sanghoi System', 'Sanghoi Main Bazar', 'HWTC5B11296B', 0, 'PAID', default_expiry)
+                            """)
+                    st.success("🚀 Live production table reset and synchronized with GLOBAL_TARGET_ORDER successfully!")
                     st.rerun()
-                except Exception as ex:
-                    st.error(f"Sync Failure Engine: {ex}")
+                except Exception as ex: st.error(f"Sync Failure Engine: {ex}")
 
             st.write("---")
             st.markdown("#### 🔄 Fixed Columns Layout Rule Mapped across ERP:")
@@ -983,7 +871,6 @@ elif routing_node == "🔐 System Access Control":
                 st.markdown("### 🔐 Create New Admin Account")
                 new_admin_user = st.text_input("New Admin Username").strip().lower()
                 new_admin_pass = st.text_input("New Admin Password", type="password").strip()
-
                 if st.form_submit_button("➕ Create Admin", use_container_width=True):
                     if not new_admin_user or not new_admin_pass: st.error("❌ Entries blank.")
                     else:
@@ -1000,7 +887,6 @@ elif routing_node == "🔐 System Access Control":
                 new_user = st.text_input("New Staff Username").strip().lower()
                 new_pass = st.text_input("New Staff Password", type="password").strip()
                 new_area_lock = st.selectbox("Assign & Lock System Area", all_system_areas)
-                
                 if st.form_submit_button("🚀 Add Staff Account & Lock Area", use_container_width=True):
                     if not new_user or not new_pass: st.error("❌ Blank entries not allowed.")
                     else:
@@ -1061,7 +947,6 @@ elif routing_node == "🔐 System Access Control":
                 current_admin_user = st.session_state['username']
                 up_admin_user = st.text_input("Change Admin Username", value=current_admin_user).strip().lower()
                 up_admin_pass = st.text_input("New Admin Password", type="password").strip()
-                
                 if st.form_submit_button("🔒 Securely Update Admin Profile", use_container_width=True):
                     if not up_admin_user or not up_admin_pass: st.error("❌ Credentials blank.")
                     else:
@@ -1078,7 +963,6 @@ elif routing_node == "🔐 System Access Control":
 # ==========================================
 elif routing_node == "📱 Client Portal":
     st.markdown("<div class='main-title'>📱 LYNX FIBER SUBSCRIBER PORTAL</div>", unsafe_allow_html=True)
-    
     portal_input = st.text_input("Enter Username, Registered Mobile Number, or CNIC")
     
     if portal_input:
@@ -1087,23 +971,22 @@ elif routing_node == "📱 Client Portal":
         
         engine = get_sqlalchemy_engine()
         query = "SELECT * FROM customers WHERE LOWER(username) = LOWER(%s) OR phone = %s OR cnic = %s"
-        client = pd.read_sql_query(query, engine, params=[search_term, clean_phone, search_term])
+        try:
+            client = pd.read_sql_query(query, engine, params=[search_term, clean_phone, search_term])
+        except:
+            client = pd.DataFrame()
             
-        if client.empty: 
-            st.error("❌ No registered record found matching your input. Please check your details.")
+        if client.empty: st.error("❌ No registered record found matching your input.")
         else:
             client.columns = [c.lower() for c in client.columns]
             c_dict = client.iloc[0].to_dict()
-            
             uid_val = c_dict.get('username', '')
             cname_val = c_dict.get('customername', '')
             
             html_card = f"""<div class="client-card"><h3 style="color:#10b981; margin-top:0;">👤 Account Username: {html.escape(str(uid_val))}</h3><p><b>Customer Name:</b> {html.escape(str(cname_val))}</p>"""
-            
             for k in GLOBAL_TARGET_ORDER:
                 if k not in ['username', 'customername']:
                     v = c_dict.get(k, '')
                     html_card += f"<p><b>{k.replace('_',' ').upper()}:</b> {html.escape(str(v))}</p>"
-                    
             html_card += "</div>"
             st.markdown(html_card, unsafe_allow_html=True)
