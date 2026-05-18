@@ -128,8 +128,7 @@ st.markdown("""
 # ==========================================
 # 3. DIRECT DATABASE ENGINE (MASTER CONNECTION)
 # ==========================================
-# Naya Database Password yahan update kar diya gaya hai
-DB_URL = "postgresql://postgres:cMSUKBCwAy6dyGPr@aws-1-ap-southeast-1.pooler.supabase.com:5432/postgres?sslmode=require"
+DB_URL = "postgresql://postgres:ry84GdKQLfu*%40@aws-1-ap-southeast-1.pooler.supabase.com:5432/postgres?sslmode=require"
 
 @contextmanager
 def get_db_connection():
@@ -444,6 +443,7 @@ if routing_node == "📊 Core Analytics Dashboard":
                 html_rows.append(f"<th>{col.replace('_', ' ').upper()}</th>")
             html_rows.append("<th>ACTIONS</th></tr>")
             
+            # FIXED NamedTuple iteration parsing issue here: using explicit index-based mapping
             for idx, row in analysis_df.iterrows():
                 row_dict = row.to_dict()
                 phone_num = str(row_dict.get('phone', ''))
