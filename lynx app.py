@@ -131,7 +131,6 @@ st.markdown("""
 # ==========================================
 # 3. DIRECT DATABASE ENGINE (SQLALCHEMY POOLING)
 # ==========================================
-# 🔄 Naya database credentials integrated securely here
 encoded_pass = urllib.parse.quote_plus("DlLaglY98SkOzDq2")
 DB_URL = f"postgresql://postgres.hvnqenuoyaefojzshvik:{encoded_pass}@aws-1-ap-southeast-1.pooler.supabase.com:6543/postgres"
 
@@ -164,7 +163,7 @@ def build_database_schema():
         with conn.cursor() as cursor:
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS areas (
-                    AreaName TEXT PRIMARY KEY
+                    areaname TEXT PRIMARY KEY
                 )
             """)
             cursor.execute("""
@@ -185,48 +184,48 @@ def build_database_schema():
             """)
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS packages (
-                    PackageName TEXT PRIMARY KEY,
-                    PackageRate INTEGER NOT NULL CHECK(PackageRate >= 0)
+                    packagename TEXT PRIMARY KEY,
+                    packagerate INTEGER NOT NULL CHECK(packagerate >= 0)
                 )
             """)
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS app_settings (
-                    SettingKey TEXT PRIMARY KEY,
-                    SettingValue TEXT NOT NULL
+                    settingkey TEXT PRIMARY KEY,
+                    settingvalue TEXT NOT NULL
                 )
             """)
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS users (
-                    Username TEXT PRIMARY KEY,
-                    Password TEXT NOT NULL,
-                    Role TEXT NOT NULL CHECK(Role IN ('Admin', 'Staff')),
-                    AssignedArea TEXT DEFAULT 'ALL'
+                    username TEXT PRIMARY KEY,
+                    password TEXT NOT NULL,
+                    role TEXT NOT NULL CHECK(role IN ('Admin', 'Staff')),
+                    assignedarea TEXT DEFAULT 'ALL'
                 )
             """)
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS billing_history (
-                    InvoiceID TEXT PRIMARY KEY,
-                    CustomerID TEXT NOT NULL,
-                    CustomerName TEXT NOT NULL,
-                    Area TEXT NOT NULL,
-                    Phone TEXT,
-                    DateTimestamp TEXT NOT NULL,
-                    CurrentPackage TEXT NOT NULL,
-                    AmountPaid INTEGER NOT NULL CHECK(AmountPaid >= 0),
-                    RemainingArrears INTEGER NOT NULL CHECK(RemainingArrears >= 0),
-                    TransactionType TEXT NOT NULL,
-                    PaymentMethod TEXT NOT NULL,
-                    DiscountGiven INTEGER DEFAULT 0
+                    invoiceid TEXT PRIMARY KEY,
+                    customerid TEXT NOT NULL,
+                    customername TEXT NOT NULL,
+                    area TEXT NOT NULL,
+                    phone TEXT,
+                    datetimestamp TEXT NOT NULL,
+                    currentpackage TEXT NOT NULL,
+                    amountpaid INTEGER NOT NULL CHECK(amountpaid >= 0),
+                    remainingarrears INTEGER NOT NULL CHECK(remainingarrears >= 0),
+                    transactiontype TEXT NOT NULL,
+                    paymentmethod TEXT NOT NULL,
+                    discountgiven INTEGER DEFAULT 0
                 )
             """)
             
-            # Default Data Injection (If project is brand new)
+            # Default Data Injection
             cursor.execute("SELECT COUNT(*) FROM areas")
             if cursor.fetchone()[0] == 0:
                 cursor.execute("INSERT INTO areas VALUES ('Sanghoi System')")
                 cursor.execute("INSERT INTO areas VALUES ('Saeela System')")
             
-            cursor.execute("SELECT COUNT(*) FROM users WHERE Role = 'Admin'")
+            cursor.execute("SELECT COUNT(*) FROM users WHERE role = 'Admin'")
             if cursor.fetchone()[0] == 0:
                 cursor.execute("INSERT INTO users VALUES ('admin', 'lynxadmin123', 'Admin', 'ALL')")
                 cursor.execute("INSERT INTO users VALUES ('staff', 'lynxstaff123', 'Staff', 'Sanghoi System')")
@@ -271,7 +270,7 @@ def fetch_live_matrix():
 
 def fetch_system_packages():
     engine = get_sqlalchemy_engine()
-    df = pd.read_sql_query("SELECT * FROM packages ORDER BY PackageRate ASC", engine)
+    df = pd.read_sql_query("SELECT * FROM packages ORDER BY packagerate ASC", engine)
     if not df.empty:
         df.columns = ['packagename', 'packagerate']
         return dict(zip(df['packagename'], df['packagerate']))
@@ -279,7 +278,7 @@ def fetch_system_packages():
 
 def fetch_active_areas():
     engine = get_sqlalchemy_engine()
-    df = pd.read_sql_query("SELECT AreaName FROM areas ORDER BY AreaName ASC", engine)
+    df = pd.read_sql_query("SELECT areaname FROM areas ORDER BY areaname ASC", engine)
     if not df.empty:
         return df.iloc[:, 0].tolist()
     return ["Sanghoi System", "Saeela System"]
@@ -319,7 +318,7 @@ else:
         if st.button("🚀 Authorize & Launch Dashboard", use_container_width=True):
             with get_db_connection() as conn:
                 with conn.cursor() as cursor:
-                    cursor.execute("SELECT Role, Username, AssignedArea FROM users WHERE LOWER(Username) = %s AND Password = %s", (user_input, pass_input))
+                    cursor.execute("SELECT role, username, assignedarea FROM users WHERE LOWER(username) = %s AND password = %s", (user_input, pass_input))
                     user_match = cursor.fetchone()
                 
             if user_match:
@@ -385,7 +384,7 @@ if routing_node == "📊 Core Analytics Dashboard":
     else:
         engine = get_sqlalchemy_engine()
         try:
-            df_hist_calc = pd.read_sql_query("SELECT CustomerID, AmountPaid, DateTimestamp FROM billing_history", engine)
+            df_hist_calc = pd.read_sql_query("SELECT customerid, amountpaid, datetimestamp FROM billing_history", engine)
             if not df_hist_calc.empty:
                 df_hist_calc.columns = ["customerid", "amountpaid", "datetimestamp"]
                 df_hist_calc['customerid'] = df_hist_calc['customerid'].astype(str).str.lower().str.strip()
@@ -544,14 +543,17 @@ elif routing_node == "👥 Operational Billing Center":
     if st.session_state['assigned_area'] != "ALL":
         df_matrix = df_matrix[df_matrix['area'].str.lower() == st.session_state['assigned_area'].lower()]
         
-    tabs_list = ["💳 Capital Collection Hub", "🛠️ Edit Terminal Profile"]
+    # FIX: Dynamic Tabs assignment to completely avoid Slicing / IndexErrors
+    tabs_list = ["💳 Capital Collection Hub"]
     if is_admin:
-        tabs_list.insert(1, "➕ Provision New Client")
-        tabs_list.insert(2, "📥 Bulk Import Excel/CSV")
+        tabs_list.append("➕ Provision New Client")
+        tabs_list.append("📥 Bulk Import Excel/CSV")
+    tabs_list.append("🛠️ Edit Terminal Profile")
         
     tabs = st.tabs(tabs_list)
     sub_map = {f"[{row.username}] - {row.customername} ({row.phone})" : row.username for row in df_matrix.itertuples(index=False)}
     
+    # Tab 0: Collection Hub (For Both Admin & Staff)
     with tabs[0]:
         if not sub_map: 
             st.info("No active subscriber nodes found for your system area.")
@@ -594,9 +596,9 @@ elif routing_node == "👥 Operational Billing Center":
                             
                             cursor.execute("""
                                 INSERT INTO billing_history (
-                                    InvoiceID, CustomerID, CustomerName, Area, Phone, DateTimestamp, 
-                                    CurrentPackage, AmountPaid, RemainingArrears, TransactionType, 
-                                    PaymentMethod, DiscountGiven
+                                    invoiceid, customerid, customername, area, phone, datetimestamp, 
+                                    currentpackage, amountpaid, remainingarrears, transactiontype, 
+                                    paymentmethod, discountgiven
                                 )
                                 VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                             """, (
@@ -607,9 +609,10 @@ elif routing_node == "👥 Operational Billing Center":
                     st.success(f"🎉 Transaction Posted Successfully! Status set to {new_state}")
                     st.rerun()
 
-    current_tab_idx = 1
+    # Dynamic rendering logic depending on User Type
     if is_admin:
-        with tabs[current_tab_idx]:
+        # Tab 1: Provisioning (Admin Only)
+        with tabs[1]:
             with st.form("add_client_form_v50", clear_on_submit=True):
                 in_id = (st.text_input("Desired Username Key") or "").strip()
                 in_name = (st.text_input("Customer Name") or "").strip()
@@ -637,9 +640,9 @@ elif routing_node == "👥 Operational Billing Center":
                                     """, (in_id, in_name, norm_p, in_cnic, chosen_pkg, in_rate, in_area, in_address, in_sn, 0, "UNPAID", default_expiry))
                         st.success("✅ Added Profile Successfully!")
                         st.rerun()
-        current_tab_idx += 1
 
-        with tabs[current_tab_idx]:
+        # Tab 2: Bulk Upload (Admin Only)
+        with tabs[2]:
             st.markdown("### 📥 BULK EXCEL / CSV UPLOADER ENGINE")
             uploaded_file = st.file_uploader("Choose Excel or CSV File", type=['xlsx', 'csv'])
             if uploaded_file is not None:
@@ -684,9 +687,14 @@ elif routing_node == "👥 Operational Billing Center":
                         st.success(f"🎉 Processed entries securely. Successfully Saved: {success_count} | Duplicates Skipped: {conflict_count}")
                         st.rerun()
                 except Exception as e: st.error(f"❌ Error during file alignment mapping: {e}")
-        current_tab_idx += 1
+        
+        # Admin Target Modification Tab
+        modify_tab_object = tabs[3]
+    else:
+        # Staff Target Modification Tab
+        modify_tab_object = tabs[1]
 
-    with tabs[current_tab_idx]:
+    with modify_tab_object:
         st.markdown("### 🛠️ TERMINAL MANIPULATION ENGINE")
         if not sub_map: 
             st.info("No active terminals.")
@@ -754,7 +762,7 @@ elif routing_node == "📜 Lifetime Ledger History":
     all_system_areas = fetch_active_areas()
     engine = get_sqlalchemy_engine()
     try:
-        df_ledger = pd.read_sql_query("SELECT * FROM billing_history ORDER BY DateTimestamp DESC", engine)
+        df_ledger = pd.read_sql_query("SELECT * FROM billing_history ORDER BY datetimestamp DESC", engine)
     except:
         df_ledger = pd.DataFrame()
         
@@ -899,7 +907,7 @@ elif routing_node == "🔐 System Access Control":
             st.write("---")
             st.markdown("### 👥 All Registered Accounts")
             engine = get_sqlalchemy_engine()
-            users_df = pd.read_sql_query("SELECT Username, Password, Role, AssignedArea FROM users", engine)
+            users_df = pd.read_sql_query("SELECT username, password, role, assignedarea FROM users", engine)
             st.dataframe(users_df, use_container_width=True, hide_index=True)
 
         with adm_tab3:
@@ -912,7 +920,7 @@ elif routing_node == "🔐 System Access Control":
                     else:
                         with get_db_connection() as conn:
                             with conn.cursor() as cursor:
-                                cursor.execute("INSERT INTO packages VALUES (%s, %s) ON CONFLICT (PackageName) DO UPDATE SET PackageRate = EXCLUDED.PackageRate", (p_name, p_rate))
+                                cursor.execute("INSERT INTO packages VALUES (%s, %s) ON CONFLICT (packagename) DO UPDATE SET packagerate = EXCLUDED.packagerate", (p_name, p_rate))
                         st.success(f"✅ Saved Profile Status")
                         st.rerun()
             
@@ -951,7 +959,7 @@ elif routing_node == "🔐 System Access Control":
                     else:
                         with get_db_connection() as conn:
                             with conn.cursor() as cursor:
-                                cursor.execute("DELETE FROM users WHERE Username = %s", (current_admin_user,))
+                                cursor.execute("DELETE FROM users WHERE username = %s", (current_admin_user,))
                                 cursor.execute("INSERT INTO users VALUES (%s, %s, 'Admin', 'ALL')", (up_admin_user, up_admin_pass))
                         st.success("Updated Successfully!")
                         st.session_state['authenticated'] = False
