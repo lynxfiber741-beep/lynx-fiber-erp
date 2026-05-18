@@ -129,10 +129,10 @@ st.markdown("""
     """, unsafe_allow_html=True)
 
 # ==========================================
-# 3. DIRECT DATABASE ENGINE (SQLALCHEMY POOLING)
+# 3. DIRECT DATABASE ENGINE (SQLALCHEMY POOLING - FIXED ENDPOINT)
 # ==========================================
 encoded_pass = urllib.parse.quote_plus("DlLaglY98SkOzDq2")
-# یہاں ڈیٹا بیس کا نام درست کر کے آخر میں صرف '/postgres' رکھا گیا ہے تاکہ کنکشن ایرر ختم ہو جائے
+# یہاں سپابیس کنکشن کے آخر میں صرف '/postgres' فکس کر دیا گیا ہے تاکہ ڈیٹا بیس نیم ایرر ختم ہو جائے
 DB_URL = f"postgresql://postgres.hvnqenuoyaefojzshvik:{encoded_pass}@aws-1-ap-southeast-1.pooler.supabase.com:6543/postgres"
 
 @st.cache_resource
