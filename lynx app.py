@@ -1,9 +1,8 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
-import psycopg2
-from psycopg2.extras import RealDictCursor
-from datetime import datetime, timedelta
+import requests
+from datetime import datetime, timedelta, date
 import urllib.parse
 
 # Page Setup & Cyber Premium Dark Theme Styling
@@ -56,28 +55,52 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # -----------------------------------------------------------------------------
-# DATABASE CONNECTION ENGINE (SUPABASE LIVE)
+# SUPABASE HTTP REST API CONFIGURATION (IPv4 COMPATIBLE)
 # -----------------------------------------------------------------------------
-DB_URL = "postgresql://postgres.ehykfrzymkzlxzkhxlww:cMSUKBCwAy6dyGPr@aws-1-ap-southeast-1.pooler.supabase.com:5432/postgres"
+# چونکہ آپ کا پروجیکٹ آئی ڈی "ehykfrzymkzlxzkhxlww" ہے، اس لیے REST API یو آر ایل یہ بنے گا:
+SUPABASE_URL = "https://ehykfrzymkzlxzkhxlww.supabase.co/rest/v1/customers"
 
-def run_query(query, params=None, is_select=True):
-    """ڈیٹا بیس سے ڈیٹا لانے اور اپڈیٹ کرنے کا مرکزی انجن"""
-    conn = psycopg2.connect(DB_URL)
-    cur = conn.cursor(cursor_factory=RealDictCursor) if is_select else conn.cursor()
+# سپابیس کے ڈیش بورڈ سے اپنی 'anon public service key' یہاں تبدیل کر سکتے ہیں، 
+# فی الحال ہم آپ کے فراہم کردہ ماسٹر ڈیٹا کے مطابق ہیڈرز سیٹ کر رہے ہیں
+HEADERS = {
+    "apikey": "cMSUKBCwAy6dyGPr",  
+    "Authorization": "Bearer cMSUKBCwAy6dyGPr",
+    "Content-Type": "application/json",
+    "Prefer": "return=representation"
+}
+
+def get_all_customers():
+    """سپابیس کلاؤڈ سے تمام کسٹمرز کا ڈیٹا لانے کا HTTP انجن"""
     try:
-        cur.execute(query, params)
-        if is_select:
-            result = cur.fetchall()
-            return pd.DataFrame(result) if result else pd.DataFrame()
+        response = requests.get(f"{SUPABASE_URL}?order=id.desc", headers=HEADERS, timeout=10)
+        if response.status_code == 200:
+            data = response.json()
+            return pd.DataFrame(data) if data else pd.DataFrame()
         else:
-            conn.commit()
-            return True
+            st.error(f"Supabase API Error ({response.status_code}): {response.text}")
+            return pd.DataFrame()
     except Exception as e:
-        st.error(f"Database Error: {e}")
-        return pd.DataFrame() if is_select else False
-    finally:
-        cur.close()
-        conn.close()
+        st.error(f"Network Connection Failed: {e}")
+        return pd.DataFrame()
+
+def insert_customer(data_dict):
+    """نیا کسٹمر سپابیس کلاؤڈ ٹیبل میں ایڈ کرنے کا انجن"""
+    try:
+        response = requests.post(SUPABASE_URL, json=data_dict, headers=HEADERS, timeout=10)
+        return response.status_code in [200, 201]
+    except Exception as e:
+        st.error(f"Failed to Add Customer: {e}")
+        return False
+
+def update_customer(username, update_dict):
+    """کسٹمر کا ڈیٹا یا ایکسپائری اپڈیٹ کرنے کا انجن"""
+    try:
+        url = f"{SUPABASE_URL}?username=eq.{username}"
+        response = requests.patch(url, json=update_dict, headers=HEADERS, timeout=10)
+        return response.status_code in [200, 204]
+    except Exception as e:
+        st.error(f"Failed to Update Customer: {e}")
+        return False
 
 # -----------------------------------------------------------------------------
 # HARDWARE & MIKROTIK INTEGRATION
@@ -97,13 +120,13 @@ def send_whatsapp_alert(phone, name, amount, expiry):
 # SIDEBAR NAVIGATION
 # -----------------------------------------------------------------------------
 st.sidebar.markdown("<h1 style='color: #10b981; text-align: center; font-size: 22px;'>LYNX FIBER ERP</h1>", unsafe_allow_html=True)
-st.sidebar.markdown("<p style='text-align: center; color: #6b7280; font-size: 12px;'>Supabase PostgreSQL Production Engine</p>", unsafe_allow_html=True)
+st.sidebar.markdown("<p style='text-align: center; color: #6b7280; font-size: 12px;'>Supabase HTTP REST Engine (IPv4/v6 Safe)</p>", unsafe_allow_html=True)
 st.sidebar.markdown("---")
 
 menu = st.sidebar.radio("MANAGEMENT NODES", ["Dashboard & Analytics", "Billing & Provisioning Center", "Add New Subscriber", "Network & Hardware Status"])
 
-# کسٹمرز کا ڈیٹا لائیو سپابیس سے لوڈ کریں
-df_customers = run_query("SELECT * FROM customers ORDER BY id DESC;")
+# لائیو ڈیٹا لوڈ کریں
+df_customers = get_all_customers()
 
 # -----------------------------------------------------------------------------
 # NODE 1: DASHBOARD & ANALYTICS
@@ -127,7 +150,7 @@ if menu == "Dashboard & Analytics":
         fig = px.bar(df_customers, x='area', y='monthly_bill', color='area', template="plotly_dark", title="Area-wise Revenue Share")
         st.plotly_chart(fig, use_container_width=True)
     else:
-        st.info("💡 ڈیٹا بیس خالی ہے۔ سسٹم شروع کرنے کے لیے 'Add New Subscriber' پینل سے پہلا کسٹمر شامل کریں۔")
+        st.info("💡 ڈیٹا بیس خالی ہے یا کنکشن ابھی پینڈنگ ہے۔ پہلا کسٹمر شامل کریں۔")
 
 # -----------------------------------------------------------------------------
 # NODE 2: BILLING & PROVISIONING CENTER
@@ -144,6 +167,7 @@ elif menu == "Billing & Provisioning Center":
             st.markdown(f"""
             ### Subscriber Specifications
             * **Name:** {user_data['name']}
+            * **Unique Username:** `{user_data['username']}`
             * **ONU Serial Number:** `{user_data['onu_sn']}`
             * **Current Status:** `{user_data['status']}`
             * **Expiry Date:** `{user_data['expiry_date']}`
@@ -157,22 +181,21 @@ elif menu == "Billing & Provisioning Center":
             if st.button("CONFIRM PAYMENT & ACTIVATE LINE"):
                 new_expiry = (datetime.now() + timedelta(days=30 * months_to_extend)).strftime("%Y-%m-%d")
                 
-                # سپابیس میں لائیو اپڈیٹ کریں
-                update_query = "UPDATE customers SET status = 'Active', expiry_date = %s WHERE username = %s"
-                run_query(update_query, (new_expiry, selected_username), is_select=False)
+                # سپابیس میں لائیو اپڈیٹ کریں (REST API کے ذریعے)
+                success_db = update_customer(selected_username, {"status": "Active", "expiry_date": new_expiry})
                 
-                # مائیکرو ٹک کمانڈ ٹرگر
-                success, hardware_msg = toggle_mikrotik_status(selected_username, "enable")
-                
-                st.success(f"💳 Payment Locked inside Supabase Data Node!")
-                st.info(hardware_msg)
-                
-                wa_link = send_whatsapp_alert(user_data['phone'], user_data['name'], amount_received, new_expiry)
-                st.markdown(f'<a href="{wa_link}" target="_blank"><button style="background-color:#25D366; color:white; width:100%; padding:12px; border:none; border-radius:6px; font-weight:bold; cursor:pointer;">💬 Dispatch Confirmation via WhatsApp Web</button></a>', unsafe_allow_html=True)
-                st.rerun()
+                if success_db:
+                    # مائیکرو ٹک کمانڈ ٹرگر
+                    success_mt, hardware_msg = toggle_mikrotik_status(selected_username, "enable")
+                    st.success(f"💳 Payment Locked inside Supabase HTTP Node!")
+                    st.info(hardware_msg)
+                    
+                    wa_link = send_whatsapp_alert(user_data['phone'], user_data['name'], amount_received, new_expiry)
+                    st.markdown(f'<a href="{wa_link}" target="_blank"><button style="background-color:#25D366; color:white; width:100%; padding:12px; border:none; border-radius:6px; font-weight:bold; cursor:pointer;">💬 Dispatch Confirmation via WhatsApp Web</button></a>', unsafe_allow_html=True)
+                    st.rerun()
 
         # Premium HTML Data Grid
-        st.markdown("### 📋 Active User Provisioning Grid (Live Supabase Sync)")
+        st.markdown("### 📋 Active User Provisioning Grid (Live Supabase REST Sync)")
         table_html = """
         <div class="isp-table-container">
             <table class="isp-table">
@@ -224,14 +247,14 @@ elif menu == "Add New Subscriber":
             if name and username and phone and onu_sn:
                 default_expiry = (datetime.now() + timedelta(days=30)).strftime("%Y-%m-%d")
                 
-                # سپابیس میں ڈیٹا انسرٹ کریں
-                insert_query = """
-                    INSERT INTO customers (name, username, phone, area, package, onu_sn, monthly_bill, status, expiry_date)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, 'Active', %s)
-                """
-                success = run_query(insert_query, (name, username, phone, area, package, onu_sn, monthly_bill, default_expiry), is_select=False)
-                if success:
-                    st.success(f"🚀 User `{username}` provisioned into Supabase Production DB and Synced!")
+                payload = {
+                    "name": name, "username": username, "phone": phone, 
+                    "area": area, "package": package, "onu_sn": onu_sn, 
+                    "monthly_bill": int(monthly_bill), "status": "Active", "expiry_date": default_expiry
+                }
+                
+                if insert_customer(payload):
+                    st.success(f"🚀 User `{username}` provisioned into Supabase via REST Web Node!")
                     st.rerun()
             else:
                 st.error("🚨 Validation Failed: All fields are required.")
@@ -261,18 +284,18 @@ elif menu == "Network & Hardware Status":
             current_date = datetime.now().date()
             
             for _, row in df_customers.iterrows():
-                # کلاؤڈ ڈیٹ بیس کی ہینڈلنگ
                 exp_date = row['expiry_date']
+                
                 if isinstance(exp_date, str):
                     exp_date = datetime.strptime(exp_date, "%Y-%m-%d").date()
                 
                 if exp_date < current_date and row['status'] == 'Active':
-                    # ڈیٹا بیس لائیو بلاک اپڈیٹ
-                    run_query("UPDATE customers SET status = 'Expired' WHERE username = %s", (row['username'],), is_select=False)
-                    toggle_mikrotik_status(row['username'], "disable")
-                    expired_count += 1
+                    success = update_customer(row['username'], {"status": "Expired"})
+                    if success:
+                        toggle_mikrotik_status(row['username'], "disable")
+                        expired_count += 1
             
-            st.success(f"Execution Complete! Total {expired_count} users isolated on Supabase and MikroTik pools.")
+            st.success(f"Execution Complete! Total {expired_count} users isolated successfully via API Gateway.")
             st.rerun()
         else:
             st.warning("پروسیس کرنے کے لیے کوئی کسٹمر ریکارڈ نہیں ملا۔")
