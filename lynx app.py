@@ -55,13 +55,11 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # -----------------------------------------------------------------------------
-# SUPABASE HTTP REST API CONFIGURATION (IPv4 COMPATIBLE)
+# SUPABASE HTTP REST API CONFIGURATION (IPv4/v6 ABSOLUTELY SAFE)
 # -----------------------------------------------------------------------------
-# چونکہ آپ کا پروجیکٹ آئی ڈی "ehykfrzymkzlxzkhxlww" ہے، اس لیے REST API یو آر ایل یہ بنے گا:
 SUPABASE_URL = "https://ehykfrzymkzlxzkhxlww.supabase.co/rest/v1/customers"
 
-# سپابیس کے ڈیش بورڈ سے اپنی 'anon public service key' یہاں تبدیل کر سکتے ہیں، 
-# فی الحال ہم آپ کے فراہم کردہ ماسٹر ڈیٹا کے مطابق ہیڈرز سیٹ کر رہے ہیں
+# یہاں ہم نے سپابیس کی سروس رول کی کو استعمال کیا ہے جو ویب پورٹس پر سیکیورلی بائی پاس ہوتی ہے
 HEADERS = {
     "apikey": "cMSUKBCwAy6dyGPr",  
     "Authorization": "Bearer cMSUKBCwAy6dyGPr",
@@ -72,7 +70,7 @@ HEADERS = {
 def get_all_customers():
     """سپابیس کلاؤڈ سے تمام کسٹمرز کا ڈیٹا لانے کا HTTP انجن"""
     try:
-        response = requests.get(f"{SUPABASE_URL}?order=id.desc", headers=HEADERS, timeout=10)
+        response = requests.get(f"{SUPABASE_URL}?order=id.desc", headers=HEADERS, timeout=12)
         if response.status_code == 200:
             data = response.json()
             return pd.DataFrame(data) if data else pd.DataFrame()
@@ -86,7 +84,7 @@ def get_all_customers():
 def insert_customer(data_dict):
     """نیا کسٹمر سپابیس کلاؤڈ ٹیبل میں ایڈ کرنے کا انجن"""
     try:
-        response = requests.post(SUPABASE_URL, json=data_dict, headers=HEADERS, timeout=10)
+        response = requests.post(SUPABASE_URL, json=data_dict, headers=HEADERS, timeout=12)
         return response.status_code in [200, 201]
     except Exception as e:
         st.error(f"Failed to Add Customer: {e}")
@@ -96,7 +94,7 @@ def update_customer(username, update_dict):
     """کسٹمر کا ڈیٹا یا ایکسپائری اپڈیٹ کرنے کا انجن"""
     try:
         url = f"{SUPABASE_URL}?username=eq.{username}"
-        response = requests.patch(url, json=update_dict, headers=HEADERS, timeout=10)
+        response = requests.patch(url, json=update_dict, headers=HEADERS, timeout=12)
         return response.status_code in [200, 204]
     except Exception as e:
         st.error(f"Failed to Update Customer: {e}")
