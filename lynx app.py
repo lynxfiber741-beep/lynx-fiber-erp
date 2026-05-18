@@ -131,9 +131,9 @@ st.markdown("""
 # ==========================================
 # 3. DIRECT DATABASE ENGINE (SQLALCHEMY POOLING)
 # ==========================================
-# ⚠️ NOTE: Agar aap bilkul naya Supabase project bana rahe hain, to niche apni naye DB details lazmi dalein
-encoded_pass = urllib.parse.quote_plus("Sh0yZvfteqsQAqUc")
-DB_URL = f"postgresql://postgres.ehykfrzymkzlxzkhxlww:{encoded_pass}@aws-1-ap-southeast-1.pooler.supabase.com:6543/postgres"
+# 🔄 Naya database credentials integrated securely here
+encoded_pass = urllib.parse.quote_plus("DlLaglY98SkOzDq2")
+DB_URL = f"postgresql://postgres.hvnqenuoyaefojzshvik:{encoded_pass}@aws-1-ap-southeast-1.pooler.supabase.com:6543/postgres"
 
 @st.cache_resource
 def get_sqlalchemy_engine():
@@ -162,7 +162,6 @@ def get_db_connection():
 def build_database_schema():
     with get_db_connection() as conn:
         with conn.cursor() as cursor:
-            # Drop command hatadi hai taake normal flow me data wipe na ho, schema handle rahe.
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS areas (
                     AreaName TEXT PRIMARY KEY
