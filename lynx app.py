@@ -192,9 +192,9 @@ st.markdown("""
 try:
     DB_URL = st.secrets["DB_URL"]
 except Exception:
-    # UPDATED CONFIGURATION WITH YOUR NEW PASSWORD & PROPER CONNECTION POOLING PORT
+    # FIXED: Password integrated properly, brackets removed, and port set to 6543 for connection pooling
     encoded_pass = urllib.parse.quote_plus("Sh0yZvfteqsQAqUc")
-    DB_URL = f"postgresql://postgres.ehykfrzymkzlxzkhxlww:[Sh0yZvfteqsQAqUc]@aws-1-ap-southeast-1.pooler.supabase.com:5432/postgres"
+    DB_URL = f"postgresql://postgres.ehykfrzymkzlxzkhxlww:{encoded_pass}@aws-1-ap-southeast-1.pooler.supabase.com:6543/postgres"
 
 @contextmanager
 def get_db_connection():
