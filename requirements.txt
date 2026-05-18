@@ -6,3 +6,5 @@ python-dateutil
 xlsxwriter
 reportlab
 openpyxl
+requests
+plotly
