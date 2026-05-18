@@ -13,7 +13,7 @@ from contextlib import contextmanager
 from dateutil.relativedelta import relativedelta
 import bcrypt
 
-# ReportLab import for PDF generation
+# ReportLab import for PDF generation safely wrapped
 try:
     from reportlab.lib.pagesizes import letter
     from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
@@ -44,61 +44,92 @@ if 'column_order' not in st.session_state:
     st.session_state['column_order'] = []
 
 GLOBAL_TARGET_ORDER = [
-    "username", "customername", "phone", "cnic", "package", "billamount", "area", "address", "onuserialnumber"
+    "username", "customername", "phone", "cnic", "package",
+    "billamount", "area", "address", "onuserialnumber"
 ]
 
 # ==========================================
 # 2. CORE THEME & PREMIUM MOBILE CSS ENGINE
 # ==========================================
 st.set_page_config(
-    page_title="LYNX Fiber Enterprise ERP v54.3",
+    page_title="LYNX Fiber Enterprise ERP v54.3", 
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
 st.markdown("""
-<style>
-.stApp [data-testid="stHeader"] { background: transparent !important; height: 50px !important; }
-.stApp .block-container { padding-top: 0.5rem !important; padding-bottom: 1rem !important; max-width: 100% !important; }
-.stApp { background-color: #0b0f19; color: #f1f5f9; font-family: sans-serif; }
-[data-testid="stSidebar"] { background-color: #111827; border-right: 1px solid #1f2937; }
-div[data-testid="stTextInput"] input, div[data-testid="stNumberInput"] input, div[data-testid="stTextArea"] textarea { color: #000000 !important; background-color: #ffffff !important; font-weight: bold !important; font-size: 16px !important; border: 2px solid #3b82f6 !important; border-radius: 8px !important; }
-div[data-testid="stTextInput"] input[disabled], div[data-testid="stNumberInput"] input[disabled] { color: #4b5563 !important; background-color: #e5e7eb !important; border: 2px solid #9ca3af !important; }
-div[data-baseweb="select"] > div { background-color: #ffffff !important; color: #000000 !important; font-weight: bold !important; font-size: 16px !important; border: 2px solid #3b82f6 !important; border-radius: 8px !important; }
-div[data-baseweb="select"] span, div[data-baseweb="select"] div { color: #000000 !important; }
-ul[role="listbox"] li { color: #000000 !important; background-color: #ffffff !important; font-weight: 600 !important; }
-ul[role="listbox"] li:hover { background-color: #3b82f6 !important; color: #ffffff !important; }
-label, p, .stMarkdown div { color: #e5e7eb !important; font-weight: 500; }
-div.stButton > button, div.stFormSubmitButton > button { background: linear-gradient(135deg, #1e293b 0%, #111827 100%) !important; color: #3b82f6 !important; border: 2px solid #3b82f6 !important; border-radius: 12px !important; padding: 15px !important; font-weight: bold !important; font-size: 15px !important; transition: all 0.3s ease; box-shadow: 0 4px 10px rgba(0,0,0,0.3) !important; width: 100% !important; display: flex !important; align-items: center !important; justify-content: center !important; }
-div.stButton > button:hover, div.stFormSubmitButton > button:hover { background: #3b82f6 !important; color: #ffffff !important; border: 2px solid #60a5fa !important; box-shadow: 0 0 15px rgba(59, 130, 246, 0.5) !important; }
-[data-testid="stSidebar"] div.stButton > button { background: #111827 !important; color: #9ca3af !important; border: 1px solid #374151 !important; border-radius: 8px !important; padding: 10px !important; text-align: left !important; justify-content: flex-start !important; }
-[data-testid="stSidebar"] div.stButton > button:hover { background: #10b981 !important; color: white !important; border: 1px solid #10b981 !important; }
-.table-wrapper { overflow-x: auto; width: 100%; -webkit-overflow-scrolling: touch; margin-top: 15px; }
-.premium-table { width: 100%; border-collapse: collapse; border-radius: 12px; overflow: hidden; background: #111827; }
-.premium-table th { background: #1f2937; color: #10b981; padding: 14px; text-align: left; font-size: 13px; border-bottom: 2px solid #374151; white-space: nowrap; text-transform: uppercase;}
-.premium-table td { padding: 14px; border-bottom: 1px solid #1f2937; font-size: 13px; color: #e5e7eb; white-space: nowrap; }
-.btn-action { padding: 6px 12px; border-radius: 6px; font-weight: bold; text-decoration: none; font-size: 12px; display: inline-block; margin-right: 4px; }
-.btn-c { background-color: #2563eb; color: white !important; }
-.btn-w { background-color: #16a34a; color: white !important; }
-.btn-disabled { background-color: #4b5563; color: #9ca3af !important; cursor: not-allowed; }
-.client-card { background: #1f2937; padding: 20px; border-radius: 12px; border: 1px solid #374151; margin-bottom: 15px; }
-.main-title { color: #10b981; font-size: 28px; font-weight: 800; text-align: center; margin-bottom: 25px; }
-.front-login-box { max-width: 450px; margin: 60px auto; background: #111827; padding: 40px; border-radius: 16px; border: 1px solid #10b981; box-shadow: 0 15px 35px rgba(16, 185, 129, 0.2); }
-.nav-header { font-size: 12px; font-weight: bold; color: #6b7280; text-transform: uppercase; margin-bottom: 10px; padding-left: 5px; }
-.system-card { background: #1e293b; border: 1px solid #475569; border-radius: 10px; padding: 15px; margin-bottom: 15px; text-align: center; }
-.system-card h4 { margin: 0 0 10px 0; color: #3b82f6; font-size: 16px; font-weight: bold;}
-.system-card p { margin: 5px 0; font-size: 14px; }
-</style>
-""", unsafe_allow_html=True)
+    <style>
+    .stApp [data-testid="stHeader"] { background: transparent !important; height: 50px !important; }
+    .stApp .block-container { padding-top: 0.5rem !important; padding-bottom: 1rem !important; max-width: 100% !important; }
+    .stApp { background-color: #0b0f19; color: #f1f5f9; font-family: sans-serif; }
+    [data-testid="stSidebar"] { background-color: #111827; border-right: 1px solid #1f2937; }
+    
+    div[data-testid="stTextInput"] input, 
+    div[data-testid="stNumberInput"] input,
+    div[data-testid="stTextArea"] textarea {
+        color: #000000 !important; background-color: #ffffff !important;
+        font-weight: bold !important; font-size: 16px !important;
+        border: 2px solid #3b82f6 !important; border-radius: 8px !important;
+    }
+    div[data-testid="stTextInput"] input[disabled],
+    div[data-testid="stNumberInput"] input[disabled] {
+        color: #4b5563 !important; background-color: #e5e7eb !important; border: 2px solid #9ca3af !important;
+    }
+    div[data-baseweb="select"] > div {
+        background-color: #ffffff !important; color: #000000 !important;
+        font-weight: bold !important; font-size: 16px !important;
+        border: 2px solid #3b82f6 !important; border-radius: 8px !important;
+    }
+    div[data-baseweb="select"] span, div[data-baseweb="select"] div { color: #000000 !important; }
+    ul[role="listbox"] li { color: #000000 !important; background-color: #ffffff !important; font-weight: 600 !important; }
+    ul[role="listbox"] li:hover { background-color: #3b82f6 !important; color: #ffffff !important; }
+    label, p, .stMarkdown div { color: #e5e7eb !important; font-weight: 500; }
+    
+    div.stButton > button, div.stFormSubmitButton > button {
+        background: linear-gradient(135deg, #1e293b 0%, #111827 100%) !important;
+        color: #3b82f6 !important; border: 2px solid #3b82f6 !important;
+        border-radius: 12px !important; padding: 15px !important;
+        font-weight: bold !important; font-size: 15px !important;
+        transition: all 0.3s ease; box-shadow: 0 4px 10px rgba(0,0,0,0.3) !important;
+        width: 100% !important; display: flex !important; align-items: center !important; justify-content: center !important;
+    }
+    div.stButton > button:hover, div.stFormSubmitButton > button:hover {
+        background: #3b82f6 !important; color: #ffffff !important;
+        border: 2px solid #60a5fa !important; box-shadow: 0 0 15px rgba(59, 130, 246, 0.5) !important;
+    }
+    [data-testid="stSidebar"] div.stButton > button {
+        background: #111827 !important; color: #9ca3af !important;
+        border: 1px solid #374151 !important; border-radius: 8px !important;
+        padding: 10px !important; text-align: left !important; justify-content: flex-start !important;
+    }
+    [data-testid="stSidebar"] div.stButton > button:hover { background: #10b981 !important; color: white !important; border: 1px solid #10b981 !important; }
+    
+    .table-wrapper { overflow-x: auto; width: 100%; -webkit-overflow-scrolling: touch; margin-top: 15px; }
+    .premium-table { width: 100%; border-collapse: collapse; border-radius: 12px; overflow: hidden; background: #111827; }
+    .premium-table th { background: #1f2937; color: #10b981; padding: 14px; text-align: left; font-size: 13px; border-bottom: 2px solid #374151; white-space: nowrap; text-transform: uppercase;}
+    .premium-table td { padding: 14px; border-bottom: 1px solid #1f2937; font-size: 13px; color: #e5e7eb; white-space: nowrap; }
+    .btn-action { padding: 6px 12px; border-radius: 6px; font-weight: bold; text-decoration: none; font-size: 12px; display: inline-block; margin-right: 4px; }
+    .btn-c { background-color: #2563eb; color: white !important; }
+    .btn-w { background-color: #16a34a; color: white !important; }
+    .btn-disabled { background-color: #4b5563; color: #9ca3af !important; cursor: not-allowed; }
+    .client-card { background: #1f2937; padding: 20px; border-radius: 12px; border: 1px solid #374151; margin-bottom: 15px; }
+    .main-title { color: #10b981; font-size: 28px; font-weight: 800; text-align: center; margin-bottom: 25px; }
+    .front-login-box { 
+        max-width: 450px; margin: 60px auto; background: #111827; padding: 40px; 
+        border-radius: 16px; border: 1px solid #10b981; box-shadow: 0 15px 35px rgba(16, 185, 129, 0.2); 
+    }
+    .nav-header { font-size: 12px; font-weight: bold; color: #6b7280; text-transform: uppercase; margin-bottom: 10px; padding-left: 5px; }
+    .system-card { background: #1e293b; border: 1px solid #475569; border-radius: 10px; padding: 15px; margin-bottom: 15px; text-align: center; }
+    .system-card h4 { margin: 0 0 10px 0; color: #3b82f6; font-size: 16px; font-weight: bold;}
+    .system-card p { margin: 5px 0; font-size: 14px; }
+    </style>
+    """, unsafe_allow_html=True)
 
 # ==========================================
-# 3. DIRECT DATABASE ENGINE (UPDATED CREDENTIALS)
+# 3. DIRECT DATABASE ENGINE (MASTER CONNECTION)
 # ==========================================
-try:
-    DB_URL = st.secrets["DB_URL"]
-except Exception:
-    encoded_pass = urllib.parse.quote_plus("cMSUKBCwAy6dyGPr")
-    DB_URL = f"postgresql://postgres.ehykfrzymkzlxzkhxlww:{encoded_pass}@aws-1-ap-southeast-1.pooler.supabase.com:5432/postgres?sslmode=require"
+# Naya Database Password yahan update kar diya gaya hai
+DB_URL = "postgresql://postgres:cMSUKBCwAy6dyGPr@aws-1-ap-southeast-1.pooler.supabase.com:5432/postgres?sslmode=require"
 
 @contextmanager
 def get_db_connection():
@@ -131,18 +162,10 @@ def build_database_schema():
             cursor.execute("CREATE TABLE IF NOT EXISTS areas (areaname TEXT PRIMARY KEY)")
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS customers (
-                    username TEXT PRIMARY KEY,
-                    customername TEXT NOT NULL,
-                    phone TEXT UNIQUE NOT NULL,
-                    cnic TEXT DEFAULT '',
-                    package TEXT NOT NULL,
-                    billamount INTEGER NOT NULL CHECK(billamount >= 0),
-                    area TEXT NOT NULL,
-                    address TEXT DEFAULT '',
-                    onuserialnumber TEXT DEFAULT '',
-                    balanceshift INTEGER NOT NULL DEFAULT 0,
-                    status TEXT NOT NULL DEFAULT 'UNPAID',
-                    expirydate TEXT NOT NULL
+                    username TEXT PRIMARY KEY, customername TEXT NOT NULL, phone TEXT UNIQUE NOT NULL,
+                    cnic TEXT DEFAULT '', package TEXT NOT NULL, billamount INTEGER NOT NULL CHECK(billamount >= 0),
+                    area TEXT NOT NULL, address TEXT DEFAULT '', onuserialnumber TEXT DEFAULT '',
+                    balanceshift INTEGER NOT NULL DEFAULT 0, status TEXT NOT NULL DEFAULT 'UNPAID', expirydate TEXT NOT NULL
                 )
             """)
             cursor.execute("CREATE TABLE IF NOT EXISTS packages (packagename TEXT PRIMARY KEY, packagerate INTEGER NOT NULL CHECK(packagerate >= 0))")
@@ -150,20 +173,12 @@ def build_database_schema():
             cursor.execute("CREATE TABLE IF NOT EXISTS users (username TEXT PRIMARY KEY, password TEXT NOT NULL, role TEXT NOT NULL CHECK(role IN ('Admin', 'Staff')), assignedarea TEXT DEFAULT 'ALL')")
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS billing_history (
-                    invoiceid TEXT PRIMARY KEY,
-                    customerid TEXT NOT NULL,
-                    customername TEXT NOT NULL,
-                    area TEXT NOT NULL,
-                    phone TEXT,
-                    datetimestamp TEXT NOT NULL,
-                    currentpackage TEXT NOT NULL,
-                    amountpaid INTEGER NOT NULL CHECK(amountpaid >= 0),
-                    remainingarrears INTEGER NOT NULL,
-                    transactiontype TEXT NOT NULL,
-                    paymentmethod TEXT NOT NULL,
-                    discountgiven INTEGER DEFAULT 0
+                    invoiceid TEXT PRIMARY KEY, customerid TEXT NOT NULL, customername TEXT NOT NULL, area TEXT NOT NULL,
+                    phone TEXT, datetimestamp TEXT NOT NULL, currentpackage TEXT NOT NULL, amountpaid INTEGER NOT NULL CHECK(amountpaid >= 0),
+                    remainingarrears INTEGER NOT NULL, transactiontype TEXT NOT NULL, paymentmethod TEXT NOT NULL, discountgiven INTEGER DEFAULT 0
                 )
             """)
+            
             cursor.execute("SELECT COUNT(*) FROM areas")
             if cursor.fetchone()[0] == 0:
                 cursor.execute("INSERT INTO areas VALUES ('Sanghoi System'), ('Saeela System')")
@@ -181,14 +196,14 @@ def build_database_schema():
             cursor.execute("SELECT COUNT(*) FROM packages")
             if cursor.fetchone()[0] == 0:
                 cursor.execute("INSERT INTO packages VALUES ('15 Mbps Fiber', 1500), ('25 Mbps Fiber', 2000), ('35 Mbps Fiber', 2500)")
-            conn.commit()
+        conn.commit()
 
 try:
     build_database_schema()
 except Exception as e:
     st.error(f"Schema Builder Failed: {e}")
 
-# High efficiency caching strategy
+# Live Context High efficiency caching
 @st.cache_data(ttl=60)
 def fetch_live_matrix():
     try:
@@ -196,11 +211,11 @@ def fetch_live_matrix():
             with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
                 cur.execute("SELECT * FROM customers ORDER BY customername ASC")
                 rows = cur.fetchall()
-                if rows:
-                    df = pd.DataFrame(rows)
-                    df.columns = [c.lower() for c in df.columns]
-                    extended_cols = GLOBAL_TARGET_ORDER + [c for c in df.columns if c not in GLOBAL_TARGET_ORDER]
-                    return df.reindex(columns=extended_cols)
+        if rows:
+            df = pd.DataFrame(rows)
+            df.columns = [c.lower() for c in df.columns]
+            extended_cols = GLOBAL_TARGET_ORDER + [c for c in df.columns if c not in GLOBAL_TARGET_ORDER]
+            return df.reindex(columns=extended_cols)
         return pd.DataFrame(columns=GLOBAL_TARGET_ORDER + ['balanceshift', 'status', 'expirydate'])
     except Exception:
         return pd.DataFrame()
@@ -212,7 +227,7 @@ def fetch_system_packages():
             with conn.cursor() as cur:
                 cur.execute("SELECT packagename, packagerate FROM packages ORDER BY packagerate ASC")
                 rows = cur.fetchall()
-                return dict(rows) if rows else {"15 Mbps Fiber": 1500}
+        return dict(rows) if rows else {"15 Mbps Fiber": 1500}
     except Exception:
         return {"15 Mbps Fiber": 1500}
 
@@ -223,7 +238,7 @@ def fetch_active_areas():
             with conn.cursor() as cur:
                 cur.execute("SELECT areaname FROM areas ORDER BY areaname ASC")
                 rows = cur.fetchall()
-                return [r[0] for r in rows] if rows else ["Sanghoi System", "Saeela System"]
+        return [r[0] for r in rows] if rows else ["Sanghoi System", "Saeela System"]
     except Exception:
         return ["Sanghoi System", "Saeela System"]
 
@@ -235,24 +250,20 @@ def fetch_current_month_billing_summary():
             with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
                 cur.execute("SELECT LOWER(TRIM(customerid)) as customerid, amountpaid FROM billing_history WHERE datetimestamp LIKE %s", (current_month_str + '%',))
                 rows = cur.fetchall()
-                if rows:
-                    df = pd.DataFrame(rows)
-                    return df.groupby('customerid')['amountpaid'].sum().to_dict()
+        if rows:
+            df = pd.DataFrame(rows)
+            return df.groupby('customerid')['amountpaid'].sum().to_dict()
     except Exception:
         pass
     return {}
 
 def clean_and_validate_phone(phone_str: str) -> str:
-    if not phone_str or str(phone_str).lower() == 'nan':
-        return ""
+    if not phone_str or str(phone_str).lower() == 'nan': return ""
     cleaned = str(phone_str).strip()
-    if cleaned.endswith('.0'):
-        cleaned = cleaned[:-2]
+    if cleaned.endswith('.0'): cleaned = cleaned[:-2]
     cleaned = re.sub(r"\D", "", cleaned)
-    if cleaned.startswith("92"):
-        cleaned = "0" + cleaned[2:]
-    if len(cleaned) == 10 and cleaned.startswith("3"):
-        cleaned = "0" + cleaned
+    if cleaned.startswith("92"): cleaned = "0" + cleaned[2:]
+    if len(cleaned) == 10 and cleaned.startswith("3"): cleaned = "0" + cleaned
     return cleaned
 
 # ==========================================
@@ -271,6 +282,7 @@ else:
         st.markdown("<div class='front-login-box'>", unsafe_allow_html=True)
         st.markdown("<h2 style='text-align:center; color:#10b981; font-weight:900; margin-bottom:5px;'>LYNX FIBER NET</h2>", unsafe_allow_html=True)
         st.markdown("<p style='text-align:center; color:#9ca3af; margin-bottom:30px;'>Enterprise ERP System v54.3 (Cloud Master Mode)</p>", unsafe_allow_html=True)
+        
         user_input = (st.text_input("Username Key", key="front_user") or "").strip().lower()
         pass_input = st.text_input("Security Password", type="password", key="front_pass")
         
@@ -279,16 +291,17 @@ else:
                 with conn.cursor() as cursor:
                     cursor.execute("SELECT role, username, assignedarea, password FROM users WHERE LOWER(username) = %s", (user_input,))
                     user_match = cursor.fetchone()
-                    if user_match and verify_password(pass_input, user_match[3]):
-                        st.session_state['authenticated'] = True
-                        st.session_state['user_role'] = user_match[0]
-                        st.session_state['username'] = user_match[1]
-                        st.session_state['assigned_area'] = user_match[2] if user_match[2] else "ALL"
-                        st.session_state['current_node'] = "📊 Core Analytics Dashboard"
-                        st.cache_data.clear()
-                        st.rerun()
-                    else:
-                        st.error("❌ Invalid Access Credentials!")
+                
+            if user_match and verify_password(pass_input, user_match[3]):
+                st.session_state['authenticated'] = True
+                st.session_state['user_role'] = user_match[0]
+                st.session_state['username'] = user_match[1]
+                st.session_state['assigned_area'] = user_match[2] if user_match[2] else "ALL"
+                st.session_state['current_node'] = "📊 Core Analytics Dashboard"
+                st.cache_data.clear()
+                st.rerun()
+            else:
+                st.error("❌ Invalid Access Credentials!")
         st.markdown("</div>", unsafe_allow_html=True)
         st.stop()
     else:
@@ -301,15 +314,16 @@ if st.session_state['authenticated'] and not st.session_state['portal_mode']:
     with st.sidebar:
         st.markdown(f"<h2 style='color:#10b981; font-weight:900; text-align:center; margin-bottom:20px;'>LYNX FIBER</h2>", unsafe_allow_html=True)
         st.markdown("<div class='nav-header'>System Navigation</div>", unsafe_allow_html=True)
+        
         if st.button("📊 Core Analytics Dashboard", use_container_width=True):
             st.session_state['current_node'] = "📊 Core Analytics Dashboard"; st.rerun()
         if st.button("👥 Operational Billing Center", use_container_width=True):
             st.session_state['current_node'] = "👥 Operational Billing Center"; st.rerun()
         if st.button("📜 Lifetime Ledger History", use_container_width=True):
             st.session_state['current_node'] = "📜 Lifetime Ledger History"; st.rerun()
-        if st.session_state['user_role'] == "Admin" and st.button("🔐 System Access Control", use_container_width=True):
+        if st.button("🔐 System Access Control", use_container_width=True):
             st.session_state['current_node'] = "🔐 System Access Control"; st.rerun()
-        
+            
         st.write("---")
         area_display = "All Systems" if st.session_state['assigned_area'] == "ALL" else st.session_state['assigned_area']
         st.markdown(f"<p style='text-align:center; color:#9ca3af;'>👤 Active: <b>{st.session_state['username'].upper()}</b><br>📍 Area: {area_display}</p>", unsafe_allow_html=True)
@@ -322,6 +336,7 @@ if st.session_state['authenticated'] and not st.session_state['portal_mode']:
 # ==========================================
 if routing_node == "📊 Core Analytics Dashboard":
     st.markdown("<div class='main-title'>⚡ LYNX FIBER ENTERPRISE ANALYTICS</div>", unsafe_allow_html=True)
+    
     df_matrix = fetch_live_matrix()
     all_system_areas = fetch_active_areas()
     
@@ -329,6 +344,7 @@ if routing_node == "📊 Core Analytics Dashboard":
         st.warning("⚠️ Operational Database is currently empty. Please go to Operations Center to load fresh clients.")
     else:
         collection_map = fetch_current_month_billing_summary()
+            
         st.markdown("### 🌐 Active System Node Overview")
         for i in range(0, len(all_system_areas), 2):
             cols = st.columns(2)
@@ -336,9 +352,19 @@ if routing_node == "📊 Core Analytics Dashboard":
                 if i + j < len(all_system_areas):
                     current_hub = all_system_areas[i + j]
                     segment = df_matrix[df_matrix['area'].str.lower() == current_hub.lower()]
+                    
                     active_segment = segment[segment['status'] != 'SUSPENDED']
-                    hub_bill = active_segment['billamount'].sum()
-                    hub_arrears = segment['balanceshift'].sum()
+                    
+                    try:
+                        hub_bill = int(pd.to_numeric(active_segment['billamount'], errors='coerce').sum())
+                    except:
+                        hub_bill = 0
+                        
+                    try:
+                        hub_arrears = int(pd.to_numeric(segment['balanceshift'], errors='coerce').sum())
+                    except:
+                        hub_arrears = 0
+                    
                     hub_paid_count = len(segment[segment['status'] == 'PAID'])
                     hub_partial_count = len(segment[segment['status'] == 'PARTIAL'])
                     hub_unpaid_count = len(segment[segment['status'] == 'UNPAID'])
@@ -350,18 +376,18 @@ if routing_node == "📊 Core Analytics Dashboard":
                     
                     with cols[j]:
                         st.markdown(f"""
-                            <div class="system-card" style="border-left: 5px solid {b_color};">
-                                <h4>🌐 {current_hub} Overview</h4>
-                                <p><b>Total Customers Registered:</b> {len(segment)}</p>
-                                <p><b>Expected Active Revenue:</b> Rs. {hub_bill:,}</p>
-                                <p style="color:#10b981; font-weight:bold;"><b>✅ Paid Customers:</b> {hub_paid_count} (Received This Month: Rs. {hub_collected:,})</p>
-                                <p style="color:#f59e0b; font-weight:bold;"><b>🟡 Partial Accounts:</b> {hub_partial_count}</p>
-                                <p style="color:#f43f5e; font-weight:bold;"><b>❌ Unpaid / Suspended:</b> {hub_unpaid_count} / {hub_suspended_count}</p>
-                                <p style="color:#f43f5e; font-weight:500;"><b>⚠️ Outstanding Arrears Risk:</b> Rs. {hub_arrears:,}</p>
-                            </div>
+                        <div class="system-card" style="border-left: 5px solid {b_color};">
+                            <h4>🌐 {current_hub} Overview</h4>
+                            <p><b>Total Customers Registered:</b> {len(segment)}</p>
+                            <p><b>Expected Active Revenue:</b> Rs. {hub_bill:,}</p>
+                            <p style="color:#10b981; font-weight:bold;"><b>✅ Paid Customers:</b> {hub_paid_count} (Received This Month: Rs. {hub_collected:,})</p>
+                            <p style="color:#f59e0b; font-weight:bold;"><b>🟡 Partial Accounts:</b> {hub_partial_count}</p>
+                            <p style="color:#f43f5e; font-weight:bold;"><b>❌ Unpaid / Suspended:</b> {hub_unpaid_count} / {hub_suspended_count}</p>
+                            <p style="color:#f43f5e; font-weight:500;"><b>⚠️ Outstanding Arrears Risk:</b> Rs. {hub_arrears:,}</p>
+                        </div>
                         """, unsafe_allow_html=True)
+
         st.write("---")
-        
         base_df = df_matrix.copy()
         if st.session_state['assigned_area'] != "ALL":
             base_df = base_df[base_df['area'].str.lower() == st.session_state['assigned_area'].lower()]
@@ -371,13 +397,16 @@ if routing_node == "📊 Core Analytics Dashboard":
             system_filter = st.selectbox("🌐 Operational Area System Filter", filter_options)
             if system_filter != "ALL SYSTEMS":
                 base_df = base_df[base_df['area'].str.lower() == system_filter.lower()]
-                
+        
         if base_df.empty:
             st.warning("⚠️ No records found in this system segment.")
         else:
             total_active = len(base_df)
             total_paid = len(base_df[base_df['status'] == 'PAID'])
-            total_arrears = base_df['balanceshift'].sum()
+            try:
+                total_arrears = int(pd.to_numeric(base_df['balanceshift'], errors='coerce').sum())
+            except:
+                total_arrears = 0
             total_suspended = len(base_df[base_df['status'] == 'SUSPENDED'])
             
             col_b1, col_b2, col_b3, col_b4 = st.columns(4)
@@ -398,16 +427,16 @@ if routing_node == "📊 Core Analytics Dashboard":
             if st.session_state['dashboard_filter'] == "PAID":
                 analysis_df = analysis_df[analysis_df['status'] == 'PAID']
             elif st.session_state['dashboard_filter'] == "ARREARS":
-                analysis_df = analysis_df[analysis_df['balanceshift'] > 0]
+                analysis_df = analysis_df[pd.to_numeric(analysis_df['balanceshift'], errors='coerce').fillna(0) > 0]
             elif st.session_state['dashboard_filter'] == "SUSPENDED":
                 analysis_df = analysis_df[analysis_df['status'] == 'SUSPENDED']
-                
+            
             search_query = st.text_input("🔍 Fast Find Subscriber (Structured Columns Row Analyzer)")
             if search_query:
                 clean_q = search_query.lower().strip()
                 search_blob = analysis_df.astype(str).apply(lambda row: ' '.join(row).lower(), axis=1)
                 analysis_df = analysis_df[search_blob.str.contains(clean_q, regex=False)].copy()
-                
+            
             custom_order_cols = GLOBAL_TARGET_ORDER + ['balanceshift', 'status', 'expirydate']
             html_rows = []
             html_rows.append('<div class="table-wrapper"><table class="premium-table"><tr>')
@@ -415,12 +444,16 @@ if routing_node == "📊 Core Analytics Dashboard":
                 html_rows.append(f"<th>{col.replace('_', ' ').upper()}</th>")
             html_rows.append("<th>ACTIONS</th></tr>")
             
-            for row in analysis_df.itertuples(index=False):
-                row_dict = dict(zip(analysis_df.columns, row))
+            for idx, row in analysis_df.iterrows():
+                row_dict = row.to_dict()
                 phone_num = str(row_dict.get('phone', ''))
                 pure_digits = re.sub(r"\D", "", phone_num)
                 cust_name = row_dict.get('customername', '')
-                curr_bal = row_dict.get('balanceshift', 0)
+                
+                try:
+                    curr_bal = int(float(row_dict.get('balanceshift', 0)))
+                except:
+                    curr_bal = 0
                 exp_dt = row_dict.get('expirydate', '')
                 
                 if len(pure_digits) >= 10:
@@ -430,7 +463,7 @@ if routing_node == "📊 Core Analytics Dashboard":
                     wa_action_html = f'<a href="{wa_url}" target="_blank" class="btn-action btn-w">💬 WA</a>'
                 else:
                     wa_action_html = '<span class="btn-action btn-disabled">🚫 WA</span>'
-                    
+                
                 html_rows.append("<tr>")
                 for col in custom_order_cols:
                     raw_val = row_dict.get(col, '')
@@ -442,19 +475,16 @@ if routing_node == "📊 Core Analytics Dashboard":
                         icon = {"PAID": "🟢", "PARTIAL": "🟡", "UNPAID": "🔴", "SUSPENDED": "⚫"}.get(raw_val, "⚪")
                         html_rows.append(f"<td style='color:{s_color}; font-weight:bold;'>{icon} {escaped_val}</td>")
                     elif col == 'balanceshift':
-                        try:
-                            val_int = int(float(raw_val))
-                        except:
-                            val_int = 0
-                        if val_int < 0:
-                            html_rows.append(f"<td style='color:#10b981; font-weight:bold;'>CR Rs. {abs(val_int)}</td>")
+                        if curr_bal < 0:
+                            html_rows.append(f"<td style='color:#10b981; font-weight:bold;'>CR Rs. {abs(curr_bal)}</td>")
                         else:
-                            html_rows.append(f"<td style='color:#f43f5e; font-weight:bold;'>Rs. {val_int}</td>")
+                            html_rows.append(f"<td style='color:#f43f5e; font-weight:bold;'>Rs. {curr_bal}</td>")
                     elif col == 'onuserialnumber':
                         html_rows.append(f"<td style='color:#60a5fa; font-weight:bold;'>{escaped_val}</td>")
                     else:
                         html_rows.append(f"<td>{escaped_val}</td>")
                 html_rows.append(f'<td><a href="tel:{pure_digits}" class="btn-action btn-c">📞 Call</a> {wa_action_html}</td></tr>')
+            
             html_rows.append("</table></div>")
             st.markdown("".join(html_rows), unsafe_allow_html=True)
 
@@ -471,18 +501,16 @@ elif routing_node == "👥 Operational Billing Center":
     if st.session_state['assigned_area'] != "ALL":
         df_matrix = df_matrix[df_matrix['area'].str.lower() == st.session_state['assigned_area'].lower()]
         
-    tabs_list = ["💳 Capital Collection Hub"]
+    tabs_list = ["💳 Capital Collection Hub", "🛠️ Edit Terminal Profile"]
     if is_admin:
-        tabs_list.append("➕ Provision New Client")
-        tabs_list.append("📥 Bulk Import Excel/CSV")
-    tabs_list.append("🛠️ Edit Terminal Profile")
-    
+        tabs_list.insert(1, "➕ Provision New Client")
+        tabs_list.insert(2, "📥 Bulk Import Excel/CSV")
     tabs = st.tabs(tabs_list)
     
     sub_map = {}
     if not df_matrix.empty:
-        for row in df_matrix.itertuples(index=False):
-            row_dict = dict(zip(df_matrix.columns, row))
+        for idx, row in df_matrix.iterrows():
+            row_dict = row.to_dict()
             uid = row_dict.get('username')
             if pd.notna(uid) and str(uid).strip() != "" and str(uid).lower() != "nan":
                 sub_map[f"[{uid}] - {row_dict.get('customername', '')} ({row_dict.get('phone', '')})"] = uid
@@ -494,7 +522,6 @@ elif routing_node == "👥 Operational Billing Center":
             target_label = st.selectbox("Select Target Subscriber Username", list(sub_map.keys()))
             resolved_uid = sub_map[target_label]
             matched_rows = df_matrix[df_matrix['username'] == resolved_uid]
-            
             if matched_rows.empty:
                 st.error(f"❌ Username '{resolved_uid}' matrix data was not found.")
             else:
@@ -536,7 +563,7 @@ elif routing_node == "👥 Operational Billing Center":
                                     VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, 'BILL_PAYMENT', %s, %s)
                                 """, (invoice_uuid, resolved_uid.strip().lower(), node_row_dict.get('customername', ''), node_row_dict.get('area', ''), node_row_dict.get('phone', ''), datetime.now().strftime("%Y-%m-%d %H:%M:%S"), f"{node_row_dict.get('package', '')} ({billing_months}M Advance)", cash_inflow, future_shift, pay_method, discount_value))
                             conn.commit()
-                        st.success(f"🎉 Transaction Posted!")
+                        st.success(f"🎉 Transaction Posted Successfully!")
                         st.cache_data.clear()
                         st.rerun()
                         
@@ -563,7 +590,7 @@ elif routing_node == "👥 Operational Billing Center":
                             with conn.cursor() as cursor:
                                 cursor.execute("SELECT COUNT(*) FROM customers WHERE username = %s", (in_id,))
                                 if cursor.fetchone()[0] > 0:
-                                    st.error("❌ Username exists!")
+                                    st.error("❌ Username already exists!")
                                 else:
                                     default_expiry = (datetime.now() + timedelta(days=30)).strftime("%Y-%m-%d")
                                     try:
@@ -575,7 +602,8 @@ elif routing_node == "👥 Operational Billing Center":
                                         st.success("✅ Added Profile Successfully!")
                                         st.cache_data.clear(); st.rerun()
                                     except psycopg2.IntegrityError:
-                                        st.error("❌ Phone Number already allocated!")
+                                        st.error("❌ Phone Number already allocated to another client!")
+                                        
         current_tab_idx += 1
         with tabs[current_tab_idx]:
             st.markdown("### 📥 BULK EXCEL / CSV UPLOADER ENGINE")
@@ -607,11 +635,10 @@ elif routing_node == "👥 Operational Billing Center":
                                                 if pk in raw_columns_mapped:
                                                     val = str(r_dict.get(raw_columns_mapped[pk], '')).strip()
                                                     if val.lower() != 'nan' and val != '':
-                                                        if val.endswith('.0'):
-                                                            val = val[:-2]
+                                                        if val.endswith('.0'): val = val[:-2]
                                                         return val
                                             return default_str
-                                        
+                                            
                                         uid = get_excel_val(['username', 'userid', 'user', 'id', 'customerid']).lower().strip()
                                         cname = get_excel_val(['customername', 'name', 'clientname', 'subscribername']).strip()
                                         raw_phone = get_excel_val(['phone', 'phonenumber', 'mobile', 'mobilecode', 'contact'])
@@ -635,6 +662,7 @@ elif routing_node == "👥 Operational Billing Center":
                                             ON CONFLICT (username) DO UPDATE SET customername = EXCLUDED.customername, phone = EXCLUDED.phone, cnic = EXCLUDED.cnic, package = EXCLUDED.package, billamount = EXCLUDED.billamount, area = EXCLUDED.area, address = EXCLUDED.address, onuserialnumber = EXCLUDED.onuserialnumber
                                             RETURNING (xmax = 0);
                                         """, (uid, cname, cphone, get_excel_val(['cnic', 'cnicnumber', 'nic']), get_excel_val(['package', 'plan', 'internetplan'], default_pkg), b_amt, get_excel_val(['area', 'system', 'zone', 'location'], default_area), get_excel_val(['address', 'locationaddress', 'house']), get_excel_val(['onuserialnumber', 'onusn', 'serial', 'sn', 'onuserial']), default_expiry))
+                                        
                                         if cursor.fetchone()[0]:
                                             success_count += 1
                                         else:
@@ -642,11 +670,11 @@ elif routing_node == "👥 Operational Billing Center":
                                         cursor.execute(f"RELEASE SAVEPOINT {savepoint_id}")
                                     except Exception as ex:
                                         cursor.execute(f"ROLLBACK TO SAVEPOINT {savepoint_id}"); skip_count += 1
-                            conn.commit()
                         st.success("🎉 **Excel file data kamyabi se upload aur live database mein safe ho chuka hai!**")
-                        st.cache_data.clear(); st.stop()
+                        st.cache_data.clear(); st.rerun()
                 except Exception as e:
                     st.error(f"❌ Mapping Error: {e}")
+                    
         current_tab_idx += 1
         
     with tabs[current_tab_idx]:
@@ -692,7 +720,7 @@ elif routing_node == "👥 Operational Billing Center":
                                         UPDATE customers SET customername=%s, phone=%s, cnic=%s, package=%s, billamount=%s, area=%s, address=%s, onuserialnumber=%s, balanceshift=%s, expirydate=%s, status=%s WHERE username=%s
                                     """, (up_name, clean_and_validate_phone(up_phone), up_cnic, up_pkg, up_rate, up_area, up_address, up_sn, up_arrears, up_expiry, up_status, edit_row_dict['username']))
                                 conn.commit()
-                            st.success("🎉 Changes Saved!")
+                            st.success("🎉 Changes Saved Successfully!")
                             st.cache_data.clear(); st.rerun()
                     with col_e2:
                         if st.form_submit_button("🚨 PERMANENTLY WIPE CLIENT", use_container_width=True, disabled=not is_admin):
@@ -700,6 +728,7 @@ elif routing_node == "👥 Operational Billing Center":
                                 with conn.cursor() as cursor:
                                     cursor.execute("DELETE FROM customers WHERE username=%s", (edit_row_dict['username'],))
                                 conn.commit()
+                            st.success("💥 Profile Deleted!")
                             st.cache_data.clear(); st.rerun()
 
 # ==========================================
@@ -788,7 +817,7 @@ elif routing_node == "🔐 System Access Control":
                             with conn.cursor() as cursor:
                                 cursor.execute("DROP TABLE IF EXISTS billing_history CASCADE; DROP TABLE IF EXISTS customers CASCADE;")
                         build_database_schema()
-                        st.success("🚀 System success fully reset ho chuka hai!")
+                        st.success("🚀 System successfully reset ho chuka hai!")
                         st.session_state['purge_requested'] = False
                         st.cache_data.clear(); st.rerun()
                 with col_purge2:
@@ -800,64 +829,80 @@ elif routing_node == "🔐 System Access Control":
                 new_admin_user = st.text_input("New Admin Username").strip().lower()
                 new_admin_pass = st.text_input("New Admin Password", type="password").strip()
                 if st.form_submit_button("➕ Create Admin", use_container_width=True):
-                    with get_db_connection() as conn:
-                        with conn.cursor() as cursor:
-                            try:
-                                cursor.execute("INSERT INTO users VALUES (%s, %s, 'Admin', 'ALL')", (new_admin_user, hash_password(new_admin_pass)))
-                                conn.commit()
-                                st.success("Created!")
-                            except:
-                                st.error("Exists!")
+                    if new_admin_user and new_admin_pass:
+                        with get_db_connection() as conn:
+                            with conn.cursor() as cursor:
+                                try:
+                                    cursor.execute("INSERT INTO users VALUES (%s, %s, 'Admin', 'ALL')", (new_admin_user, hash_password(new_admin_pass)))
+                                    conn.commit(); st.success("Admin Created Successfully!")
+                                except:
+                                    st.error("Username already exists!")
+                    else:
+                        st.error("Fields cannot be blank.")
                                 
             with st.form("new_staff_form_v50"):
                 new_user = st.text_input("New Staff Username").strip().lower()
                 new_pass = st.text_input("New Staff Password", type="password").strip()
                 new_area_lock = st.selectbox("Assign & Lock System Area", all_system_areas)
                 if st.form_submit_button("🚀 Add Staff Account & Lock Area", use_container_width=True):
-                    with get_db_connection() as conn:
-                        with conn.cursor() as cursor:
-                            try:
-                                cursor.execute("INSERT INTO users VALUES (%s, %s, 'Staff', %s)", (new_user, hash_password(new_pass), new_area_lock))
-                                conn.commit()
-                                st.success("Created!")
-                            except:
-                                st.error("Exists!")
+                    if new_user and new_pass:
+                        with get_db_connection() as conn:
+                            with conn.cursor() as cursor:
+                                try:
+                                    cursor.execute("INSERT INTO users VALUES (%s, %s, 'Staff', %s)", (new_user, hash_password(new_pass), new_area_lock))
+                                    conn.commit(); st.success("Staff Created Successfully!")
+                                except:
+                                    st.error("Username already exists!")
+                    else:
+                        st.error("Fields cannot be blank.")
                                 
         with adm_tab3:
             with st.form("add_package_form"):
                 p_name = st.text_input("Package Profile Name").strip()
                 p_rate = st.number_input("Fixed Monthly Rate (Rs.)", min_value=0, value=1500)
                 if st.form_submit_button("💾 Save Fixed Package to System", use_container_width=True):
-                    with get_db_connection() as conn:
-                        with conn.cursor() as cursor:
-                            cursor.execute("INSERT INTO packages VALUES (%s, %s) ON CONFLICT (packagename) DO UPDATE SET packagerate = EXCLUDED.packagerate", (p_name, p_rate))
-                            conn.commit()
-                    st.cache_data.clear(); st.rerun()
+                    if p_name:
+                        with get_db_connection() as conn:
+                            with conn.cursor() as cursor:
+                                cursor.execute("INSERT INTO packages VALUES (%s, %s) ON CONFLICT (packagename) DO UPDATE SET packagerate = EXCLUDED.packagerate", (p_name, p_rate))
+                                conn.commit()
+                        st.success("Package Saved!")
+                        st.cache_data.clear(); st.rerun()
+                    else:
+                        st.error("Package name is required.")
                     
         with adm_tab4:
             with st.form("dynamic_add_area_form"):
                 fresh_area_name = st.text_input("Enter New Area Name").strip()
                 if st.form_submit_button("➕ REGISTER NEW AREA NODE", use_container_width=True):
-                    with get_db_connection() as conn:
-                        with conn.cursor() as cursor:
-                            try:
-                                cursor.execute("INSERT INTO areas VALUES (%s)", (fresh_area_name,))
-                                conn.commit()
-                            except:
-                                pass
-                    st.cache_data.clear(); st.rerun()
+                    if fresh_area_name:
+                        with get_db_connection() as conn:
+                            with conn.cursor() as cursor:
+                                try:
+                                    cursor.execute("INSERT INTO areas VALUES (%s)", (fresh_area_name,))
+                                    conn.commit()
+                                    st.success("Area Registered!")
+                                except:
+                                    st.error("Area already exists.")
+                        st.cache_data.clear(); st.rerun()
+                    else:
+                        st.error("Area name is required.")
                     
         with adm_tab5:
             with st.form("admin_profile_form"):
                 up_admin_user = st.text_input("Change Admin Username", value=st.session_state['username']).strip().lower()
                 up_admin_pass = st.text_input("New Admin Password", type="password").strip()
                 if st.form_submit_button("🔒 Securely Update Admin Profile", use_container_width=True):
-                    with get_db_connection() as conn:
-                        with conn.cursor() as cursor:
-                            cursor.execute("DELETE FROM users WHERE username = %s", (st.session_state['username'],))
-                            cursor.execute("INSERT INTO users VALUES (%s, %s, 'Admin', 'ALL')", (up_admin_user, hash_password(up_admin_pass)))
+                    if up_admin_user and up_admin_pass:
+                        with get_db_connection() as conn:
+                            with conn.cursor() as cursor:
+                                cursor.execute("DELETE FROM users WHERE username = %s", (st.session_state['username'],))
+                                cursor.execute("INSERT INTO users VALUES (%s, %s, 'Admin', 'ALL')", (up_admin_user, hash_password(up_admin_pass)))
                             conn.commit()
-                    st.session_state['authenticated'] = False; st.rerun()
+                        st.success("Profile Updated! Please log in again.")
+                        st.session_state['authenticated'] = False; st.rerun()
+                    else:
+                        st.error("Fields cannot be empty.")
 
 # ==========================================
 # VIEW 5: CLIENT PORTAL
@@ -871,12 +916,13 @@ elif routing_node == "📱 Client Portal":
             with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
                 cur.execute("SELECT * FROM customers WHERE LOWER(username) = LOWER(%s) OR phone = %s OR cnic = %s", [search_term, clean_and_validate_phone(search_term), search_term])
                 c_rows = cur.fetchall()
-                if not c_rows:
-                    st.error("❌ No registered record found.")
-                else:
-                    c_dict = c_rows[0]
-                    html_card = f"""<div class="client-card"><h3 style="color:#10b981; margin-top:0;">👤 Account Username: {html.escape(str(c_dict.get('username','')))}</h3>"""
-                    for k in GLOBAL_TARGET_ORDER:
-                        if k != 'username':
-                            html_card += f"<p><b>{k.upper()}:</b> {html.escape(str(c_dict.get(k, '')))}</p>"
-                    st.markdown(html_card + "</div>", unsafe_allow_html=True)
+        if not c_rows:
+            st.error("❌ No registered record found.")
+        else:
+            c_dict = c_rows[0]
+            html_card = f"""<div class="client-card"><h3 style="color:#10b981; margin-top:0;">👤 Account Username: {html.escape(str(c_dict.get('username','')))}</h3>"""
+            for k in GLOBAL_TARGET_ORDER:
+                if k != 'username':
+                    html_card += f"<p><b>{k.upper()}:</b> {html.escape(str(c_dict.get(k, '')))}</p>"
+            html_card += "</div>"
+            st.markdown(html_card, unsafe_allow_html=True)
