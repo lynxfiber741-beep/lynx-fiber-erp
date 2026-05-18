@@ -10,8 +10,6 @@ import io
 import os
 from datetime import datetime, timedelta
 from contextlib import contextmanager
-from dateutil.relativedelta import relativedelta
-import bcrypt
 
 # ReportLab import for PDF generation
 try:
@@ -60,7 +58,7 @@ GLOBAL_TARGET_ORDER = [
 # 2. CORE THEME & PREMIUM MOBILE CSS ENGINE
 # ==========================================
 st.set_page_config(
-    page_title="LYNX Fiber Enterprise ERP v54.2", 
+    page_title="LYNX Fiber Enterprise ERP v54.1", 
     layout="wide",
     initial_sidebar_state="expanded"
 )
@@ -194,7 +192,8 @@ st.markdown("""
 try:
     DB_URL = st.secrets["DB_URL"]
 except Exception:
-    encoded_pass = urllib.parse.quote_plus("ry84GdKQLfu*")
+    # UPDATED CONFIGURATION WITH YOUR NEW PASSWORD & PROPER CONNECTION POOLING PORT
+    encoded_pass = urllib.parse.quote_plus("cMSUKBCwAy6dyGPr")
     DB_URL = f"postgresql://postgres.ehykfrzymkzlxzkhxlww:{encoded_pass}@aws-1-ap-southeast-1.pooler.supabase.com:6543/postgres?sslmode=require"
 
 @contextmanager
@@ -209,15 +208,6 @@ def get_db_connection():
     finally:
         if conn is not None:
             conn.close()
-
-def hash_password(password: str) -> str:
-    return bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
-
-def verify_password(password: str, hashed_password: str) -> bool:
-    try:
-        return bcrypt.checkpw(password.encode('utf-8'), hashed_password.encode('utf-8'))
-    except Exception:
-        return False
 
 def build_database_schema():
     with get_db_connection() as conn:
@@ -274,7 +264,7 @@ def build_database_schema():
                     DateTimestamp TEXT NOT NULL,
                     CurrentPackage TEXT NOT NULL,
                     AmountPaid INTEGER NOT NULL CHECK(AmountPaid >= 0),
-                    RemainingArrears INTEGER NOT NULL,
+                    RemainingArrears INTEGER NOT NULL CHECK(RemainingArrears >= 0),
                     TransactionType TEXT NOT NULL,
                     PaymentMethod TEXT NOT NULL,
                     DiscountGiven INTEGER DEFAULT 0
@@ -286,18 +276,10 @@ def build_database_schema():
                 cursor.execute("INSERT INTO areas VALUES ('Sanghoi System')")
                 cursor.execute("INSERT INTO areas VALUES ('Saeela System')")
             
-            cursor.execute("SELECT Username, Password FROM users")
-            existing_users = cursor.fetchall()
-            if not existing_users:
-                admin_hashed = hash_password('lynxadmin123')
-                staff_hashed = hash_password('lynxstaff123')
-                cursor.execute("INSERT INTO users VALUES ('admin', %s, 'Admin', 'ALL')", (admin_hashed,))
-                cursor.execute("INSERT INTO users VALUES ('staff', %s, 'Staff', 'Sanghoi System')", (staff_hashed,))
-            else:
-                for uname, pwd in existing_users:
-                    if not (pwd.startswith('$2b$') or pwd.startswith('$2a$')):
-                        new_hash = hash_password(pwd)
-                        cursor.execute("UPDATE users SET Password = %s WHERE Username = %s", (new_hash, uname))
+            cursor.execute("SELECT COUNT(*) FROM users WHERE Role = 'Admin'")
+            if cursor.fetchone()[0] == 0:
+                cursor.execute("INSERT INTO users VALUES ('admin', 'lynxadmin123', 'Admin', 'ALL')")
+                cursor.execute("INSERT INTO users VALUES ('staff', 'lynxstaff123', 'Staff', 'Sanghoi System')")
             
             cursor.execute("SELECT COUNT(*) FROM packages")
             if cursor.fetchone()[0] == 0:
@@ -328,7 +310,22 @@ except Exception as e:
 def get_db_columns():
     return GLOBAL_TARGET_ORDER
 
-@st.cache_data(ttl=5)
+def save_column_order(order_list):
+    val = ",".join([c.lower() for c in order_list])
+    with get_db_connection() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute("""
+                INSERT INTO app_settings (SettingKey, SettingValue) VALUES ('col_order', %s)
+                ON CONFLICT (SettingKey) DO UPDATE SET SettingValue = EXCLUDED.SettingValue
+            """, (val,))
+        conn.commit()
+
+def load_column_order():
+    return GLOBAL_TARGET_ORDER
+
+if not st.session_state['column_order']:
+    st.session_state['column_order'] = GLOBAL_TARGET_ORDER
+
 def fetch_live_matrix():
     try:
         with get_db_connection() as conn:
@@ -385,7 +382,7 @@ else:
     if not st.session_state['authenticated']:
         st.markdown("<div class='front-login-box'>", unsafe_allow_html=True)
         st.markdown("<h2 style='text-align:center; color:#10b981; font-weight:900; margin-bottom:5px;'>LYNX FIBER NET</h2>", unsafe_allow_html=True)
-        st.markdown("<p style='text-align:center; color:#9ca3af; margin-bottom:30px;'>Enterprise ERP System v54.2 (Cloud Master Mode)</p>", unsafe_allow_html=True)
+        st.markdown("<p style='text-align:center; color:#9ca3af; margin-bottom:30px;'>Enterprise ERP System v54.1 (Cloud Master Mode)</p>", unsafe_allow_html=True)
         
         user_input = (st.text_input("Username Key", key="front_user") or "").strip().lower()
         pass_input = st.text_input("Security Password", type="password", key="front_pass")
@@ -394,16 +391,15 @@ else:
         if st.button("🚀 Authorize & Launch Dashboard", use_container_width=True):
             with get_db_connection() as conn:
                 with conn.cursor() as cursor:
-                    cursor.execute("SELECT Role, Username, AssignedArea, Password FROM users WHERE LOWER(Username) = %s", (user_input,))
+                    cursor.execute("SELECT Role, Username, AssignedArea FROM users WHERE LOWER(Username) = %s AND Password = %s", (user_input, pass_input))
                     user_match = cursor.fetchone()
                 
-            if user_match and verify_password(pass_input, user_match[3]):
+            if user_match:
                 st.session_state['authenticated'] = True
                 st.session_state['user_role'] = user_match[0]
                 st.session_state['username'] = user_match[1]
                 st.session_state['assigned_area'] = user_match[2] if user_match[2] else "ALL"
                 st.session_state['current_node'] = "📊 Core Analytics Dashboard"
-                st.cache_data.clear()
                 st.rerun()
             else:
                 st.error("❌ Invalid Access Credentials!")
@@ -464,8 +460,7 @@ if routing_node == "📊 Core Analytics Dashboard":
             if not df_hist_calc.empty:
                 df_hist_calc.columns = ["customerid", "amountpaid", "datetimestamp"]
                 df_hist_calc['customerid'] = df_hist_calc['customerid'].astype(str).str.lower().str.strip()
-                # FIXED: Force robust datetime conversion with string handling to preserve values
-                df_hist_calc['datetimestamp'] = pd.to_datetime(df_hist_calc['datetimestamp'].astype(str), errors='coerce')
+                df_hist_calc['datetimestamp'] = pd.to_datetime(df_hist_calc['datetimestamp'], errors='coerce')
                 
                 current_month_str = datetime.now().strftime("%Y-%m")
                 df_hist_calc = df_hist_calc[df_hist_calc['datetimestamp'].dt.strftime("%Y-%m") == current_month_str]
@@ -478,8 +473,7 @@ if routing_node == "📊 Core Analytics Dashboard":
                     current_hub = all_system_areas[i + j]
                     segment = df_matrix[df_matrix['area'].str.lower() == current_hub.lower()]
                     
-                    active_segment = segment[segment['status'] != 'SUSPENDED']
-                    hub_bill = active_segment['billamount'].sum()
+                    hub_bill = segment['billamount'].sum()
                     hub_arrears = segment['balanceshift'].sum()
                     
                     hub_paid_count = len(segment[segment['status'] == 'PAID'])
@@ -489,7 +483,6 @@ if routing_node == "📊 Core Analytics Dashboard":
                     
                     hub_uids = [str(x).lower().strip() for x in segment['username'].tolist()]
                     
-                    # FIXED: Received This Month calculating correctly from the billing history matching the current month
                     if not df_hist_calc.empty:
                         hub_collected = df_hist_calc[df_hist_calc['customerid'].isin(hub_uids)]['amountpaid'].sum()
                     else:
@@ -502,7 +495,7 @@ if routing_node == "📊 Core Analytics Dashboard":
                         <div class="system-card" style="border-left: 5px solid {b_color};">
                             <h4>🌐 {current_hub} Overview</h4>
                             <p><b>Total Customers Registered:</b> {len(segment)}</p>
-                            <p><b>Expected Active Revenue:</b> Rs. {hub_bill:,}</p>
+                            <p><b>Total Expected Revenue:</b> Rs. {hub_bill:,}</p>
                             <p style="color:#10b981; font-weight:bold;"><b>✅ Paid Customers:</b> {hub_paid_count} (Received This Month: Rs. {hub_collected:,})</p>
                             <p style="color:#f59e0b; font-weight:bold;"><b>🟡 Partial Accounts:</b> {hub_partial_count}</p>
                             <p style="color:#f43f5e; font-weight:bold;"><b>❌ Unpaid / Suspended:</b> {hub_unpaid_count} / {hub_suspended_count}</p>
@@ -580,7 +573,7 @@ if routing_node == "📊 Core Analytics Dashboard":
                 
                 if len(pure_digits) >= 10:
                     wa_number = "92" + pure_digits[-10:]
-                    wa_payload = f"Dear {cust_name}, Lynx Fiber System Update. Balance Summary: Rs.{curr_bal}. Expiry Date: {exp_dt}."
+                    wa_payload = f"Dear {cust_name}, Lynx Fiber System Update. Outstanding Arrears: Rs.{curr_bal}. Please clear dues before expiry: {exp_dt}."
                     wa_url = f"https://wa.me/{wa_number}?text={urllib.parse.quote(wa_payload)}"
                     wa_action_html = f"""<a href="{wa_url}" target="_blank" class="btn-action btn-w">💬 WA</a>"""
                 else:
@@ -594,14 +587,10 @@ if routing_node == "📊 Core Analytics Dashboard":
                     if col in ['username']:
                         html_grid_code += f"<td><b>{escaped_val}</b></td>"
                     elif col in ['status']:
-                        s_color = "#10b981" if raw_val == 'PAID' else ("#f59e0b" if raw_val == 'PARTIAL' else ("#6b7280" if raw_val == 'SUSPENDED' else "#f43f5e"))
-                        icon = {"PAID": "🟢", "PARTIAL": "🟡", "UNPAID": "🔴", "SUSPENDED": "⚫"}.get(raw_val, "⚪")
-                        html_grid_code += f"<td style='color:{s_color}; font-weight:bold;'>{icon} {escaped_val}</td>"
+                        s_color = "#10b981" if raw_val == 'PAID' else ("#f59e0b" if raw_val == 'PARTIAL' else "#f43f5e")
+                        html_grid_code += f"<td style='color:{s_color}; font-weight:bold;'>🟢 {escaped_val}</td>"
                     elif col in ['balanceshift']:
-                        if int(raw_val) < 0:
-                            html_grid_code += f"<td style='color:#10b981; font-weight:bold;'>CR Rs. {abs(int(raw_val))}</td>"
-                        else:
-                            html_grid_code += f"<td style='color:#f43f5e; font-weight:bold;'>Rs. {escaped_val}</td>"
+                        html_grid_code += f"<td style='color:#f43f5e; font-weight:bold;'>Rs. {escaped_val}</td>"
                     elif col in ['onuserialnumber']:
                         html_grid_code += f"<td style='color:#60a5fa; font-weight:bold;'>{escaped_val}</td>"
                     else:
@@ -641,7 +630,7 @@ elif routing_node == "👥 Operational Billing Center":
             resolved_uid = sub_map[target_label]
             node_row = df_matrix[df_matrix['username'] == resolved_uid].iloc[0]
             
-            st.info(f"📊 **Monthly Rate:** Rs. {node_row['billamount']} | **Arrears Balance:** Rs. {node_row['balanceshift']}")
+            st.info(f"📊 **Monthly Rate:** Rs. {node_row['billamount']} | **Arrears:** Rs. {node_row['balanceshift']}")
             
             billing_months = st.selectbox("📅 Select Billing Duration (Advance Months)", [1, 3, 6, 12])
             calculated_bill = int(node_row['billamount']) * billing_months
@@ -657,20 +646,16 @@ elif routing_node == "👥 Operational Billing Center":
                 cash_inflow = st.number_input("Liquid Capital Received (Rs.)", min_value=0, value=net_payable_after_discount)
                 
                 if st.form_submit_button("💳 POST TRANSACTION & EXTEND LINE", use_container_width=True):
-                    future_shift = net_payable_after_discount - cash_inflow
+                    future_shift = max(net_payable_after_discount - cash_inflow, 0)
                     
-                    if future_shift > 0:
-                        new_state = "PARTIAL" if cash_inflow > 0 else "UNPAID"
+                    if cash_inflow <= 0:
+                        new_state = "UNPAID"
+                    elif future_shift > 0:
+                        new_state = "PARTIAL"
                     else:
                         new_state = "PAID"
                         
-                    try:
-                        current_expiry = datetime.strptime(node_row['expirydate'], "%Y-%m-%d")
-                        base_date = datetime.now() if current_expiry < datetime.now() else current_expiry
-                    except Exception:
-                        base_date = datetime.now()
-                        
-                    new_expiry = (base_date + relativedelta(months=billing_months)).strftime("%Y-%m-%d")
+                    new_expiry = (datetime.now() + timedelta(days=billing_months * 30)).strftime("%Y-%m-%d")
                     invoice_uuid = f"INV-{uuid.uuid4().hex[:10].upper()}"
                     
                     with get_db_connection() as conn:
@@ -686,7 +671,7 @@ elif routing_node == "👥 Operational Billing Center":
                                 VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                             """, (
                                 invoice_uuid, 
-                                resolved_uid.strip().lower(), 
+                                resolved_uid, 
                                 node_row['customername'], 
                                 node_row['area'],
                                 node_row['phone'],
@@ -698,15 +683,14 @@ elif routing_node == "👥 Operational Billing Center":
                                 pay_method, 
                                 discount_value
                             ))
-                    st.success(f"🎉 Transaction Posted! Status: {new_state} | Remaining: Rs. {future_shift}")
-                    st.cache_data.clear()
+                    st.success(f"🎉 Transaction Posted Successfully! Status set to {new_state}")
                     st.rerun()
 
     current_tab_idx = 1
     if is_admin:
         with tabs[current_tab_idx]:
             with st.form("add_client_form_v50", clear_on_submit=True):
-                in_id = (st.text_input("Desired Username Key") or "").strip().lower()
+                in_id = (st.text_input("Desired Username Key") or "").strip()
                 in_name = (st.text_input("Customer Name") or "").strip()
                 in_phone = (st.text_input("Phone Number") or "").strip()
                 in_cnic = (st.text_input("CNIC Number") or "").strip()
@@ -726,16 +710,12 @@ elif routing_node == "👥 Operational Billing Center":
                                 if cursor.fetchone()[0] > 0: st.error("❌ Username exists!")
                                 else:
                                     default_expiry = (datetime.now() + timedelta(days=30)).strftime("%Y-%m-%d")
-                                    try:
-                                        cursor.execute("""
-                                            INSERT INTO customers (username, customername, phone, cnic, package, billamount, area, address, onuserialnumber, balanceshift, status, expirydate)
-                                            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                                        """, (in_id, in_name, norm_p, in_cnic, chosen_pkg, in_rate, in_area, in_address, in_sn, 0, "UNPAID", default_expiry))
-                                        st.success("✅ Added Profile Successfully!")
-                                        st.cache_data.clear()
-                                        st.rerun()
-                                    except psycopg2.IntegrityError:
-                                        st.error("❌ Phone Number already allocated to another customer node!")
+                                    cursor.execute("""
+                                        INSERT INTO customers (username, customername, phone, cnic, package, billamount, area, address, onuserialnumber, balanceshift, status, expirydate)
+                                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                                    """, (in_id, in_name, norm_p, in_cnic, chosen_pkg, in_rate, in_area, in_address, in_sn, 0, "UNPAID", default_expiry))
+                        st.success("✅ Added Profile Successfully!")
+                        st.rerun()
         current_tab_idx += 1
 
         with tabs[current_tab_idx]:
@@ -784,12 +764,14 @@ elif routing_node == "👥 Operational Billing Center":
                                         ))
                                         
                                         inserted_status = cursor.fetchone()
-                                        if inserted_status: success_count += 1
-                                        else: conflict_count += 1
+                                        if inserted_status:
+                                            success_count += 1
+                                        else:
+                                            conflict_count += 1
                                     except Exception:
                                         conflict_count += 1
-                        st.success(f"🎉 Sheets Saved Successfully! Saved: {success_count} | Duplicates Skipped: {conflict_count}")
-                        st.cache_data.clear()
+                                        pass
+                        st.success(f"🎉 Processed entries securely. Successfully Saved: {success_count} | Duplicates Skipped: {conflict_count}")
                         st.rerun()
                 except Exception as e: st.error(f"❌ Error during file alignment mapping: {e}")
         current_tab_idx += 1
@@ -836,29 +818,24 @@ elif routing_node == "👥 Operational Billing Center":
                 with col_e1:
                     if st.form_submit_button("💾 SAVE EDITS", use_container_width=True):
                         norm_phone = clean_and_validate_phone(up_phone)
-                        try:
-                            with get_db_connection() as conn:
-                                with conn.cursor() as cursor:
-                                    cursor.execute("""
-                                        UPDATE customers SET customername=%s, phone=%s, cnic=%s, package=%s, billamount=%s, area=%s, address=%s, onuserialnumber=%s, balanceshift=%s, expirydate=%s, status=%s
-                                        WHERE username=%s
-                                    """, (up_name, norm_phone, up_cnic, up_pkg, up_rate, up_area, up_address, up_sn, up_arrears, up_expiry, up_status, edit_uid))
-                            st.success("🎉 Changes Saved Successfully!")
-                            st.cache_data.clear()
-                            st.rerun()
-                        except psycopg2.IntegrityError:
-                            st.error("❌ Phone update rejected! This phone sequence is unique and mapped to another customer asset.")
+                        with get_db_connection() as conn:
+                            with conn.cursor() as cursor:
+                                cursor.execute("""
+                                    UPDATE customers SET customername=%s, phone=%s, cnic=%s, package=%s, billamount=%s, area=%s, address=%s, onuserialnumber=%s, balanceshift=%s, expirydate=%s, status=%s
+                                    WHERE username=%s
+                                """, (up_name, norm_phone, up_cnic, up_pkg, up_rate, up_area, up_address, up_sn, up_arrears, up_expiry, up_status, edit_uid))
+                        st.success("🎉 Changes Saved Successfully!")
+                        st.rerun()
                 with col_e2:
                     if st.form_submit_button("🚨 PERMANENTLY WIPE CLIENT", use_container_width=True, disabled=not is_admin):
                         with get_db_connection() as conn:
                             with conn.cursor() as cursor: 
                                 cursor.execute("DELETE FROM customers WHERE username=%s", (edit_uid,))
                         st.warning("Client Wiped! History data remains safe.")
-                        st.cache_data.clear()
                         st.rerun()
 
 # ==========================================
-# VIEW 3: LIFETIME LEDGER HISTORY
+# VIEW 3: LIFETIME LEDGER HISTORY (FIXED DELETIONS)
 # ==========================================
 elif routing_node == "📜 Lifetime Ledger History":
     st.markdown("<div class='main-title'>📜 ACCOUNT LEDGER METRICS & AUDIT TRAIL</div>", unsafe_allow_html=True)
@@ -872,7 +849,7 @@ elif routing_node == "📜 Lifetime Ledger History":
     else:
         df_ledger.columns = [c.lower() for c in df_ledger.columns]
         
-        df_ledger['datetime'] = pd.to_datetime(df_ledger['datetimestamp'].astype(str), errors='coerce')
+        df_ledger['datetime'] = pd.to_datetime(df_ledger['datetimestamp'], errors='coerce')
         df_ledger['Month'] = df_ledger['datetime'].dt.strftime('%Y-%m')
         df_ledger['Year'] = df_ledger['datetime'].dt.strftime('%Y')
         
@@ -912,21 +889,8 @@ elif routing_node == "📜 Lifetime Ledger History":
         st.write("---")
         st.markdown("### 📋 Complete Master Ledger Sheet (Excel Row View)")
         
-        # FIXED: Added dynamic checking to prevent 'KeyError: area not in index' if columns vary
-        required_cols = ['invoiceid', 'customerid', 'customername', 'area', 'datetimestamp', 'currentpackage', 'discountgiven', 'amountpaid', 'paymentmethod', 'remainingarrears']
-        available_cols = [col for col in required_cols if col in filtered_ledger.columns]
-        
-        excel_sheet_df = filtered_ledger[available_cols].copy()
-        
-        # Friendly Rename Mappings only for columns that exist
-        rename_dict = {
-            'invoiceid': 'Invoice ID', 'customerid': 'Username Key', 'customername': 'Subscriber Name',
-            'area': 'Hub Area', 'datetimestamp': 'Timestamp Log', 'currentpackage': 'Package Detail',
-            'discountgiven': 'Discount (Rs)', 'amountpaid': 'Amount Received (Rs)',
-            'paymentmethod': 'Gateway Channel', 'remainingarrears': 'Arrears Balance Outcome'
-        }
-        current_rename = {k: v for k, v in rename_dict.items() if k in available_cols}
-        excel_sheet_df.rename(columns=current_rename, inplace=True)
+        excel_sheet_df = filtered_ledger[['invoiceid', 'customerid', 'customername', 'area', 'datetimestamp', 'currentpackage', 'discountgiven', 'amountpaid', 'paymentmethod', 'remainingarrears']]
+        excel_sheet_df.columns = ['Invoice ID', 'Username Key', 'Subscriber Name', 'Hub Area', 'Timestamp Log', 'Package Detail', 'Discount (Rs)', 'Amount Received (Rs)', 'Gateway Channel', 'Remaining Arrears Account']
         
         buffer = io.BytesIO()
         with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
@@ -959,7 +923,7 @@ elif routing_node == "🔐 System Access Control":
         with adm_tab1:
             st.markdown("### 👑 Master Database Schema Engineering")
             st.markdown("#### 🚨 Database Structural Purge Engine")
-            st.info("Agar aapka schema length aage piche hai, to is button ko dabayein. Purana data backup ho kar new scheme me safely update ho jayega.")
+            st.info("Agar aapka schema length aage piche hai, to is button ko dabayein. Purana data backup ho kar new 2026 scheme me safely update ho jayega.")
             
             if st.button("🚨 FORCE CLEAN & PURGE LIVE DATABASE STRUCTURE", use_container_width=True):
                 try:
@@ -996,7 +960,6 @@ elif routing_node == "🔐 System Access Control":
                                     VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                                 """, row)
                     st.success("🚀 System fully rebuilt successfully! Safe backup snapshot preserved inside 'customers_backup' table.")
-                    st.cache_data.clear()
                     st.rerun()
                 except Exception as ex:
                     st.error(f"Sync Failure Engine: {ex}")
@@ -1004,6 +967,7 @@ elif routing_node == "🔐 System Access Control":
             st.write("---")
             st.markdown("#### 🔄 Fixed Columns Layout Rule Mapped across ERP:")
             st.write(" ➡️ ".join([f"`{c.upper()}`" for c in GLOBAL_TARGET_ORDER]))
+            st.success("🔒 System Sequence Mismatch Protection is fully locked on target columns hierarchy.")
 
         with adm_tab2:
             with st.form("new_admin_form"):
@@ -1014,11 +978,10 @@ elif routing_node == "🔐 System Access Control":
                 if st.form_submit_button("➕ Create Admin", use_container_width=True):
                     if not new_admin_user or not new_admin_pass: st.error("❌ Entries blank.")
                     else:
-                        hashed_admin_pwd = hash_password(new_admin_pass)
                         with get_db_connection() as conn:
                             with conn.cursor() as cursor:
                                 try:
-                                    cursor.execute("INSERT INTO users VALUES (%s, %s, 'Admin', 'ALL')", (new_admin_user, hashed_admin_pwd))
+                                    cursor.execute("INSERT INTO users VALUES (%s, %s, 'Admin', 'ALL')", (new_admin_user, new_admin_pass))
                                     st.success(f"✅ New Admin '{new_admin_user}' created successfully!")
                                 except psycopg2.IntegrityError: st.error("❌ Username already exists!")
 
@@ -1032,18 +995,17 @@ elif routing_node == "🔐 System Access Control":
                 if st.form_submit_button("🚀 Add Staff Account & Lock Area", use_container_width=True):
                     if not new_user or not new_pass: st.error("❌ Blank entries not allowed.")
                     else:
-                        hashed_staff_pwd = hash_password(new_pass)
                         with get_db_connection() as conn:
                             with conn.cursor() as cursor:
                                 try:
-                                    cursor.execute("INSERT INTO users VALUES (%s, %s, 'Staff', %s)", (new_user, hashed_staff_pwd, new_area_lock))
+                                    cursor.execute("INSERT INTO users VALUES (%s, %s, 'Staff', %s)", (new_user, new_pass, new_area_lock))
                                     st.success(f"✅ Staff '{new_user}' Created!")
                                 except psycopg2.IntegrityError: st.error("❌ Username already exists!")
                                 
             st.write("---")
             st.markdown("### 📋 All Registered Accounts")
             with get_db_connection() as conn:
-                users_df = pd.read_sql_query("SELECT Username, Role, AssignedArea FROM users", conn)
+                users_df = pd.read_sql_query("SELECT Username, Password, Role, AssignedArea FROM users", conn)
             st.dataframe(users_df, use_container_width=True, hide_index=True)
 
         with adm_tab3:
@@ -1094,11 +1056,10 @@ elif routing_node == "🔐 System Access Control":
                 if st.form_submit_button("🔒 Securely Update Admin Profile", use_container_width=True):
                     if not up_admin_user or not up_admin_pass: st.error("❌ Credentials blank.")
                     else:
-                        hashed_new_admin_pwd = hash_password(up_admin_pass)
                         with get_db_connection() as conn:
                             with conn.cursor() as cursor:
                                 cursor.execute("DELETE FROM users WHERE Username = %s", (current_admin_user,))
-                                cursor.execute("INSERT INTO users VALUES (%s, %s, 'Admin', 'ALL')", (up_admin_user, hashed_new_admin_pwd))
+                                cursor.execute("INSERT INTO users VALUES (%s, %s, 'Admin', 'ALL')", (up_admin_user, up_admin_pass))
                         st.success("Updated Successfully!")
                         st.session_state['authenticated'] = False
                         st.rerun()
