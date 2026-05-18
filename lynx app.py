@@ -180,8 +180,7 @@ try:
     DB_URL = st.secrets["DB_URL"]
 except Exception:
     encoded_pass = urllib.parse.quote_plus("cMSUKBCwAy6dyGPr")
-    DB_URL = f"postgresql://postgres.ehykfrzymkzlxzkhxlww:{encoded_pass}@aws-1-ap-southeast-1.pooler.supabase.com:6543/postgres?sslmode=require"
-
+postgresql://postgres.ehykfrzymkzlxzkhxlww:[YOUR-PASSWORD]@aws-1-ap-southeast-1.pooler.supabase.com:6543/postgres
 @contextmanager
 def get_db_connection():
     conn = None
