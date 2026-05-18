@@ -41,24 +41,11 @@ if 'portal_mode' not in st.session_state:
 if 'column_order' not in st.session_state:
     st.session_state['column_order'] = []
 
-# DEFINED TARGET STRUCTURE ORDER AS PER USER REQUIREMENT
-GLOBAL_TARGET_ORDER = [
-    "username",
-    "customername",
-    "phone",
-    "cnic",
-    "package",
-    "billamount",
-    "area",
-    "address",
-    "onuserialnumber"
-]
-
 # ==========================================
 # 2. CORE THEME & PREMIUM MOBILE CSS ENGINE
 # ==========================================
 st.set_page_config(
-    page_title="LYNX Fiber Enterprise ERP v54.1", 
+    page_title="LYNX Fiber Enterprise ERP v54.0", 
     layout="wide",
     initial_sidebar_state="expanded"
 )
@@ -203,6 +190,7 @@ def get_db_connection():
         yield conn
     except Exception as e:
         st.error(f"🔴 Critical Database Connection Error: {e}")
+        st.info("💡 Pro-Tip: Make sure your internet connection is live and your Supabase database is active.")
         st.stop()
     finally:
         if conn is not None:
@@ -218,18 +206,18 @@ def build_database_schema():
             """)
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS customers (
-                    username TEXT PRIMARY KEY,
+                    customerid TEXT PRIMARY KEY,
                     customername TEXT NOT NULL,
                     phone TEXT UNIQUE NOT NULL,
-                    cnic TEXT DEFAULT '',
+                    area TEXT NOT NULL,
                     package TEXT NOT NULL,
                     billamount INTEGER NOT NULL CHECK(billamount >= 0),
-                    area TEXT NOT NULL,
+                    balanceshift INTEGER NOT NULL CHECK(balanceshift >= 0),
+                    status TEXT NOT NULL CHECK(status IN ('PAID','PARTIAL','UNPAID','SUSPENDED')),
+                    expirydate TEXT NOT NULL,
+                    cnic TEXT DEFAULT '',
                     address TEXT DEFAULT '',
-                    onuserialnumber TEXT DEFAULT '',
-                    balanceshift INTEGER NOT NULL DEFAULT 0,
-                    status TEXT NOT NULL DEFAULT 'UNPAID',
-                    expirydate TEXT NOT NULL
+                    onu_sn TEXT DEFAULT ''
                 )
             """)
             cursor.execute("""
@@ -244,6 +232,15 @@ def build_database_schema():
                     SettingValue TEXT NOT NULL
                 )
             """)
+            
+            # Safe structural verification
+            cursor.execute("SELECT column_name FROM information_schema.columns WHERE table_name='customers' AND column_name='cnic'")
+            if not cursor.fetchone(): cursor.execute("ALTER TABLE customers ADD COLUMN cnic TEXT DEFAULT ''")
+            cursor.execute("SELECT column_name FROM information_schema.columns WHERE table_name='customers' AND column_name='address'")
+            if not cursor.fetchone(): cursor.execute("ALTER TABLE customers ADD COLUMN address TEXT DEFAULT ''")
+            cursor.execute("SELECT column_name FROM information_schema.columns WHERE table_name='customers' AND column_name='onu_sn'")
+            if not cursor.fetchone(): cursor.execute("ALTER TABLE customers ADD COLUMN onu_sn TEXT DEFAULT ''")
+                
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS users (
                     Username TEXT PRIMARY KEY,
@@ -253,14 +250,11 @@ def build_database_schema():
                 )
             """)
             
-            # ISSUE 2 FIX: Updated billing_history Schema with permanent columns to prevent history break
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS billing_history (
                     InvoiceID TEXT PRIMARY KEY,
                     CustomerID TEXT NOT NULL,
                     CustomerName TEXT NOT NULL,
-                    Area TEXT NOT NULL,
-                    Phone TEXT,
                     DateTimestamp TEXT NOT NULL,
                     CurrentPackage TEXT NOT NULL,
                     AmountPaid INTEGER NOT NULL CHECK(AmountPaid >= 0),
@@ -289,26 +283,37 @@ def build_database_schema():
                 
             cursor.execute("SELECT COUNT(*) FROM customers")
             if cursor.fetchone()[0] == 0:
-                default_expiry = (datetime.now() + timedelta(days=30)).strftime("%Y-%m-%d")
                 dummy_data = [
-                    ('ghafoor01', 'Abdul Ghafoor', '03465803040', '37301-1102406-3', '15 Mbps Fiber', 1500, 'Sanghoi System', 'Sanghoi Main Bazar', 'HWTC5B11296B', 0, 'PAID', default_expiry),
-                    ('khalid02', 'Abdul Khalid', '03404195974', '37301-5851107-9', '15 Mbps Fiber', 1500, 'Sanghoi System', 'Sanghoi Street 2', 'HWTCB2DA489C', 500, 'PARTIAL', default_expiry),
-                    ('majeed03', 'Abdul Majeed', '03359565963', '37301-5718164-9', '15 Mbps Fiber', 1500, 'Sanghoi System', 'Near Grid Station', 'HWTC99AA211A', 1500, 'UNPAID', default_expiry)
+                    ('37301-1102406-3', 'Abdul Ghafoor', '03465803040', 'Sanghoi System', '15 Mbps Fiber', 1500, 0, 'PAID', '2026-06-01', '37301-1102406-3', 'Sanghoi Main Bazar', 'HWTC5B11296B'),
+                    ('37301-5851107-9', 'Abdul Khalid', '03404195974', 'Sanghoi System', '15 Mbps Fiber', 1500, 500, 'PARTIAL', '2026-06-01', '37301-5851107-9', 'Sanghoi Street 2', 'HWTCB2DA489C'),
+                    ('37301-5718164-9', 'Abdul Majeed', '03359565963', 'Sanghoi System', '15 Mbps Fiber', 1500, 1500, 'UNPAID', '2026-06-01', '37301-5718164-9', 'Near Grid Station', 'HWTC99AA211A'),
+                    ('37301-0142613-5', 'Abdul Raheem', '03466104026', 'Saeela System', '15 Mbps Fiber', 1500, 0, 'PAID', '2026-06-01', '37301-0142613-5', 'Saeela Chowk', 'HWTC88BB334C'),
+                    ('37301-2238514-0', 'Abdul Razzaq 2', '03216362487', 'Saeela System', '15 Mbps Fiber', 1500, 1500, 'UNPAID', '2026-06-01', '37301-2238514-0', 'Saeela North', 'HWTC77CC445E'),
                 ]
                 for row in dummy_data:
                     cursor.execute("""
-                        INSERT INTO customers (username, customername, phone, cnic, package, billamount, area, address, onuserialnumber, balanceshift, status, expirydate)
-                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) ON CONFLICT (username) DO NOTHING
+                        INSERT INTO customers (customerid, customername, phone, area, package, billamount, balanceshift, status, expirydate, cnic, address, onu_sn)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) ON CONFLICT (customerid) DO NOTHING
                     """, row)
+                
+                cursor.execute("""
+                    INSERT INTO billing_history (InvoiceID, CustomerID, CustomerName, DateTimestamp, CurrentPackage, AmountPaid, RemainingArrears, TransactionType, PaymentMethod, DiscountGiven)
+                    VALUES ('INV-0010A', '37301-1102406-3', 'Abdul Ghafoor', '2026-05-15 10:00:00', '15 Mbps Fiber', 1500, 0, 'BILL_PAYMENT', 'CASH', 0)
+                    ON CONFLICT (InvoiceID) DO NOTHING
+                """)
         conn.commit()
 
 try:
     build_database_schema()
 except Exception as e:
-    st.error(f"Schema Builder Failed: {e}")
+    st.error(f"Initial Schema Builder Failed: {e}")
 
 def get_db_columns():
-    return GLOBAL_TARGET_ORDER
+    with get_db_connection() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute("SELECT column_name FROM information_schema.columns WHERE table_name='customers'")
+            cols = [r[0].lower() for r in cursor.fetchall()]
+    return cols
 
 def save_column_order(order_list):
     val = ",".join([c.lower() for c in order_list])
@@ -321,20 +326,29 @@ def save_column_order(order_list):
         conn.commit()
 
 def load_column_order():
-    return GLOBAL_TARGET_ORDER
+    with get_db_connection() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute("SELECT SettingValue FROM app_settings WHERE SettingKey='col_order'")
+            res = cursor.fetchone()
+    if res and res[0]:
+        return [c.lower() for c in res[0].split(",") if c]
+    return get_db_columns()
 
+# Initial Order Initialization
 if not st.session_state['column_order']:
-    st.session_state['column_order'] = GLOBAL_TARGET_ORDER
+    st.session_state['column_order'] = load_column_order()
 
 def fetch_live_matrix():
     try:
+        current_cols = get_db_columns()
         with get_db_connection() as conn:
             df = pd.read_sql_query("SELECT * FROM customers ORDER BY customername ASC", conn)
         if not df.empty:
             df.columns = [c.lower() for c in df.columns]
-            extended_cols = GLOBAL_TARGET_ORDER + [c for c in df.columns if c not in GLOBAL_TARGET_ORDER]
-            return df.reindex(columns=extended_cols)
-        return pd.DataFrame(columns=GLOBAL_TARGET_ORDER + ['balanceshift', 'status', 'expirydate'])
+            saved_order = load_column_order()
+            valid_order = [c for c in saved_order if c in df.columns] + [c for c in df.columns if c not in saved_order]
+            return df[valid_order]
+        return pd.DataFrame(columns=current_cols)
     except Exception:
         return pd.DataFrame()
 
@@ -382,7 +396,7 @@ else:
     if not st.session_state['authenticated']:
         st.markdown("<div class='front-login-box'>", unsafe_allow_html=True)
         st.markdown("<h2 style='text-align:center; color:#10b981; font-weight:900; margin-bottom:5px;'>LYNX FIBER NET</h2>", unsafe_allow_html=True)
-        st.markdown("<p style='text-align:center; color:#9ca3af; margin-bottom:30px;'>Enterprise ERP System v54.1 (Cloud Master Mode)</p>", unsafe_allow_html=True)
+        st.markdown("<p style='text-align:center; color:#9ca3af; margin-bottom:30px;'>Enterprise ERP System v54.0 (Cloud Master Mode)</p>", unsafe_allow_html=True)
         
         user_input = (st.text_input("Username Key", key="front_user") or "").strip().lower()
         pass_input = st.text_input("Security Password", type="password", key="front_pass")
@@ -455,17 +469,10 @@ if routing_node == "📊 Core Analytics Dashboard":
     if df_matrix.empty:
         st.warning("⚠️ Operational Database is currently empty.")
     else:
-        # ISSUE 1 FIX: Load and filter database calculations for current month ONLY
         with get_db_connection() as conn:
-            df_hist_calc = pd.read_sql_query("SELECT CustomerID, AmountPaid, DateTimestamp FROM billing_history", conn)
+            df_hist_calc = pd.read_sql_query("SELECT customerid, amountpaid FROM billing_history", conn)
             if not df_hist_calc.empty:
-                df_hist_calc.columns = ["customerid", "amountpaid", "datetimestamp"]
-                df_hist_calc['customerid'] = df_hist_calc['customerid'].astype(str).str.lower().str.strip()
-                df_hist_calc['datetimestamp'] = pd.to_datetime(df_hist_calc['datetimestamp'], errors='coerce')
-                
-                # Apply current month constraint
-                current_month_str = datetime.now().strftime("%Y-%m")
-                df_hist_calc = df_hist_calc[df_hist_calc['datetimestamp'].dt.strftime("%Y-%m") == current_month_str]
+                df_hist_calc.columns = ["customerid", "amountpaid"]
             
         st.markdown("### 🌐 Active System Node Overview")
         for i in range(0, len(all_system_areas), 2):
@@ -473,23 +480,16 @@ if routing_node == "📊 Core Analytics Dashboard":
             for j in range(2):
                 if i + j < len(all_system_areas):
                     current_hub = all_system_areas[i + j]
-                    segment = df_matrix[df_matrix['area'].str.lower() == current_hub.lower()]
+                    segment = df_matrix[df_matrix['area'] == current_hub]
                     
                     hub_bill = segment['billamount'].sum()
                     hub_arrears = segment['balanceshift'].sum()
                     
-                    # ISSUE 7 FIX: Separating partial and unpaid metrics into independent states
                     hub_paid_count = len(segment[segment['status'] == 'PAID'])
-                    hub_partial_count = len(segment[segment['status'] == 'PARTIAL'])
-                    hub_unpaid_count = len(segment[segment['status'] == 'UNPAID'])
-                    hub_suspended_count = len(segment[segment['status'] == 'SUSPENDED'])
+                    hub_unpaid_count = len(segment[segment['status'].isin(['UNPAID', 'PARTIAL', 'SUSPENDED'])])
                     
-                    hub_uids = [str(x).lower().strip() for x in segment['username'].tolist()]
-                    
-                    if not df_hist_calc.empty:
-                        hub_collected = df_hist_calc[df_hist_calc['customerid'].isin(hub_uids)]['amountpaid'].sum()
-                    else:
-                        hub_collected = 0
+                    hub_uids = segment['customerid'].tolist()
+                    hub_collected = df_hist_calc[df_hist_calc['customerid'].isin(hub_uids)]['amountpaid'].sum() if not df_hist_calc.empty else 0
                     
                     b_color = "#10b981" if (i+j)%2 == 0 else "#3b82f6"
                     
@@ -499,9 +499,8 @@ if routing_node == "📊 Core Analytics Dashboard":
                             <h4>🌐 {current_hub} Overview</h4>
                             <p><b>Total Customers Registered:</b> {len(segment)}</p>
                             <p><b>Total Expected Revenue:</b> Rs. {hub_bill:,}</p>
-                            <p style="color:#10b981; font-weight:bold;"><b>✅ Paid Customers:</b> {hub_paid_count} (Received This Month: Rs. {hub_collected:,})</p>
-                            <p style="color:#f59e0b; font-weight:bold;"><b>🟡 Partial Accounts:</b> {hub_partial_count}</p>
-                            <p style="color:#f43f5e; font-weight:bold;"><b>❌ Unpaid / Suspended:</b> {hub_unpaid_count} / {hub_suspended_count}</p>
+                            <p style="color:#10b981; font-weight:bold;"><b>✅ Paid Customers:</b> {hub_paid_count} (Received: Rs. {hub_collected:,})</p>
+                            <p style="color:#f43f5e; font-weight:bold;"><b>❌ Unpaid/Arrears Customers:</b> {hub_unpaid_count}</p>
                             <p style="color:#f43f5e; font-weight:500;"><b>⚠️ Outstanding Arrears Risk:</b> Rs. {hub_arrears:,}</p>
                         </div>
                         """, unsafe_allow_html=True)
@@ -510,13 +509,13 @@ if routing_node == "📊 Core Analytics Dashboard":
         
         base_df = df_matrix.copy()
         if st.session_state['assigned_area'] != "ALL":
-            base_df = base_df[base_df['area'].str.lower() == st.session_state['assigned_area'].lower()]
+            base_df = base_df[base_df['area'] == st.session_state['assigned_area']]
             st.info(f"🔒 Secure Mode: Only showing data for **{st.session_state['assigned_area']}**")
         else:
             filter_options = ["ALL SYSTEMS"] + all_system_areas
             system_filter = st.selectbox("🌐 Operational Area System Filter", filter_options)
             if system_filter != "ALL SYSTEMS":
-                base_df = base_df[base_df['area'].str.lower() == system_filter.lower()]
+                base_df = base_df[base_df['area'] == system_filter]
 
         if base_df.empty: 
             st.warning("⚠️ No records found in this system segment.")
@@ -552,13 +551,13 @@ if routing_node == "📊 Core Analytics Dashboard":
             elif st.session_state['dashboard_filter'] == "SUSPENDED":
                 analysis_df = analysis_df[analysis_df['status'] == 'SUSPENDED']
 
-            search_query = st.text_input("🔍 Fast Find Subscriber (Structured Columns Row Analyzer)")
+            search_query = st.text_input("🔍 Fast Find Subscriber (Dynamic Columns Search Enabled)")
             if search_query:
                 clean_q = search_query.lower().strip()
                 search_blob = analysis_df.astype(str).apply(lambda row: ' '.join(row).lower(), axis=1)
                 analysis_df = analysis_df[search_blob.str.contains(clean_q, regex=False)].copy()
 
-            custom_order_cols = GLOBAL_TARGET_ORDER + ['balanceshift', 'status', 'expirydate']
+            custom_order_cols = load_column_order()
             
             html_grid_code = """<div class="table-wrapper"><table class="premium-table"><tr>"""
             for col in custom_order_cols:
@@ -587,14 +586,14 @@ if routing_node == "📊 Core Analytics Dashboard":
                     raw_val = row_dict.get(col, '')
                     escaped_val = html.escape(str(raw_val))
                     
-                    if col in ['username']:
+                    if col in ['customerid', 'username']:
                         html_grid_code += f"<td><b>{escaped_val}</b></td>"
                     elif col in ['status']:
                         s_color = "#10b981" if raw_val == 'PAID' else ("#f59e0b" if raw_val == 'PARTIAL' else "#f43f5e")
                         html_grid_code += f"<td style='color:{s_color}; font-weight:bold;'>🟢 {escaped_val}</td>"
-                    elif col in ['balanceshift']:
+                    elif col in ['balanceshift', 'arrears']:
                         html_grid_code += f"<td style='color:#f43f5e; font-weight:bold;'>Rs. {escaped_val}</td>"
-                    elif col in ['onuserialnumber']:
+                    elif col in ['onu_sn', 'sn']:
                         html_grid_code += f"<td style='color:#60a5fa; font-weight:bold;'>{escaped_val}</td>"
                     else:
                         html_grid_code += f"<td>{escaped_val}</td>"
@@ -615,7 +614,7 @@ elif routing_node == "👥 Operational Billing Center":
     is_admin = (st.session_state['user_role'] == "Admin")
     
     if st.session_state['assigned_area'] != "ALL":
-        df_matrix = df_matrix[df_matrix['area'].str.lower() == st.session_state['assigned_area'].lower()]
+        df_matrix = df_matrix[df_matrix['area'] == st.session_state['assigned_area']]
         
     tabs_list = ["💳 Capital Collection Hub", "🛠️ Edit Terminal Profile"]
     if is_admin:
@@ -623,7 +622,7 @@ elif routing_node == "👥 Operational Billing Center":
         tabs_list.insert(2, "📥 Bulk Import Excel/CSV")
         
     tabs = st.tabs(tabs_list)
-    sub_map = {f"[{row.username}] - {row.customername} ({row.phone})" : row.username for row in df_matrix.itertuples(index=False)}
+    sub_map = {f"[{row.customerid}] - {row.customername} ({row.phone})" : row.customerid for row in df_matrix.itertuples(index=False)}
     
     with tabs[0]:
         if not sub_map: 
@@ -631,7 +630,7 @@ elif routing_node == "👥 Operational Billing Center":
         else:
             target_label = st.selectbox("Select Target Subscriber Username", list(sub_map.keys()))
             resolved_uid = sub_map[target_label]
-            node_row = df_matrix[df_matrix['username'] == resolved_uid].iloc[0]
+            node_row = df_matrix[df_matrix['customerid'] == resolved_uid].iloc[0]
             
             st.info(f"📊 **Monthly Rate:** Rs. {node_row['billamount']} | **Arrears:** Rs. {node_row['balanceshift']}")
             
@@ -650,60 +649,38 @@ elif routing_node == "👥 Operational Billing Center":
                 
                 if st.form_submit_button("💳 POST TRANSACTION & EXTEND LINE", use_container_width=True):
                     future_shift = max(net_payable_after_discount - cash_inflow, 0)
-                    
-                    # ISSUE 6 FIX: Advanced Engine Logic for Core Restoration
-                    if cash_inflow <= 0:
-                        new_state = "UNPAID"
-                    elif future_shift > 0:
-                        new_state = "PARTIAL"
-                    else:
-                        new_state = "PAID"
-                        
+                    new_state = "UNPAID" if cash_inflow <= 0 else ("PAID" if future_shift == 0 else "PARTIAL")
                     new_expiry = (datetime.now() + timedelta(days=billing_months * 30)).strftime("%Y-%m-%d")
                     invoice_uuid = f"INV-{uuid.uuid4().hex[:10].upper()}"
                     
                     with get_db_connection() as conn:
                         with conn.cursor() as cursor:
-                            cursor.execute(f"UPDATE customers SET balanceshift = %s, status = %s, expirydate = %s WHERE username = %s", (future_shift, new_state, new_expiry, resolved_uid))
-                            
-                            # ISSUE 2 FIX: Complete permanent row injection inside history to protect ledger integrity
+                            cursor.execute(f"UPDATE customers SET balanceshift = %s, status = %s, expirydate = %s WHERE customerid = %s", (future_shift, new_state, new_expiry, resolved_uid))
                             cursor.execute("""
-                                INSERT INTO billing_history (
-                                    InvoiceID, CustomerID, CustomerName, Area, Phone, DateTimestamp, 
-                                    CurrentPackage, AmountPaid, RemainingArrears, TransactionType, 
-                                    PaymentMethod, DiscountGiven
-                                )
-                                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                            """, (
-                                invoice_uuid, 
-                                resolved_uid, 
-                                node_row['customername'], 
-                                node_row['area'],
-                                node_row['phone'],
-                                datetime.now().strftime("%Y-%m-%d %H:%M:%S"), 
-                                f"{node_row['package']} ({billing_months}M Advance)", 
-                                cash_inflow, 
-                                future_shift, 
-                                "BILL_PAYMENT", 
-                                pay_method, 
-                                discount_value
-                            ))
-                    st.success(f"🎉 Transaction Posted Successfully! Status set to {new_state}")
+                                INSERT INTO billing_history (InvoiceID, CustomerID, CustomerName, DateTimestamp, CurrentPackage, AmountPaid, RemainingArrears, TransactionType, PaymentMethod, DiscountGiven)
+                                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                            """, (invoice_uuid, resolved_uid, node_row['customername'], datetime.now().strftime("%Y-%m-%d %H:%M:%S"), f"{node_row['package']} ({billing_months}M Advance)", cash_inflow, future_shift, "BILL_PAYMENT", pay_method, discount_value))
+                    st.success(f"🎉 Transaction Posted Successfully!")
                     st.rerun()
 
     current_tab_idx = 1
     if is_admin:
         with tabs[current_tab_idx]:
             with st.form("add_client_form_v50", clear_on_submit=True):
-                in_id = (st.text_input("Desired Username Key") or "").strip()
-                in_name = (st.text_input("Customer Name") or "").strip()
-                in_phone = (st.text_input("Phone Number") or "").strip()
-                in_cnic = (st.text_input("CNIC Number") or "").strip()
-                chosen_pkg = st.selectbox("Select Package Plan Profile", list(pkg_dict.keys()))
-                in_rate = st.number_input("Bill Amount Rate (Rs.)", min_value=0, value=pkg_dict[chosen_pkg])
-                in_area = st.selectbox("Area Hub Location", all_system_areas)
-                in_address = (st.text_input("Address") or "").strip()
-                in_sn = (st.text_input("Onu SN (Serial)") or "").strip()
+                in_id = (st.text_input("Desired Username/CustomerID") or "").strip()
+                in_name = (st.text_input("Full Owner Name") or "").strip()
+                in_phone = (st.text_input("Mobile Contact") or "").strip()
+                in_area = st.selectbox("System Area Hub", all_system_areas)
+                chosen_pkg = st.selectbox("Select Bandwidth Plan Profile", list(pkg_dict.keys()))
+                in_rate = st.number_input("Monthly Rate (Rs.)", min_value=0, value=pkg_dict[chosen_pkg])
+                
+                dynamic_inputs = {}
+                all_current_cols = get_db_columns()
+                core_fields = ['customerid', 'customername', 'phone', 'area', 'package', 'billamount', 'balanceshift', 'status', 'expirydate']
+                
+                for col in all_current_cols:
+                    if col not in core_fields:
+                        dynamic_inputs[col] = st.text_input(f"Enter {col.upper()} metadata field").strip()
                 
                 if st.form_submit_button("➕ WRITE PROFILE TO DATABASE", use_container_width=True):
                     norm_p = clean_and_validate_phone(in_phone)
@@ -711,14 +688,18 @@ elif routing_node == "👥 Operational Billing Center":
                     else:
                         with get_db_connection() as conn:
                             with conn.cursor() as cursor:
-                                cursor.execute(f"SELECT COUNT(*) FROM customers WHERE username = %s", (in_id,))
+                                cursor.execute(f"SELECT COUNT(*) FROM customers WHERE customerid = %s", (in_id,))
                                 if cursor.fetchone()[0] > 0: st.error("❌ Username exists!")
                                 else:
                                     default_expiry = (datetime.now() + timedelta(days=30)).strftime("%Y-%m-%d")
-                                    cursor.execute("""
-                                        INSERT INTO customers (username, customername, phone, cnic, package, billamount, area, address, onuserialnumber, balanceshift, status, expirydate)
-                                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                                    """, (in_id, in_name, norm_p, in_cnic, chosen_pkg, in_rate, in_area, in_address, in_sn, 0, "UNPAID", default_expiry))
+                                    
+                                    insert_cols = ['customerid', 'customername', 'phone', 'area', 'package', 'billamount', 'balanceshift', 'status', 'expirydate'] + list(dynamic_inputs.keys())
+                                    insert_vals = [in_id, in_name, norm_p, in_area, chosen_pkg, in_rate, 0, "UNPAID", default_expiry] + list(dynamic_inputs.values())
+                                    
+                                    placeholders = ", ".join(["%s"] * len(insert_vals))
+                                    columns_str = ", ".join(insert_cols)
+                                    
+                                    cursor.execute(f"INSERT INTO customers ({columns_str}) VALUES ({placeholders})", insert_vals)
                         st.success("✅ Added Profile Successfully!")
                         st.rerun()
         current_tab_idx += 1
@@ -732,52 +713,48 @@ elif routing_node == "👥 Operational Billing Center":
                     st.dataframe(import_df.head(10), use_container_width=True)
                     if st.button("⚡ Save All Sheet Data to Database", use_container_width=True):
                         success_count = 0
-                        conflict_count = 0
                         default_expiry = (datetime.now() + timedelta(days=30)).strftime("%Y-%m-%d")
                         
+                        db_cols = get_db_columns()
                         with get_db_connection() as conn:
                             with conn.cursor() as cursor:
                                 for index, row in import_df.iterrows():
                                     try:
                                         row_dict = {str(k).lower().strip(): v for k, v in row.to_dict().items()}
                                         
-                                        uid = str(row_dict.get('username', '')).strip().lower()
-                                        cname = str(row_dict.get('customername', row_dict.get('name', ''))).strip()
+                                        cid = str(row_dict.get('customerid', '')).strip()
+                                        cname = str(row_dict.get('customername', '')).strip()
                                         cphone = clean_and_validate_phone(str(row_dict.get('phone', '')))
                                         
-                                        if not uid or not cname: continue
+                                        if not cid or not cname: continue
                                         
+                                        col_names = ['customerid', 'customername', 'phone', 'area', 'package', 'billamount', 'balanceshift', 'status', 'expirydate']
+                                        
+                                        # Safe type casting to avoid DB strict validation failure
                                         try:
                                             b_amt = int(float(row_dict.get('billamount', 1500)))
                                         except:
                                             b_amt = 1500
                                             
-                                        # ISSUE 5 FIX: ON CONFLICT DO NOTHING with RETURNING clause verification
-                                        cursor.execute("""
-                                            INSERT INTO customers (username, customername, phone, cnic, package, billamount, area, address, onuserialnumber, balanceshift, status, expirydate)
-                                            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, 0, 'UNPAID', %s)
-                                            ON CONFLICT (username) DO NOTHING
-                                            RETURNING username
-                                        """, (
-                                            uid, cname, cphone, 
-                                            str(row_dict.get('cnic', '')).strip(),
-                                            str(row_dict.get('package', '15 Mbps Fiber')).strip(),
-                                            b_amt,
-                                            str(row_dict.get('area', 'Main Hub')).strip(),
-                                            str(row_dict.get('address', '')).strip(),
-                                            str(row_dict.get('onuserialnumber', row_dict.get('onu_sn', ''))).strip(),
-                                            default_expiry
-                                        ))
+                                        val_list = [
+                                            cid, cname, cphone, 
+                                            str(row_dict.get('area', 'Main Hub')).strip(), 
+                                            str(row_dict.get('package', '15 Mbps Fiber')).strip(), 
+                                            b_amt, 0, 'UNPAID', default_expiry
+                                        ]
                                         
-                                        inserted_status = cursor.fetchone()
-                                        if inserted_status:
-                                            success_count += 1
-                                        else:
-                                            conflict_count += 1
-                                    except Exception:
-                                        conflict_count += 1
-                                        pass
-                        st.success(f"🎉 Processed entries securely. Successfully Saved: {success_count} | Duplicates Skipped: {conflict_count}")
+                                        for c in db_cols:
+                                            if c not in col_names:
+                                                col_names.append(c)
+                                                val_list.append(str(row_dict.get(c, '')).strip())
+                                                
+                                        placeholders = ", ".join(["%s"] * len(val_list))
+                                        cols_str = ", ".join(col_names)
+                                        
+                                        cursor.execute(f"INSERT INTO customers ({cols_str}) VALUES ({placeholders}) ON CONFLICT (customerid) DO NOTHING", val_list)
+                                        success_count += 1
+                                    except: pass
+                        st.success(f"🎉 Processed entries securely into live database rows.")
                         st.rerun()
                 except Exception as e: st.error(f"❌ Error during file alignment mapping: {e}")
         current_tab_idx += 1
@@ -789,15 +766,17 @@ elif routing_node == "👥 Operational Billing Center":
         else:
             edit_target = st.selectbox("Select Target Username to Modify", list(sub_map.keys()), key="edit_tgt_box")
             edit_uid = sub_map[edit_target]
-            edit_row = df_matrix[df_matrix['username'] == edit_uid].iloc[0]
+            edit_row = df_matrix[df_matrix['customerid'] == edit_uid].iloc[0]
             edit_row_dict = dict(zip(df_matrix.columns, edit_row))
             
             with st.form("edit_terminal_form_v50"):
-                up_name = st.text_input("Update Customer Name", value=edit_row_dict.get('customername', ''))
-                up_phone = st.text_input("Update Phone Number", value=edit_row_dict.get('phone', ''))
-                up_cnic = st.text_input("Update CNIC Number", value=edit_row_dict.get('cnic', ''))
-                up_address = st.text_input("Update Address", value=edit_row_dict.get('address', ''))
-                up_sn = st.text_input("Update Onu SN", value=edit_row_dict.get('onuserialnumber', ''))
+                up_name = st.text_input("Update Name", value=edit_row_dict.get('customername', ''))
+                up_phone = st.text_input("Update Mobile Contact", value=edit_row_dict.get('phone', ''))
+                
+                dynamic_updates = {}
+                for col in get_db_columns():
+                    if col not in ['customerid', 'customername', 'phone', 'area', 'package', 'billamount', 'balanceshift', 'status', 'expirydate']:
+                        dynamic_updates[col] = st.text_input(f"Update {col.upper()}", value=str(edit_row_dict.get(col, '')))
                 
                 current_area_name = edit_row_dict.get('area', all_system_areas[0] if all_system_areas else '')
                 if current_area_name not in all_system_areas: all_system_areas.append(current_area_name)
@@ -826,42 +805,56 @@ elif routing_node == "👥 Operational Billing Center":
                         norm_phone = clean_and_validate_phone(up_phone)
                         with get_db_connection() as conn:
                             with conn.cursor() as cursor:
-                                cursor.execute("""
-                                    UPDATE customers SET customername=%s, phone=%s, cnic=%s, package=%s, billamount=%s, area=%s, address=%s, onuserialnumber=%s, balanceshift=%s, expirydate=%s, status=%s
-                                    WHERE username=%s
-                                """, (up_name, norm_phone, up_cnic, up_pkg, up_rate, up_area, up_address, up_sn, up_arrears, up_expiry, up_status, edit_uid))
+                                update_fields = ["customername=%s", "phone=%s", "area=%s"]
+                                params = [up_name, norm_phone, up_area]
+                                
+                                for col, val in dynamic_updates.items():
+                                    update_fields.append(f"{col}=%s")
+                                    params.append(val)
+                                    
+                                if is_admin:
+                                    update_fields.extend(["package=%s", "billamount=%s", "balanceshift=%s", "expirydate=%s", "status=%s"])
+                                    params.extend([up_pkg, up_rate, up_arrears, up_expiry, up_status])
+                                    
+                                params.append(edit_uid)
+                                sql_query = f"UPDATE customers SET {', '.join(update_fields)} WHERE customerid=%s"
+                                cursor.execute(sql_query, params)
                         st.success("🎉 Changes Saved Successfully!")
                         st.rerun()
                 with col_e2:
                     if st.form_submit_button("🚨 PERMANENTLY WIPE CLIENT", use_container_width=True, disabled=not is_admin):
                         with get_db_connection() as conn:
                             with conn.cursor() as cursor: 
-                                cursor.execute("DELETE FROM customers WHERE username=%s", (edit_uid,))
-                        st.warning("Client Wiped! History data remains safe.")
+                                cursor.execute("DELETE FROM customers WHERE customerid=%s", (edit_uid,))
+                        st.warning("Client Wiped!")
                         st.rerun()
 
 # ==========================================
-# VIEW 3: LIFETIME LEDGER HISTORY (FIXED DELETIONS)
+# VIEW 3: LIFETIME LEDGER HISTORY (WITH CHARTS & SHEETS)
 # ==========================================
 elif routing_node == "📜 Lifetime Ledger History":
     st.markdown("<div class='main-title'>📜 ACCOUNT LEDGER METRICS & AUDIT TRAIL</div>", unsafe_allow_html=True)
     
     all_system_areas = fetch_active_areas()
     with get_db_connection() as conn:
-        df_ledger = pd.read_sql_query("SELECT * FROM billing_history ORDER BY DateTimestamp DESC", conn)
+        df_history = pd.read_sql_query("SELECT * FROM billing_history ORDER BY DateTimestamp DESC", conn)
+        df_customers = pd.read_sql_query("SELECT customerid, area FROM customers", conn)
         
-    if df_ledger.empty:
+    if df_history.empty:
         st.info("No transaction tracking history recorded yet.")
     else:
-        # ISSUE 2 FIX: Read data directly from permanent billing_history database structure without merge dependencies
-        df_ledger.columns = [c.lower() for c in df_ledger.columns]
+        df_history.columns = ["invoiceid", "customerid", "customername", "datetimestamp", "currentpackage", "amountpaid", "remainingarrears", "transactiontype", "paymentmethod", "discountgiven"]
+        df_customers.columns = ["customerid", "area"]
+            
+        df_ledger = pd.merge(df_history, df_customers, on="customerid", how="left")
+        df_ledger['area'] = df_ledger['area'].fillna(all_system_areas[0] if all_system_areas else "Sanghoi System")
         
-        df_ledger['datetime'] = pd.to_datetime(df_ledger['datetimestamp'], errors='coerce')
-        df_ledger['Month'] = df_ledger['datetime'].dt.strftime('%Y-%m')
-        df_ledger['Year'] = df_ledger['datetime'].dt.strftime('%Y')
+        df_ledger['DateTime'] = pd.to_datetime(df_ledger['datetimestamp'], errors='coerce')
+        df_ledger['Month'] = df_ledger['DateTime'].dt.strftime('%Y-%m')
+        df_ledger['Year'] = df_ledger['DateTime'].dt.strftime('%Y')
         
         if st.session_state['assigned_area'] != "ALL":
-            df_ledger = df_ledger[df_ledger['area'].str.lower() == st.session_state['assigned_area'].lower()]
+            df_ledger = df_ledger[df_ledger['area'] == st.session_state['assigned_area']]
             st.info(f"🔒 Secure Mode: Only showing logs for **{st.session_state['assigned_area']}**")
             sel_area = st.session_state['assigned_area']
         else:
@@ -870,17 +863,14 @@ elif routing_node == "📜 Lifetime Ledger History":
             
         filtered_ledger = df_ledger.copy()
         if sel_area != "ALL AREAS" and st.session_state['assigned_area'] == "ALL":
-            filtered_ledger = filtered_ledger[filtered_ledger['area'].str.lower() == sel_area.lower()]
+            filtered_ledger = filtered_ledger[filtered_ledger['area'] == sel_area]
             
         st.markdown("### 📊 Enterprise Financial Graphs Overview")
         col_g1, col_g2 = st.columns(2)
         
-        # ISSUE 4 FIX: Drop duplicate invoice states to eliminate calculation inflation on tracking trends
-        clean_graph_ledger = filtered_ledger.dropna(subset=['invoiceid']).drop_duplicates(subset=['invoiceid'])
-        
         with col_g1:
             st.markdown("<h4 style='text-align:center; color:#3b82f6;'>📅 Monthly Collection Breakdown</h4>", unsafe_allow_html=True)
-            monthly_data = clean_graph_ledger.groupby('Month')['amountpaid'].sum().reset_index()
+            monthly_data = filtered_ledger.groupby('Month')['amountpaid'].sum().reset_index()
             if not monthly_data.empty:
                 st.bar_chart(data=monthly_data, x='Month', y='amountpaid', color="#3b82f6", use_container_width=True)
             else:
@@ -888,7 +878,7 @@ elif routing_node == "📜 Lifetime Ledger History":
                 
         with col_g2:
             st.markdown("<h4 style='text-align:center; color:#10b981;'>🏦 Annually Collection Volume</h4>", unsafe_allow_html=True)
-            yearly_data = clean_graph_ledger.groupby('Year')['amountpaid'].sum().reset_index()
+            yearly_data = filtered_ledger.groupby('Year')['amountpaid'].sum().reset_index()
             if not yearly_data.empty:
                 st.bar_chart(data=yearly_data, x='Year', y='amountpaid', color="#10b981", use_container_width=True)
             else:
@@ -930,58 +920,72 @@ elif routing_node == "🔐 System Access Control":
         
         with adm_tab1:
             st.markdown("### 👑 Master Database Schema Engineering")
-            st.markdown("#### 🚨 Database Structural Purge Engine")
-            st.info("Agar aapka schema length aage piche hai, to is button ko dabayein. Purana data backup ho kar new 2026 scheme me safely update ho jayega.")
+            st.warning("⚠️ Critical Access Node: Adding or dropping live production table schema elements affects active data structures directly.")
             
-            # ISSUE 3 FIX: Safe Database Rebuild Engine with Automatic Backup Infrastructure
-            if st.button("🚨 FORCE CLEAN & PURGE LIVE DATABASE STRUCTURE", use_container_width=True):
-                try:
-                    with get_db_connection() as conn:
-                        with conn.cursor() as cursor:
-                            # Create system duplicate backup data log
-                            cursor.execute("DROP TABLE IF EXISTS customers_backup CASCADE")
-                            cursor.execute("CREATE TABLE IF NOT EXISTS customers_backup AS SELECT * FROM customers")
-                            
-                            # Safely isolate drop execution
-                            cursor.execute("DROP TABLE IF EXISTS customers CASCADE")
-                            
-                            # Generate structured updated table
-                            cursor.execute("""
-                                CREATE TABLE customers (
-                                    username TEXT PRIMARY KEY,
-                                    customername TEXT NOT NULL,
-                                    phone TEXT UNIQUE NOT NULL,
-                                    cnic TEXT DEFAULT '',
-                                    package TEXT NOT NULL,
-                                    billamount INTEGER NOT NULL DEFAULT 1500,
-                                    area TEXT NOT NULL,
-                                    address TEXT DEFAULT '',
-                                    onuserialnumber TEXT DEFAULT '',
-                                    balanceshift INTEGER NOT NULL DEFAULT 0,
-                                    status TEXT NOT NULL DEFAULT 'UNPAID',
-                                    expirydate TEXT NOT NULL,
-                                    installationdate TEXT DEFAULT '',
-                                    lastpaymentdate TEXT DEFAULT ''
-                                )
-                            """)
-                            default_expiry = (datetime.now() + timedelta(days=30)).strftime("%Y-%m-%d")
-                            dummy_data = [
-                                ('ghafoor01', 'Abdul Ghafoor', '03465803040', '37301-1102406-3', '15 Mbps Fiber', 1500, 'Sanghoi System', 'Sanghoi Main Bazar', 'HWTC5B11296B', 0, 'PAID', default_expiry, '', '')
-                            ]
-                            for row in dummy_data:
-                                cursor.execute("""
-                                    INSERT INTO customers (username, customername, phone, cnic, package, billamount, area, address, onuserialnumber, balanceshift, status, expirydate, installationdate, lastpaymentdate)
-                                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                                """, row)
-                    st.success("🚀 System fully rebuilt successfully! Safe backup snapshot preserved inside 'customers_backup' table.")
-                    st.rerun()
-                except Exception as ex:
-                    st.error(f"Sync Failure Engine: {ex}")
-
+            col_sc1, col_sc2 = st.columns(2)
+            with col_sc1:
+                st.markdown("#### ➕ Append New Dynamic Data Column")
+                with st.form("add_column_production_form"):
+                    new_col_name = st.text_input("New Field Column Name (Use underscores instead of spaces)").strip().lower()
+                    if st.form_submit_button("⚡ Inject Live Schema Column", use_container_width=True):
+                        if not new_col_name or " " in new_col_name:
+                            st.error("❌ Column names must be alpha-numeric and cannot contain empty space breaks!")
+                        elif new_col_name in get_db_columns():
+                            st.error("❌ Target schema data entry field identifier already exists!")
+                        else:
+                            with get_db_connection() as conn:
+                                with conn.cursor() as cursor:
+                                    cursor.execute(f"ALTER TABLE customers ADD COLUMN {new_col_name} TEXT DEFAULT ''")
+                            st.success(f"🎉 Dynamic Column Field '{new_col_name}' successfully built into active production tables.")
+                            curr_order = load_column_order()
+                            if new_col_name not in curr_order:
+                                curr_order.append(new_col_name)
+                                save_column_order(curr_order)
+                            st.rerun()
+            with col_sc2:
+                st.markdown("#### 🗑️ Drop Dynamic Data Column Field")
+                with st.form("drop_column_production_form"):
+                    selectable_cols = [c for c in get_db_columns() if c not in ['customerid', 'customername', 'phone', 'area', 'package', 'billamount', 'balanceshift', 'status', 'expirydate']]
+                    target_wipe_col = st.selectbox("Select Dynamic Field Target to Drop", selectable_cols if selectable_cols else ["No Dynamic Fields Active"])
+                    if st.form_submit_button("🗑️ Wipe Active Column Permanently", use_container_width=True):
+                        if target_wipe_col == "No Dynamic Fields Active":
+                            st.error("Core engine systemic fields are locked and cannot be removed!")
+                        else:
+                            with get_db_connection() as conn:
+                                with conn.cursor() as cursor:
+                                    cursor.execute(f"ALTER TABLE customers DROP COLUMN {target_wipe_col}")
+                            st.success(f" Wiped field metadata column array '{target_wipe_col}' from tracking systems.")
+                            curr_order = load_column_order()
+                            if target_wipe_col in curr_order:
+                                curr_order.remove(target_wipe_col)
+                                save_column_order(curr_order)
+                            st.rerun()
+            
             st.write("---")
-            st.markdown("#### 🔄 Fixed Columns Layout Rule Mapped across ERP:")
-            st.write(" ➡️ ".join([f"`{c.upper()}`" for c in GLOBAL_TARGET_ORDER]))
-            st.success("🔒 System Sequence Mismatch Protection is fully locked on target columns hierarchy.")
+            st.markdown("#### 🔄 Organize Grid Order (Tarkeeb Tabdil Karein)")
+            st.info("Select column array visualization rules for the Core Dashboard Analytics table.")
+            
+            all_current_columns = get_db_columns()
+            saved_col_order = load_column_order()
+            
+            aligned_order = [c for c in saved_col_order if c in all_current_columns] + [c for c in all_current_columns if c not in saved_col_order]
+            
+            st.markdown("##### Current Live Hierarchy Order Tracking:")
+            st.write(" ➡️ ".join([f"`{c.upper()}`" for c in aligned_order]))
+            
+            with st.form("column_reorder_form"):
+                reordered_list = st.multiselect("Reorder Elements Layout Seq", options=all_current_columns, default=aligned_order)
+                
+                if st.form_submit_button("💾 Save Global Columns Layout Structure Order", use_container_width=True):
+                    if not reordered_list:
+                        st.error("❌ Order arrays mapping must contain fields!")
+                    else:
+                        missing_cols = [c for c in all_current_columns if c not in reordered_list]
+                        final_save_list = reordered_list + missing_cols
+                        save_column_order(final_save_list)
+                        st.session_state['column_order'] = final_save_list
+                        st.success("🎉 Display settings configuration framework mapped across cloud tables.")
+                        st.rerun()
 
         with adm_tab2:
             with st.form("new_admin_form"):
@@ -1091,23 +1095,22 @@ elif routing_node == "📱 Client Portal":
         clean_phone = clean_and_validate_phone(search_term)
         
         with get_db_connection() as conn:
-            query = "SELECT * FROM customers WHERE LOWER(username) = LOWER(%s) OR phone = %s OR cnic = %s"
+            query = "SELECT * FROM customers WHERE LOWER(customerid) = LOWER(%s) OR phone = %s OR cnic = %s"
             client = pd.read_sql_query(query, conn, params=[search_term, clean_phone, search_term])
             
         if client.empty: 
             st.error("❌ No registered record found matching your input. Please check your details.")
         else:
-            client.columns = [c.lower() for c in client.columns]
+            client.columns = get_db_columns()
             c_dict = client.iloc[0].to_dict()
             
-            uid_val = c_dict.get('username', '')
+            cid_val = c_dict.get('customerid', '')
             cname_val = c_dict.get('customername', '')
             
-            html_card = f"""<div class="client-card"><h3 style="color:#10b981; margin-top:0;">👤 Account Username: {html.escape(str(uid_val))}</h3><p><b>Customer Name:</b> {html.escape(str(cname_val))}</p>"""
+            html_card = f"""<div class="client-card"><h3 style="color:#10b981; margin-top:0;">👤 Account Username: {html.escape(str(cid_val))}</h3><p><b>Full Name:</b> {html.escape(str(cname_val))}</p>"""
             
-            for k in GLOBAL_TARGET_ORDER:
-                if k not in ['username', 'customername']:
-                    v = c_dict.get(k, '')
+            for k, v in c_dict.items():
+                if k not in ['customerid', 'customername']:
                     html_card += f"<p><b>{k.replace('_',' ').upper()}:</b> {html.escape(str(v))}</p>"
                     
             html_card += "</div>"
