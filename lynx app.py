@@ -131,8 +131,8 @@ st.markdown("""
 try:
     DB_URL = st.secrets["DB_URL"]
 except Exception:
-    encoded_pass = urllib.parse.quote_plus("ry84GdKQLfu*")
-    DB_URL = f"postgresql://postgres.ehykfrzymkzlxzkhxlww:{encoded_pass}@aws-1-ap-southeast-1.pooler.supabase.com:6543/postgres?sslmode=require"
+    # UPDATED: Aapki nayi database string password ke sath fix kar di gayi hai
+    DB_URL = "postgresql://postgres.snbmurjcggthdvxyxyrd:DlLaglY98SkOzDq2@aws-1-ap-southeast-1.pooler.supabase.com:6543/postgres?sslmode=require"
 
 @contextmanager
 def get_db_connection():
@@ -346,7 +346,6 @@ if routing_node == "📊 Core Analytics Dashboard":
     if df_matrix.empty:
         st.warning("⚠️ Operational Database is currently empty. Please go to Operations Center to load fresh clients.")
     else:
-        # Optimized: Pulled all collection logic into memory instantly
         collection_map = fetch_current_month_billing_summary()
             
         st.markdown("### 🌐 Active System Node Overview")
@@ -428,7 +427,6 @@ if routing_node == "📊 Core Analytics Dashboard":
 
             custom_order_cols = GLOBAL_TARGET_ORDER + ['balanceshift', 'status', 'expirydate']
             
-            # Optimized: Bulk string assembly using joins
             html_rows = []
             html_rows.append('<div class="table-wrapper"><table class="premium-table"><tr>')
             for col in custom_order_cols:
@@ -665,7 +663,6 @@ elif routing_node == "👥 Operational Billing Center":
                         st.cache_data.clear(); st.stop()
                 except Exception as e: st.error(f"❌ Mapping Error: {e}")
 
-    # FIXED: Find target index dynamically from the list to avoid ValueError
     edit_tab_index = tabs_list.index("🛠️ Edit Terminal Profile")
     with tabs[edit_tab_index]:
         if not sub_map: st.info("No active terminals.")
