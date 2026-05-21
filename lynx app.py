@@ -110,18 +110,39 @@ def build_database_schema():
                 )
             """)
             
-            # 2. Check and Alter 'users' table column safe patch
-            cursor.execute("""
-                SELECT column_name FROM information_schema.columns 
-                WHERE table_name='users' AND column_name='tenant_id'
-            """)
-            if not cursor.fetchone():
-                cursor.execute("ALTER TABLE users ADD COLUMN tenant_id TEXT DEFAULT 'lynx'")
-                try:
-                    cursor.execute("ALTER TABLE users DROP CONSTRAINT IF EXISTS users_pkey")
-                except Exception:
-                    pass
-            
+            # Helper function to dynamically check and align composite constraints
+            def safe_migrate_table_constraints(table_name, columns_dict, pk_columns):
+                # Ensure all target columns exist on database table context
+                for col_name, col_type in columns_dict.items():
+                    cursor.execute(f"""
+                        SELECT column_name FROM information_schema.columns 
+                        WHERE table_name='{table_name}' AND column_name='{col_name}'
+                    """)
+                    if not cursor.fetchone():
+                        cursor.execute(f"ALTER TABLE {table_name} ADD COLUMN {col_name} {col_type}")
+                
+                # Fetch currently active Primary Key configuration on the server cluster
+                cursor.execute(f"""
+                    SELECT a.attname
+                    FROM pg_index i
+                    JOIN pg_attribute a ON a.attrelid = i.indrelid AND a.attnum = ANY(i.indkey)
+                    WHERE i.indrelid = '{table_name}'::regclass AND i.indisprimary
+                """)
+                current_pk_cols = [r[0] for r in cursor.fetchall()]
+                
+                # If constraint structure is mismatched, apply automated clean patch mutation
+                if sorted(current_pk_cols) != sorted(pk_columns):
+                    try:
+                        cursor.execute(f"ALTER TABLE {table_name} DROP CONSTRAINT IF EXISTS {table_name}_pkey CASCADE")
+                    except Exception:
+                        pass
+                    try:
+                        cols_str = ", ".join(pk_columns)
+                        cursor.execute(f"ALTER TABLE {table_name} ADD CONSTRAINT {table_name}_pkey PRIMARY KEY ({cols_str})")
+                    except Exception:
+                        pass
+
+            # 2. Safe execution structure alignment for USERS table
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS users (
                     username TEXT NOT NULL, 
@@ -132,19 +153,15 @@ def build_database_schema():
                     PRIMARY KEY (username, tenant_id)
                 )
             """)
+            safe_migrate_table_constraints('users', {
+                'username': 'TEXT NOT NULL',
+                'password': 'TEXT NOT NULL',
+                'role': "TEXT NOT NULL CHECK(role IN ('Owner', 'Admin', 'Staff'))",
+                'assignedarea': "TEXT DEFAULT 'ALL'",
+                'tenant_id': "TEXT NOT NULL DEFAULT 'lynx'"
+            }, ['username', 'tenant_id'])
             
-            # 3. Patching 'customers' table structures safely
-            cursor.execute("""
-                SELECT column_name FROM information_schema.columns 
-                WHERE table_name='customers' AND column_name='tenant_id'
-            """)
-            if not cursor.fetchone():
-                cursor.execute("ALTER TABLE customers ADD COLUMN tenant_id TEXT DEFAULT 'lynx'")
-                try:
-                    cursor.execute("ALTER TABLE customers DROP CONSTRAINT IF EXISTS customers_pkey")
-                except Exception:
-                    pass
-            
+            # 3. Safe execution structure alignment for CUSTOMERS table
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS customers (
                     username TEXT NOT NULL, customername TEXT NOT NULL, phone TEXT NOT NULL,
@@ -155,19 +172,15 @@ def build_database_schema():
                     PRIMARY KEY (username, tenant_id)
                 )
             """)
+            safe_migrate_table_constraints('customers', {
+                'username': 'TEXT NOT NULL', 'customername': 'TEXT NOT NULL', 'phone': 'TEXT NOT NULL',
+                'cnic': "TEXT DEFAULT ''", 'package': 'TEXT NOT NULL', 'billamount': 'INTEGER NOT NULL DEFAULT 0',
+                'area': 'TEXT NOT NULL', 'address': "TEXT DEFAULT ''", 'onuserialnumber': "TEXT DEFAULT ''",
+                'balanceshift': 'INTEGER NOT NULL DEFAULT 0', 'status': "TEXT NOT NULL DEFAULT 'UNPAID'", 'expirydate': 'TEXT NOT NULL',
+                'tenant_id': "TEXT NOT NULL DEFAULT 'lynx'"
+            }, ['username', 'tenant_id'])
             
-            # 4. Patching 'areas' table structures safely
-            cursor.execute("""
-                SELECT column_name FROM information_schema.columns 
-                WHERE table_name='areas' AND column_name='tenant_id'
-            """)
-            if not cursor.fetchone():
-                cursor.execute("ALTER TABLE areas ADD COLUMN tenant_id TEXT DEFAULT 'lynx'")
-                try:
-                    cursor.execute("ALTER TABLE areas DROP CONSTRAINT IF EXISTS areas_pkey")
-                except Exception:
-                    pass
-
+            # 4. Safe execution structure alignment for AREAS table
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS areas (
                     areaname TEXT NOT NULL,
@@ -175,19 +188,12 @@ def build_database_schema():
                     PRIMARY KEY (areaname, tenant_id)
                 )
             """)
+            safe_migrate_table_constraints('areas', {
+                'areaname': 'TEXT NOT NULL',
+                'tenant_id': "TEXT NOT NULL DEFAULT 'lynx'"
+            }, ['areaname', 'tenant_id'])
             
-            # 5. Patching 'packages' table structures safely
-            cursor.execute("""
-                SELECT column_name FROM information_schema.columns 
-                WHERE table_name='packages' AND column_name='tenant_id'
-            """)
-            if not cursor.fetchone():
-                cursor.execute("ALTER TABLE packages ADD COLUMN tenant_id TEXT DEFAULT 'lynx'")
-                try:
-                    cursor.execute("ALTER TABLE packages DROP CONSTRAINT IF EXISTS packages_pkey")
-                except Exception:
-                    pass
-
+            # 5. Safe execution structure alignment for PACKAGES table
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS packages (
                     packagename TEXT NOT NULL, areaname TEXT NOT NULL, packagerate INTEGER NOT NULL CHECK(packagerate >= 0),
@@ -195,15 +201,12 @@ def build_database_schema():
                     PRIMARY KEY (packagename, areaname, tenant_id)
                 )
             """)
+            safe_migrate_table_constraints('packages', {
+                'packagename': 'TEXT NOT NULL', 'areaname': 'TEXT NOT NULL', 'packagerate': 'INTEGER NOT NULL DEFAULT 0',
+                'tenant_id': "TEXT NOT NULL DEFAULT 'lynx'"
+            }, ['packagename', 'areaname', 'tenant_id'])
             
-            # 6. Patching 'billing_history' table structures safely
-            cursor.execute("""
-                SELECT column_name FROM information_schema.columns 
-                WHERE table_name='billing_history' AND column_name='tenant_id'
-            """)
-            if not cursor.fetchone():
-                cursor.execute("ALTER TABLE billing_history ADD COLUMN tenant_id TEXT DEFAULT 'lynx'")
-
+            # 6. Safe execution structure alignment for BILLING HISTORY table
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS billing_history (
                     invoiceid TEXT PRIMARY KEY, customerid TEXT NOT NULL, customername TEXT NOT NULL, area TEXT NOT NULL,
@@ -212,6 +215,12 @@ def build_database_schema():
                     tenant_id TEXT NOT NULL DEFAULT 'lynx'
                 )
             """)
+            safe_migrate_table_constraints('billing_history', {
+                'invoiceid': 'TEXT PRIMARY KEY', 'customerid': 'TEXT NOT NULL', 'customername': 'TEXT NOT NULL', 'area': 'TEXT NOT NULL',
+                'phone': 'TEXT', 'datetimestamp': 'TEXT NOT NULL', 'currentpackage': 'TEXT NOT NULL', 'amountpaid': 'INTEGER NOT NULL DEFAULT 0',
+                'remainingarrears': 'INTEGER NOT NULL', 'transactiontype': 'TEXT NOT NULL', 'paymentmethod': 'TEXT NOT NULL', 'discountgiven': 'INTEGER DEFAULT 0',
+                'tenant_id': "TEXT NOT NULL DEFAULT 'lynx'"
+            }, ['invoiceid'])
             
             # Seed Default Core Control Entities
             cursor.execute("SELECT COUNT(*) FROM system_tenants WHERE tenant_id = 'lynx'")
@@ -490,7 +499,7 @@ else:
     else:
         routing_node = st.session_state['current_node']
 
-# NAVIGATION SIDEBAR WITH TENANT AWARENESS (🛠️ CRASH PATCH INTEGRATED)
+# NAVIGATION SIDEBAR WITH TENANT AWARENESS
 if st.session_state['authenticated'] and not st.session_state['portal_mode']:
     with st.sidebar:
         st.markdown(f"<h2 style='color:#10b981; font-weight:900; text-align:center; margin-bottom:5px;'>{str(TENANT_COMPANY_NAME).upper()}</h2>", unsafe_allow_html=True)
@@ -512,7 +521,6 @@ if st.session_state['authenticated'] and not st.session_state['portal_mode']:
         assigned_list = st.session_state.get('assigned_areas', ["ALL"])
         area_display = "All Systems" if "ALL" in assigned_list else ", ".join(assigned_list)
         
-        # 🛠️ Bulletproof Safe String Rendering to fix the AttributeError
         username_display = str(st.session_state.get('username', 'UNKNOWN')).upper()
         role_display = str(st.session_state.get('user_role', 'STAFF')).upper()
         
