@@ -46,7 +46,7 @@ GLOBAL_TARGET_ORDER = [
 ]
 
 st.set_page_config(
-    page_title="LYNX Fiber Enterprise ERP v59.0", 
+    page_title="LYNX Fiber Enterprise ERP v60.0", 
     layout="wide",
     initial_sidebar_state="expanded"
 )
@@ -159,7 +159,7 @@ def verify_password(password: str, hashed_password: str) -> bool:
     except Exception:
         return False
 
-# Master Schema Engine - REMOVED FIXED DEFAULT SANGHOI/SAEELA INJECTIONS
+# Master Schema Engine
 def build_database_schema():
     with get_db_connection() as conn:
         with conn.cursor() as cursor:
@@ -199,7 +199,6 @@ def build_database_schema():
                 )
             """)
             
-            # Default Owner generation logic stays secure
             cursor.execute("SELECT COUNT(*) FROM users WHERE role = 'Owner'")
             if cursor.fetchone()[0] == 0:
                 cursor.execute("INSERT INTO users VALUES ('owner', %s, 'Owner', 'ALL')", (hash_password('lynxowner123'),))
@@ -244,6 +243,16 @@ def fetch_active_areas():
         return []
 
 @st.cache_data(ttl=5)
+def fetch_all_packages():
+    try:
+        with get_db_connection() as conn:
+            with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                cur.execute("SELECT packagename, areaname, packagerate FROM packages ORDER BY packagename ASC, areaname ASC")
+                return cur.fetchall()
+    except Exception:
+        return []
+
+@st.cache_data(ttl=5)
 def fetch_current_month_billing_summary():
     try:
         current_month_str = datetime.now().strftime("%Y-%m")
@@ -282,7 +291,7 @@ else:
     if not st.session_state['authenticated']:
         st.markdown("<div class='front-login-box'>", unsafe_allow_html=True)
         st.markdown("<h2 style='text-align:center; color:#10b981; font-weight:900; margin-bottom:5px;'>LYNX FIBER NET</h2>", unsafe_allow_html=True)
-        st.markdown("<p style='text-align:center; color:#9ca3af; margin-bottom:30px;'>Enterprise ERP System v59.0</p>", unsafe_allow_html=True)
+        st.markdown("<p style='text-align:center; color:#9ca3af; margin-bottom:30px;'>Enterprise ERP System v60.0</p>", unsafe_allow_html=True)
         
         user_input = (st.text_input("Username Key", key="front_user") or "").strip().lower()
         pass_input = st.text_input("Security Password", type="password", key="front_pass")
@@ -532,10 +541,10 @@ elif routing_node == "👥 Operational Billing Center":
                 
                 with get_db_connection() as conn:
                     with conn.cursor() as cur:
-                        cur.execute("SELECT packagename, packagerate FROM packages WHERE areaname = %s", (in_area,))
+                        cursor.execute("SELECT packagename, packagerate FROM packages WHERE areaname = %s", (in_area,))
                         area_pkgs = dict(cur.fetchall())
                 
-                with st.form("add_client_form_v59"):
+                with st.form("add_client_form_v60"):
                     in_id = st.text_input("Desired Unique Username Key").strip().lower()
                     in_name = st.text_input("Customer Full Name").strip()
                     in_phone = st.text_input("Phone Number").strip()
@@ -622,7 +631,7 @@ elif routing_node == "📜 Lifetime Ledger History":
         st.dataframe(df_ledger, use_container_width=True)
 
 # ==========================================
-# VIEW 4: SYSTEM ACCESS CONFIGS (ABSOLUTE PURGE INTEGRATED)
+# VIEW 4: SYSTEM ACCESS CONFIGS
 # ==========================================
 elif routing_node == "🔐 System Access Control":
     if st.session_state['user_role'] not in ["Owner", "Admin"]:
@@ -642,7 +651,7 @@ elif routing_node == "🔐 System Access Control":
         if st.session_state['user_role'] == "Owner":
             with adm_tabs[0]:
                 st.markdown("### 👑 Master Schema Dynamic Destruction Module")
-                st.warning("⚠️ Critical Alert: Wiping database drops structural relationships completely. Is ke baad koi sample systems (Sanghoi/Saeela) khud-ba-khud load nahi honge.")
+                st.warning("⚠️ Critical Alert: Wiping database drops structural relationships completely.")
                 
                 purge_password = st.text_input("Verify Master Owner Confirmation Passphrase", type="password", key="purge_pass_gate")
                 if st.button("☢️ INITIATE COMPLETE SYSTEM ZERO-DATA PURGE"):
@@ -663,13 +672,16 @@ elif routing_node == "🔐 System Access Control":
                     else:
                         st.error("❌ Password Cryptographic signature mismatch. Operation Aborted.")
 
-        # ADMIN TAB: Package Dynamic Allocation
+        # ADMIN TAB: Package Dynamic Allocation & REMOVE PACKAGE SYSTEM
         with adm_tabs[1 + idx_shift]:
             st.markdown("### 📦 Structural Location Pricing Allocation Configurator")
+            
+            # --- Form 1: Add/Update Package ---
             if not all_system_areas:
                 st.info("💡 Empty State: Configure an active Operating Area first.")
             else:
                 with st.form("matrix_package_form"):
+                    st.markdown("#### ➕ Add or Update Tariff Plan")
                     p_name = st.text_input("Tarif Identification Flag (e.g., 12 Mbps Fiber)").strip()
                     p_area = st.selectbox("Target Core Distribution Area Node Hub", all_system_areas)
                     p_rate = st.number_input("Assigned Monthly Price Configuration (Rs.)", min_value=0, value=1500)
@@ -686,8 +698,41 @@ elif routing_node == "🔐 System Access Control":
                                         DO UPDATE SET packagerate = EXCLUDED.packagerate
                                     """, (p_name, p_area, p_rate))
                                 conn.commit()
-                            st.success(f"✅ Configured {p_name} for area {p_area} at Rs. {p_rate}/m successfully.")
+                            st.success(f"✅ Configured {p_name} for area {p_area} successfully.")
                             st.cache_data.clear(); st.rerun()
+
+            st.write("---")
+            
+            # --- Form 2: FIXED REMOVE PACKAGE ENGINE ---
+            st.markdown("#### ❌ Remove Wrong/Unwanted Package Profile")
+            live_packages_list = fetch_all_packages()
+            
+            if not live_packages_list:
+                st.info("No package variations registered inside system memory to remove.")
+            else:
+                # Format options into scannable strings for selection mapping
+                pkg_options_map = {}
+                for p in live_packages_list:
+                    label = f"📦 {p['packagename']} — 📍 Area: {p['areaname']} (Rs. {p['packagerate']})"
+                    pkg_options_map[label] = (p['packagename'], p['areaname'])
+                
+                selected_remove_label = st.selectbox("Select Package to Permanently Remove", list(pkg_options_map.keys()))
+                
+                with st.form("remove_package_secure_form"):
+                    st.caption("🚨 Warning: Deleting this profile row will instantly disconnect this preset tariff matching inside network provisioning.")
+                    if st.form_submit_button("🗑️ PERMANENTLY DELETE CHOSEN PACKAGE"):
+                        target_pkg_name, target_area_name = pkg_options_map[selected_remove_label]
+                        
+                        with get_db_connection() as conn:
+                            with conn.cursor() as cursor:
+                                cursor.execute("""
+                                    DELETE FROM packages 
+                                    WHERE packagename = %s AND areaname = %s
+                                """, (target_pkg_name, target_area_name))
+                            conn.commit()
+                            
+                        st.success(f"💥 Package '{target_pkg_name}' for Area '{target_area_name}' has been completely removed!")
+                        st.cache_data.clear(); st.rerun()
 
         # ADMIN TAB: Hub Areas Registration 
         with adm_tabs[2 + idx_shift]:
