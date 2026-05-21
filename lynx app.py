@@ -24,7 +24,7 @@ except ImportError:
     REPORTLAB_AVAILABLE = False
 
 # ==========================================
-# 1. PERMANENT SESSION ENGINE (WITH MULTI-AREA BINDING)
+# 1. PERMANENT SESSION ENGINE (WITH OWNER BYPASS)
 # ==========================================
 if 'authenticated' not in st.session_state:
     st.session_state['authenticated'] = False
@@ -33,7 +33,7 @@ if 'user_role' not in st.session_state:
 if 'username' not in st.session_state:
     st.session_state['username'] = ""
 if 'assigned_areas' not in st.session_state:
-    st.session_state['assigned_areas'] = []  # List format for multiple areas
+    st.session_state['assigned_areas'] = []  
 if 'current_node' not in st.session_state:
     st.session_state['current_node'] = "📊 Core Analytics Dashboard"
 if 'dashboard_filter' not in st.session_state:
@@ -52,7 +52,7 @@ GLOBAL_TARGET_ORDER = [
 # 2. CORE THEME & PREMIUM MOBILE CSS ENGINE
 # ==========================================
 st.set_page_config(
-    page_title="LYNX Fiber Enterprise ERP v55.0", 
+    page_title="LYNX Fiber Enterprise ERP v56.0", 
     layout="wide",
     initial_sidebar_state="expanded"
 )
@@ -131,7 +131,7 @@ st.markdown("""
 try:
     DB_URL = st.secrets["DB_URL"]
 except Exception:
-    DB_URL = "postgresql://postgres.snbmurjcggthdvxyxyrd:DlLaglY98SkOzDq2@aws-1-ap-southeast-1.pooler.supabase.com:6543/postgres?sslmode=require"
+    DB_URL = "postgresql://postgres.snbmurjcggthdvxyxyrd:DlLaglY98SkOzDq2@aws-1-ap-southeast-1.pooler.southeast-1.pooler.supabase.com:6543/postgres?sslmode=require"
 
 @contextmanager
 def get_db_connection():
@@ -161,30 +161,16 @@ def verify_password(password: str, hashed_password: str) -> bool:
 def build_database_schema():
     with get_db_connection() as conn:
         with conn.cursor() as cursor:
-            tables_to_check = ['areas', 'customers', 'billing_history']
-            needs_reset = False
-            
-            for t in tables_to_check:
-                try:
-                    if t == 'areas':
-                        cursor.execute("SELECT areaname FROM areas LIMIT 1;")
-                    elif t == 'customers':
-                        cursor.execute("SELECT username FROM customers LIMIT 1;")
-                    elif t == 'billing_history':
-                        cursor.execute("SELECT datetimestamp FROM billing_history LIMIT 1;")
-                except Exception:
-                    needs_reset = True
-                    break
-            
-            if needs_reset:
-                conn.rollback()
-                cursor.execute("DROP TABLE IF EXISTS billing_history CASCADE;")
-                cursor.execute("DROP TABLE IF EXISTS customers CASCADE;")
-                cursor.execute("DROP TABLE IF EXISTS areas CASCADE;")
-                cursor.execute("DROP TABLE IF EXISTS packages CASCADE;")
-                cursor.execute("DROP TABLE IF EXISTS users CASCADE;")
-                cursor.execute("DROP TABLE IF EXISTS app_settings CASCADE;")
-                conn.commit()
+            # Upgrade constraint to allow 'Owner' along with Admin and Staff
+            cursor.execute("DROP TABLE IF EXISTS users CASCADE;")
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS users (
+                    username TEXT PRIMARY KEY, 
+                    password TEXT NOT NULL, 
+                    role TEXT NOT NULL CHECK(role IN ('Owner', 'Admin', 'Staff')), 
+                    assignedarea TEXT DEFAULT 'ALL'
+                )
+            """)
             
             cursor.execute("CREATE TABLE IF NOT EXISTS areas (areaname TEXT PRIMARY KEY)")
             cursor.execute("""
@@ -197,7 +183,6 @@ def build_database_schema():
             """)
             cursor.execute("CREATE TABLE IF NOT EXISTS packages (packagename TEXT PRIMARY KEY, packagerate INTEGER NOT NULL CHECK(packagerate >= 0))")
             cursor.execute("CREATE TABLE IF NOT EXISTS app_settings (settingkey TEXT PRIMARY KEY, settingvalue TEXT NOT NULL)")
-            cursor.execute("CREATE TABLE IF NOT EXISTS users (username TEXT PRIMARY KEY, password TEXT NOT NULL, role TEXT NOT NULL CHECK(role IN ('Admin', 'Staff')), assignedarea TEXT DEFAULT 'ALL')")
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS billing_history (
                     invoiceid TEXT PRIMARY KEY, customerid TEXT NOT NULL, customername TEXT NOT NULL, area TEXT NOT NULL,
@@ -210,15 +195,12 @@ def build_database_schema():
             if cursor.fetchone()[0] == 0:
                 cursor.execute("INSERT INTO areas VALUES ('Sanghoi System'), ('Saeela System')")
             
-            cursor.execute("SELECT username, password FROM users")
-            existing_users = cursor.fetchall()
-            if not existing_users:
+            cursor.execute("SELECT COUNT(*) FROM users WHERE role = 'Owner'")
+            if cursor.fetchone()[0] == 0:
+                # CREATING YOUR POWERFUL SYSTEM OWNER ACCOUNT
+                cursor.execute("INSERT INTO users VALUES ('owner', %s, 'Owner', 'ALL')", (hash_password('lynxowner123'),))
                 cursor.execute("INSERT INTO users VALUES ('admin', %s, 'Admin', 'ALL')", (hash_password('lynxadmin123'),))
                 cursor.execute("INSERT INTO users VALUES ('staff', %s, 'Staff', 'Sanghoi System')", (hash_password('lynxstaff123'),))
-            else:
-                for uname, pwd in existing_users:
-                    if not (pwd.startswith('$2b$') or pwd.startswith('$2a$')):
-                        cursor.execute("UPDATE users SET password = %s WHERE username = %s", (hash_password(pwd), uname))
             
             cursor.execute("SELECT COUNT(*) FROM packages")
             if cursor.fetchone()[0] == 0:
@@ -307,7 +289,7 @@ else:
     if not st.session_state['authenticated']:
         st.markdown("<div class='front-login-box'>", unsafe_allow_html=True)
         st.markdown("<h2 style='text-align:center; color:#10b981; font-weight:900; margin-bottom:5px;'>LYNX FIBER NET</h2>", unsafe_allow_html=True)
-        st.markdown("<p style='text-align:center; color:#9ca3af; margin-bottom:30px;'>Enterprise ERP System v55.0 (Multi-Area Mode)</p>", unsafe_allow_html=True)
+        st.markdown("<p style='text-align:center; color:#9ca3af; margin-bottom:30px;'>Enterprise ERP System v56.0</p>", unsafe_allow_html=True)
         
         user_input = (st.text_input("Username Key", key="front_user") or "").strip().lower()
         pass_input = st.text_input("Security Password", type="password", key="front_pass")
@@ -320,12 +302,12 @@ else:
                 
             if user_match and verify_password(pass_input, user_match[3]):
                 st.session_state['authenticated'] = True
-                st.session_state['user_role'] = user_match[0]
+                st.session_state['user_role'] = user_match[0]  # Store 'Owner' / 'Admin' / 'Staff'
                 st.session_state['username'] = user_match[1]
                 
-                # MODIFICATION: Convert comma-separated text into a clean Python list
                 raw_areas = user_match[2] if user_match[2] else "ALL"
-                if raw_areas == "ALL":
+                # SUPER BYPASS: Owner and Admin get automatic full bypass access 
+                if user_match[0] in ["Owner", "Admin"] or raw_areas == "ALL":
                     st.session_state['assigned_areas'] = ["ALL"]
                 else:
                     st.session_state['assigned_areas'] = [a.strip() for a in raw_areas.split(",") if a.strip()]
@@ -354,12 +336,16 @@ if st.session_state['authenticated'] and not st.session_state['portal_mode']:
             st.session_state['current_node'] = "👥 Operational Billing Center"; st.rerun()
         if st.button("📜 Lifetime Ledger History", use_container_width=True):
             st.session_state['current_node'] = "📜 Lifetime Ledger History"; st.rerun()
-        if st.button("🔐 System Access Control", use_container_width=True):
-            st.session_state['current_node'] = "🔐 System Access Control"; st.rerun()
+            
+        # Access control available only to absolute high profiles (Owner & Admin)
+        if st.session_state['user_role'] in ["Owner", "Admin"]:
+            if st.button("🔐 System Access Control", use_container_width=True):
+                st.session_state['current_node'] = "🔐 System Access Control"; st.rerun()
             
         st.write("---")
         area_display = "All Systems" if "ALL" in st.session_state['assigned_areas'] else ", ".join(st.session_state['assigned_areas'])
-        st.markdown(f"<p style='text-align:center; color:#9ca3af;'>👤 Active: <b>{st.session_state['username'].upper()}</b><br>📍 Assigned Areas:<br><span style='color:#60a5fa; font-size:12px;'><b>{area_display}</b></span></p>", unsafe_allow_html=True)
+        role_color = "#f59e0b" if st.session_state['user_role'] == "Owner" else "#10b981"
+        st.markdown(f"<p style='text-align:center; color:#9ca3af;'>👤 Active: <b>{st.session_state['username'].upper()}</b><br>📍 Role: <b style='color:{role_color};'>{st.session_state['user_role'].upper()}</b><br>🗺️ Areas:<br><span style='color:#60a5fa; font-size:12px;'><b>{area_display}</b></span></p>", unsafe_allow_html=True)
         if st.button("🔒 Logout System", use_container_width=True):
             st.session_state['authenticated'] = False; st.session_state['user_role'] = None; st.session_state['assigned_areas'] = []
             st.session_state['current_node'] = "📊 Core Analytics Dashboard"; st.rerun()
@@ -372,10 +358,11 @@ if routing_node == "📊 Core Analytics Dashboard":
     
     df_matrix = fetch_live_matrix()
     all_system_areas = fetch_active_areas()
+    is_high_profile = (st.session_state['user_role'] in ["Owner", "Admin"])
     
-    # MODIFICATION: Dynamic multi-area mapping filter for Dashboard loop
-    if "ALL" not in st.session_state['assigned_areas']:
-        all_system_areas = [a for a in all_system_areas if any(a.lower() == s.lower() for s in st.session_state['assigned_areas'])]
+    cards_display_areas = all_system_areas.copy()
+    if not is_high_profile and "ALL" not in st.session_state['assigned_areas']:
+        cards_display_areas = [a for a in all_system_areas if any(a.lower() == s.lower() for s in st.session_state['assigned_areas'])]
     
     if df_matrix.empty:
         st.warning("⚠️ Operational Database is currently empty.")
@@ -383,11 +370,11 @@ if routing_node == "📊 Core Analytics Dashboard":
         collection_map = fetch_current_month_billing_summary()
             
         st.markdown("### 🌐 Active System Node Overview")
-        for i in range(0, len(all_system_areas), 2):
+        for i in range(0, len(cards_display_areas), 2):
             cols = st.columns(2)
             for j in range(2):
-                if i + j < len(all_system_areas):
-                    current_hub = all_system_areas[i + j]
+                if i + j < len(cards_display_areas):
+                    current_hub = cards_display_areas[i + j]
                     segment = df_matrix[df_matrix['area'].str.lower() == current_hub.lower()]
                     
                     active_segment = segment[segment['status'] != 'SUSPENDED']
@@ -419,12 +406,10 @@ if routing_node == "📊 Core Analytics Dashboard":
         st.write("---")
         base_df = df_matrix.copy()
         
-        # MODIFICATION: Strictly filter table results for multiple assigned areas
-        if "ALL" not in st.session_state['assigned_areas']:
+        if not is_high_profile and "ALL" not in st.session_state['assigned_areas']:
             base_df = base_df[base_df['area'].str.lower().isin([s.lower() for s in st.session_state['assigned_areas']])]
             st.info(f"🔒 Secure Mode: Only showing your assigned systems: **{', '.join(st.session_state['assigned_areas'])}**")
-            
-            filter_options = ["ALL ASSIGNED SYSTEMS"] + all_system_areas
+            filter_options = ["ALL ASSIGNED SYSTEMS"] + cards_display_areas
             system_filter = st.selectbox("🌐 Operational Area System Filter", filter_options)
             if system_filter != "ALL ASSIGNED SYSTEMS":
                 base_df = base_df[base_df['area'].str.lower() == system_filter.lower()]
@@ -525,14 +510,13 @@ elif routing_node == "👥 Operational Billing Center":
     df_matrix = fetch_live_matrix()
     pkg_dict = fetch_system_packages()
     all_system_areas = fetch_active_areas()
-    is_admin = (st.session_state['user_role'] == "Admin")
+    is_management = (st.session_state['user_role'] in ["Owner", "Admin"])
     
-    # MODIFICATION: Multi-area mapping data lock for transactional sheets
-    if "ALL" not in st.session_state['assigned_areas']:
+    if not is_management and "ALL" not in st.session_state['assigned_areas']:
         df_matrix = df_matrix[df_matrix['area'].str.lower().isin([s.lower() for s in st.session_state['assigned_areas']])]
         
     tabs_list = ["💳 Capital Collection Hub", "🛠️ Edit Terminal Profile"]
-    if is_admin:
+    if is_management:
         tabs_list.insert(1, "➕ Provision New Client")
         tabs_list.insert(2, "📥 Bulk Import Excel/CSV")
         
@@ -572,7 +556,7 @@ elif routing_node == "👥 Operational Billing Center":
                 
                 with st.form("cash_posting_form_v50"):
                     pay_method = st.selectbox("Payment Method Profile", ["CASH", "EASYPAISA", "JAZZCASH", "BANK_TRANSFER"])
-                    discount_value = st.number_input("🎁 Discount Approved (Rs.)", min_value=0, value=0, disabled=not is_admin)
+                    discount_value = st.number_input("🎁 Discount Approved (Rs.)", min_value=0, value=0, disabled=not is_management)
                     net_payable_after_discount = max(gross_invoice_due - discount_value, 0)
                     st.markdown(f"### 🧾 Net Payable (After Discount): **Rs. {net_payable_after_discount}**")
                     cash_inflow = st.number_input("Liquid Capital Received (Rs.)", min_value=0, value=net_payable_after_discount)
@@ -602,8 +586,8 @@ elif routing_node == "👥 Operational Billing Center":
                         st.cache_data.clear()
                         st.rerun()
 
-    # ADMIN-ONLY TABS (SAFE ISOLATION)
-    if is_admin:
+    # MANAGEMENT ONLY TABS
+    if is_management:
         # TAB: Provision New Client
         with tabs[1]:
             with st.form("add_client_form_v50", clear_on_submit=True):
@@ -724,8 +708,7 @@ elif routing_node == "👥 Operational Billing Center":
                     up_address = st.text_input("Update Address", value=edit_row_dict.get('address', ''))
                     up_sn = st.text_input("Update Onu SN", value=edit_row_dict.get('onuserialnumber', ''))
                     
-                    # MODIFICATION: Dropdown filters dynamically depending on multi-assigned staff profile
-                    if is_admin:
+                    if is_management:
                         up_area = st.selectbox("System Area Hub", all_system_areas, index=all_system_areas.index(edit_row_dict.get('area')) if edit_row_dict.get('area') in all_system_areas else 0)
                     else:
                         staff_allowed_options = [a for a in all_system_areas if any(a.lower() == s.lower() for s in st.session_state['assigned_areas'])]
@@ -737,7 +720,7 @@ elif routing_node == "👥 Operational Billing Center":
                     except:
                         parsed_bill_amt = 0; parsed_bal_shift = 0
                     
-                    if is_admin:
+                    if is_management:
                         all_pkgs = list(pkg_dict.keys())
                         up_pkg = st.selectbox("Override Package Profile", all_pkgs, index=all_pkgs.index(edit_row_dict.get('package')) if edit_row_dict.get('package') in all_pkgs else 0)
                         up_rate = st.number_input("Monthly Bill Rate (Rs.)", value=parsed_bill_amt)
@@ -745,9 +728,9 @@ elif routing_node == "👥 Operational Billing Center":
                         st.text_input("Package Profile", value=edit_row_dict.get('package', ''), disabled=True)
                         up_pkg = edit_row_dict.get('package', ''); up_rate = parsed_bill_amt
                     
-                    up_arrears = st.number_input("Outstanding Balance (Arrears)", value=parsed_bal_shift, disabled=not is_admin)
-                    up_expiry = st.text_input("Expiry Date (YYYY-MM-DD)", value=edit_row_dict.get('expirydate', ''), disabled=not is_admin)
-                    up_status = st.selectbox("Line Status", ["PAID", "PARTIAL", "UNPAID", "SUSPENDED"], index=["PAID", "PARTIAL", "UNPAID", "SUSPENDED"].index(edit_row_dict.get('status', 'UNPAID')), disabled=not is_admin)
+                    up_arrears = st.number_input("Outstanding Balance (Arrears)", value=parsed_bal_shift, disabled=not is_management)
+                    up_expiry = st.text_input("Expiry Date (YYYY-MM-DD)", value=edit_row_dict.get('expirydate', ''), disabled=not is_management)
+                    up_status = st.selectbox("Line Status", ["PAID", "PARTIAL", "UNPAID", "SUSPENDED"], index=["PAID", "PARTIAL", "UNPAID", "SUSPENDED"].index(edit_row_dict.get('status', 'UNPAID')), disabled=not is_management)
                     
                     col_e1, col_e2 = st.columns(2)
                     with col_e1:
@@ -762,7 +745,7 @@ elif routing_node == "👥 Operational Billing Center":
                             st.success("🎉 Changes Saved!")
                             st.cache_data.clear(); st.rerun()
                     with col_e2:
-                        if st.form_submit_button("🚨 PERMANENTLY WIPE CLIENT", use_container_width=True, disabled=not is_admin):
+                        if st.form_submit_button("🚨 PERMANENTLY WIPE CLIENT", use_container_width=True, disabled=not is_management):
                             with get_db_connection() as conn:
                                 with conn.cursor() as cursor: cursor.execute("DELETE FROM customers WHERE username=%s", (edit_row_dict['username'],))
                                 conn.commit()
@@ -775,6 +758,7 @@ elif routing_node == "📜 Lifetime Ledger History":
     st.markdown("<div class='main-title'>📜 ACCOUNT LEDGER METRICS & AUDIT TRAIL</div>", unsafe_allow_html=True)
     all_system_areas = fetch_active_areas()
     df_ledger = pd.DataFrame()
+    is_management = (st.session_state['user_role'] in ["Owner", "Admin"])
     
     with get_db_connection() as conn:
         with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
@@ -790,15 +774,14 @@ elif routing_node == "📜 Lifetime Ledger History":
         df_ledger['Month'] = df_ledger['datetime'].dt.strftime('%Y-%m')
         df_ledger['Year'] = df_ledger['datetime'].dt.strftime('%Y')
         
-        # MODIFICATION: Multi-area string lookup inside ledger database filter
-        if "ALL" not in st.session_state['assigned_areas']:
+        if not is_management and "ALL" not in st.session_state['assigned_areas']:
             df_ledger = df_ledger[df_ledger['area'].str.lower().isin([s.lower() for s in st.session_state['assigned_areas']])]
             sel_area = "ALL ASSIGNED AREAS"
         else:
             sel_area = st.selectbox("🌐 Choose Target Area Filter", ["ALL AREAS"] + all_system_areas)
             
         filtered_ledger = df_ledger.copy()
-        if sel_area != "ALL AREAS" and sel_area != "ALL ASSIGNED AREAS" and "ALL" in st.session_state['assigned_areas']:
+        if sel_area != "ALL AREAS" and sel_area != "ALL ASSIGNED AREAS":
             filtered_ledger = filtered_ledger[filtered_ledger['area'].str.lower() == sel_area.lower()]
             
         st.markdown("### 📊 Enterprise Financial Graphs Overview")
@@ -833,55 +816,71 @@ elif routing_node == "📜 Lifetime Ledger History":
 # VIEW 4: SYSTEM ACCESS CONTROL (MASTER CONFIG)
 # ==========================================
 elif routing_node == "🔐 System Access Control":
-    if st.session_state['user_role'] != "Admin":
+    if st.session_state['user_role'] not in ["Owner", "Admin"]:
         st.error("🔴 Access Denied!")
     else:
         st.markdown("<div class='main-title'>🔐 LYNX FIBER ACCESS CONTROL PANEL</div>", unsafe_allow_html=True)
         all_system_areas = fetch_active_areas()
-        adm_tab1, adm_tab2, adm_tab3, adm_tab4, adm_tab5 = st.tabs(["🛠️ Master Schema Settings", "⚙️ Access Accounts", "📦 Fixed Packages", "🗺️ Dynamic Area Hubs", "👤 Security Admin"])
         
-        with adm_tab1:
-            st.markdown("### 👑 Master Database Schema Engineering")
-            if 'purge_requested' not in st.session_state: st.session_state['purge_requested'] = False
+        # Build layout tabs based on hierarchy
+        tabs_def = ["⚙️ Access Accounts Management", "📦 Fixed Packages", "🗺️ Dynamic Area Hubs", "👤 Update My Profile"]
+        if st.session_state['user_role'] == "Owner":
+            tabs_def.insert(0, "🛠️ Master Schema Settings")
+            
+        adm_tabs = st.tabs(tabs_def)
+        
+        # INDEX COMPENSATOR FOR OWNER vs ADMIN
+        idx_shift = 1 if st.session_state['user_role'] == "Owner" else 0
 
-            if not st.session_state['purge_requested']:
-                if st.button("🚨 FORCE CLEAN & PURGE LIVE DATABASE STRUCTURE", use_container_width=True):
-                    st.session_state['purge_requested'] = True; st.rerun()
-            else:
-                purge_password = st.text_input("Enter Admin Password to Confirm", type="password")
-                col_purge1, col_purge2 = st.columns(2)
-                with col_purge1:
-                    if st.button("✅ Verify & Wipe Data", use_container_width=True):
-                        with get_db_connection() as conn:
-                            with conn.cursor() as cursor:
-                                cursor.execute("SELECT password FROM users WHERE username = %s", (st.session_state['username'],))
-                                user_match = cursor.fetchone()
-                        
-                        if user_match and verify_password(purge_password, user_match[0]):
-                            try:
-                                with get_db_connection() as conn:
-                                    with conn.cursor() as cursor:
-                                        cursor.execute("DROP TABLE IF EXISTS billing_history CASCADE; DROP TABLE IF EXISTS customers CASCADE; DROP TABLE IF EXISTS areas CASCADE; DROP TABLE IF EXISTS packages CASCADE; DROP TABLE IF EXISTS users CASCADE; DROP TABLE IF EXISTS app_settings CASCADE;")
-                                        conn.commit()
-                                build_database_schema()
-                                st.success("🚀 System reset successfully!")
-                                st.session_state['purge_requested'] = False
-                                st.cache_data.clear()
-                                st.session_state['authenticated'] = False
-                                st.session_state['user_role'] = None
-                                st.rerun()
-                            except Exception as schema_ex:
-                                st.error(f"❌ Reset Failed: {schema_ex}")
-                        else:
-                            st.error("❌ Invalid Password!")
-                with col_purge2:
-                    if st.button("❌ Cancel", use_container_width=True): st.session_state['purge_requested'] = False; st.rerun()
+        # CONDITIONAL TAB: Master Schema (OWNER ONLY)
+        if st.session_state['user_role'] == "Owner":
+            with adm_tabs[0]:
+                st.markdown("### 👑 Master Database Schema Engineering (Owner Domain)")
+                if 'purge_requested' not in st.session_state: st.session_state['purge_requested'] = False
 
-        with adm_tab2:
+                if not st.session_state['purge_requested']:
+                    if st.button("🚨 FORCE CLEAN & PURGE LIVE DATABASE STRUCTURE", use_container_width=True):
+                        st.session_state['purge_requested'] = True; st.rerun()
+                else:
+                    purge_password = st.text_input("Enter Owner Password to Confirm Destruction", type="password")
+                    col_purge1, col_purge2 = st.columns(2)
+                    with col_purge1:
+                        if st.button("✅ Verify & Wipe Data", use_container_width=True):
+                            with get_db_connection() as conn:
+                                with conn.cursor() as cursor:
+                                    cursor.execute("SELECT password FROM users WHERE username = %s AND role='Owner'", (st.session_state['username'],))
+                                    user_match = cursor.fetchone()
+                            
+                            if user_match and verify_password(purge_password, user_match[0]):
+                                try:
+                                    with get_db_connection() as conn:
+                                        with conn.cursor() as cursor:
+                                            cursor.execute("DROP TABLE IF EXISTS billing_history CASCADE; DROP TABLE IF EXISTS customers CASCADE; DROP TABLE IF EXISTS areas CASCADE; DROP TABLE IF EXISTS packages CASCADE; DROP TABLE IF EXISTS users CASCADE; DROP TABLE IF EXISTS app_settings CASCADE;")
+                                            conn.commit()
+                                    build_database_schema()
+                                    st.success("🚀 System reset successfully!")
+                                    st.session_state['purge_requested'] = False
+                                    st.cache_data.clear()
+                                    st.session_state['authenticated'] = False
+                                    st.session_state['user_role'] = None
+                                    st.rerun()
+                                except Exception as schema_ex:
+                                    st.error(f"❌ Reset Failed: {schema_ex}")
+                            else:
+                                st.error("❌ Invalid Password!")
+                    with col_purge2:
+                        if st.button("❌ Cancel", use_container_width=True): st.session_state['purge_requested'] = False; st.rerun()
+
+        # TAB: Access Accounts Management
+        with adm_tabs[0 + idx_shift]:
+            # OWNER CAN CREATE ADMINS & STAFF
+            st.markdown("### 🔑 Sub-Account Provisioning Framework")
+            
             with st.form("new_admin_form"):
+                st.markdown("#### ⚙️ Provision Secondary Administrator Account")
                 new_admin_user = st.text_input("New Admin Username").strip().lower()
                 new_admin_pass = st.text_input("New Admin Password", type="password").strip()
-                if st.form_submit_button("➕ Create Admin", use_container_width=True):
+                if st.form_submit_button("➕ Create Admin Account", use_container_width=True):
                     if not new_admin_user or not new_admin_pass:
                         st.error("Fields cannot be empty!")
                     else:
@@ -894,8 +893,8 @@ elif routing_node == "🔐 System Access Control":
                                 except Exception as u_ex: 
                                     st.error(f"Error: {u_ex}")
                                     
-            # MODIFICATION: Changed Single-Select to st.multiselect to allow multiple area allocation for staff
             with st.form("new_staff_form_v50"):
+                st.markdown("#### 👤 Provision Limited Field Staff Account")
                 new_user = st.text_input("New Staff Username").strip().lower()
                 new_pass = st.text_input("New Staff Password", type="password").strip()
                 new_areas_lock = st.multiselect("Assign & Lock System Areas (Select Multiples)", all_system_areas)
@@ -913,8 +912,34 @@ elif routing_node == "🔐 System Access Control":
                                     st.success(f"Staff account '{new_user}' registered successfully for areas: {comma_separated_areas}")
                                 except Exception as staff_ex: 
                                     st.error(f"Database Error: {staff_ex}")
+                                    
+            st.write("---")
+            st.markdown("#### 📋 Registered System Accounts List")
+            with get_db_connection() as conn:
+                with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                    cur.execute("SELECT username, role, assignedarea FROM users ORDER BY role ASC")
+                    users_list = cur.fetchall()
+            if users_list:
+                udf = pd.DataFrame(users_list)
+                st.dataframe(udf, use_container_width=True, hide_index=True)
+                
+                # Safeguard: Admins cannot wipe Owners
+                target_del = st.selectbox("Select Account to Remove", [u['username'] for u in users_list if u['username'] != st.session_state['username']])
+                if st.button("🗑️ Delete Selected Account", use_container_width=True):
+                    with get_db_connection() as conn:
+                        with conn.cursor() as cur:
+                            cur.execute("SELECT role FROM users WHERE username = %s", (target_del,))
+                            t_role = cur.fetchone()
+                            if t_role and t_role[0] == "Owner" and st.session_state['user_role'] != "Owner":
+                                st.error("❌ Administrators are barred from deleting the Owner!")
+                            else:
+                                cur.execute("DELETE FROM users WHERE username = %s", (target_del,))
+                                conn.commit()
+                                st.success(f"Account '{target_del}' wiped successfully.")
+                                st.rerun()
 
-        with adm_tab3:
+        # TAB: Fixed Packages
+        with adm_tabs[1 + idx_shift]:
             with st.form("add_package_form"):
                 p_name = st.text_input("Package Profile Name").strip()
                 p_rate = st.number_input("Fixed Monthly Rate (Rs.)", min_value=0, value=1500)
@@ -924,7 +949,8 @@ elif routing_node == "🔐 System Access Control":
                     st.success("✅ Package configuration updated!")
                     st.cache_data.clear(); st.rerun()
 
-        with adm_tab4:
+        # TAB: Dynamic Area Hubs
+        with adm_tabs[2 + idx_shift]:
             with st.form("dynamic_add_area_form"):
                 fresh_area_name = st.text_input("Enter New Area Name").strip()
                 if st.form_submit_button("➕ REGISTER NEW AREA NODE", use_container_width=True):
@@ -942,15 +968,17 @@ elif routing_node == "🔐 System Access Control":
                                 except Exception as area_ex: 
                                     st.error(f"❌ Database Error: {area_ex}")
 
-        with adm_tab5:
+        # TAB: Update My Profile
+        with adm_tabs[3 + idx_shift]:
             with st.form("admin_profile_form"):
-                up_admin_user = st.text_input("Change Admin Username", value=st.session_state['username']).strip().lower()
-                up_admin_pass = st.text_input("New Admin Password", type="password").strip()
-                if st.form_submit_button("🔒 Securely Update Admin Profile", use_container_width=True):
+                st.markdown(f"#### ⚙️ Re-secure Current {st.session_state['user_role'].upper()} Credentials")
+                up_admin_user = st.text_input("Change Username", value=st.session_state['username']).strip().lower()
+                up_admin_pass = st.text_input("New Secure Password", type="password").strip()
+                if st.form_submit_button("🔒 Securely Update Profile", use_container_width=True):
                     with get_db_connection() as conn:
                         with conn.cursor() as cursor:
                             cursor.execute("DELETE FROM users WHERE username = %s", (st.session_state['username'],))
-                            cursor.execute("INSERT INTO users VALUES (%s, %s, 'Admin', 'ALL')", (up_admin_user, hash_password(up_admin_pass)))
+                            cursor.execute("INSERT INTO users VALUES (%s, %s, %s, 'ALL')", (up_admin_user, hash_password(up_admin_pass), st.session_state['user_role']))
                         conn.commit()
                     st.session_state['authenticated'] = False; st.rerun()
 
