@@ -969,11 +969,20 @@ elif routing_node == "🔐 System Access Control":
                 new_username = st.text_input("Entity Username ID").strip().lower()
                 new_password = st.text_input("Security Access Code / Password", type="password")
                 new_role = st.selectbox("System Architecture Role Level", ["Admin", "Staff"])
-                assigned_areas_input = st.text_input("Allocated Sector Clearance", value="ALL").strip()
+                
+                # 🛠️ FIXED: Text Input badal kar List (st.multiselect) laga di hai
+                area_options = ["ALL"] + all_system_areas
+                selected_clearance = st.multiselect("Allocated Sector Clearance", options=area_options, default=["ALL"])
                 
                 if st.form_submit_button("🚀 Inject User Profile Node"):
                     if not new_username or not new_password: st.error("Complete mandatory fields.")
                     else:
+                        # Convert list selection into comma-separated string for DB compatibility
+                        if "ALL" in selected_clearance or not selected_clearance:
+                            assigned_areas_str = "ALL"
+                        else:
+                            assigned_areas_str = ",".join(selected_clearance)
+                            
                         with get_db_connection() as conn:
                             with conn.cursor() as cursor:
                                 cursor.execute("""
@@ -981,9 +990,33 @@ elif routing_node == "🔐 System Access Control":
                                     VALUES (%s, %s, %s, %s, %s)
                                     ON CONFLICT (username, tenant_id) DO UPDATE 
                                     SET password = EXCLUDED.password, role = EXCLUDED.role, assignedarea = EXCLUDED.assignedarea
-                                """, (new_username, hash_password(new_password), new_role, assigned_areas_input, st.session_state['tenant_id']))
+                                """, (new_username, hash_password(new_password), new_role, assigned_areas_str, st.session_state['tenant_id']))
                             conn.commit()
                         st.success(f"✅ User node locked onto your isolation segment.")
+                        st.cache_data.clear(); st.rerun()
+                        
+            # 🛠️ FIXED: Naya Delete Feature Section yahan laga diya hai
+            st.write("---")
+            st.markdown("#### ❌ Remove Sub-User Profile")
+            with get_db_connection() as conn:
+                with conn.cursor() as cur:
+                    # Current login user ke ilawa baqi users fetch honge taake aap khud delete na ho jayein
+                    cur.execute("SELECT username, role FROM users WHERE tenant_id = %s AND username != %s ORDER BY username ASC", (st.session_state['tenant_id'], st.session_state['username']))
+                    live_users = cur.fetchall()
+            
+            if live_users:
+                user_del_options = {f"👤 {u[0]} ({u[1]})": u[0] for u in live_users}
+                selected_user_to_del = st.selectbox("Select User to Remove", list(user_del_options.keys()))
+                if st.button("🗑️ DELETE CHOSEN USER PROFILE"):
+                    target_del_user = user_del_options[selected_user_to_del]
+                    with get_db_connection() as conn:
+                        with conn.cursor() as cursor:
+                            cursor.execute("DELETE FROM users WHERE username = %s AND tenant_id = %s", (target_del_user, st.session_state['tenant_id']))
+                        conn.commit()
+                    st.success(f"🎉 User '{target_del_user}' removed successfully.")
+                    st.cache_data.clear(); st.rerun()
+            else:
+                st.info("Koi dosra sub-user (Staff/Admin) profile majood nahi hai.")
 
         # TAB 2: PACKAGES PRICING MATRIX
         with adm_tabs[2]:
