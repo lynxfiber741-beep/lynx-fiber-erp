@@ -46,7 +46,7 @@ GLOBAL_TARGET_ORDER = [
 ]
 
 st.set_page_config(
-    page_title="LYNX Fiber Enterprise ERP v62.0", 
+    page_title="LYNX Fiber Enterprise ERP v63.0", 
     layout="wide",
     initial_sidebar_state="expanded"
 )
@@ -291,7 +291,7 @@ else:
     if not st.session_state['authenticated']:
         st.markdown("<div class='front-login-box'>", unsafe_allow_html=True)
         st.markdown("<h2 style='text-align:center; color:#10b981; font-weight:900; margin-bottom:5px;'>LYNX FIBER NET</h2>", unsafe_allow_html=True)
-        st.markdown("<p style='text-align:center; color:#9ca3af; margin-bottom:30px;'>Enterprise ERP System v62.0</p>", unsafe_allow_html=True)
+        st.markdown("<p style='text-align:center; color:#9ca3af; margin-bottom:30px;'>Enterprise ERP System v63.0</p>", unsafe_allow_html=True)
         
         user_input = (st.text_input("Username Key", key="front_user") or "").strip().lower()
         pass_input = st.text_input("Security Password", type="password", key="front_pass")
@@ -544,7 +544,7 @@ elif routing_node == "👥 Operational Billing Center":
                         cur.execute("SELECT packagename, packagerate FROM packages WHERE areaname = %s", (in_area,))
                         area_pkgs = dict(cur.fetchall())
                 
-                with st.form("add_client_form_v62"):
+                with st.form("add_client_form_v63"):
                     in_id = st.text_input("Desired Unique Username Key").strip().lower()
                     in_name = st.text_input("Customer Full Name").strip()
                     in_phone = st.text_input("Phone Number").strip()
@@ -667,7 +667,7 @@ elif routing_node == "📜 Lifetime Ledger History":
         st.dataframe(df_ledger, use_container_width=True)
 
 # ==========================================
-# VIEW 4: SYSTEM ACCESS CONFIGS (FIXED TABS ROUTING)
+# VIEW 4: SYSTEM ACCESS CONFIGS (WITH REMOVE AREA FEATURE)
 # ==========================================
 elif routing_node == "🔐 System Access Control":
     if st.session_state['user_role'] not in ["Owner", "Admin"]:
@@ -676,7 +676,6 @@ elif routing_node == "🔐 System Access Control":
         st.markdown("<div class='main-title'>🔐 LYNX FIBER ACCESS CONTROL PANEL</div>", unsafe_allow_html=True)
         all_system_areas = fetch_active_areas()
         
-        # FIXED DESIGN: Static list to avoid off-by-one array crash
         tab_titles = [
             "⚙️ Access Accounts Management", 
             "📦 Fixed Packages Pricing Matrix", 
@@ -686,11 +685,10 @@ elif routing_node == "🔐 System Access Control":
         
         adm_tabs = st.tabs(tab_titles)
 
-        # TAB 0: ACCESS ACCOUNTS MANAGEMENT (RESTORED!)
+        # TAB 0: ACCESS ACCOUNTS MANAGEMENT
         with adm_tabs[0]:
             st.markdown("### ⚙️ Access Accounts Management & Credentials")
             
-            # Sub-Section A: Owner Password Reset (FIXED/RESTORED)
             st.markdown("#### 🔑 Update Your Account Password")
             with st.form("owner_self_password_form"):
                 new_self_pass = st.text_input("Enter New Password Structure", type="password")
@@ -706,14 +704,12 @@ elif routing_node == "🔐 System Access Control":
             
             st.write("---")
             
-            # Sub-Section B: Create Sub-Users (Admin / Staff)
             st.markdown("#### ➕ Provision Sub-User Entity (Admin / Staff)")
             with st.form("create_subuser_form"):
                 new_username = st.text_input("Entity Username ID").strip().lower()
                 new_password = st.text_input("Security Access Code / Password", type="password")
                 new_role = st.selectbox("System Architecture Role Level", ["Admin", "Staff"])
                 
-                # Dynamic area string allocation for staff restriction
                 st.caption("For Staff: Input comma-separated areas (e.g. Saeela, Sanghoi) or 'ALL' for absolute visibility.")
                 assigned_areas_input = st.text_input("Allocated Terminal Area Sector Clearance", value="ALL").strip()
                 
@@ -791,10 +787,13 @@ elif routing_node == "🔐 System Access Control":
                         st.success(f"💥 Package '{target_pkg_name}' for Area '{target_area_name}' has been completely removed!")
                         st.cache_data.clear(); st.rerun()
 
-        # TAB 2: DYNAMIC AREA HUBS SECTOR
+        # TAB 2: DYNAMIC AREA HUBS SECTOR (WITH ADD & NEW DELETE AREA NODE ENGINE)
         with adm_tabs[2]:
             st.markdown("### 🗺️ Sector Node Operations")
+            
+            # Form A: Add Area
             with st.form("add_area_sector_form"):
+                st.markdown("#### ➕ Register New Network Hub Location")
                 new_area_name = st.text_input("Enter New Network Location Name (e.g., Bagga, Saeela, Sanghoi)").strip()
                 if st.form_submit_button("➕ COMMIT SECTOR DEPLOYMENT REGISTRY"):
                     if new_area_name:
@@ -804,8 +803,41 @@ elif routing_node == "🔐 System Access Control":
                             conn.commit()
                         st.success(f"✅ {new_area_name} registered successfully.")
                         st.cache_data.clear(); st.rerun()
+            
+            st.write("---")
+            
+            # Form B: INTEGRATED REMOVE AREA ENGINE (FIXED FEATURE)
+            st.markdown("#### ❌ Remove Operating Area Hub Node")
+            if not all_system_areas:
+                st.info("No active areas registered on the database system to remove.")
+            else:
+                chosen_delete_area = st.selectbox("Select Area Hub to Permanently Remove", all_system_areas)
+                
+                with st.form("delete_area_secure_form"):
+                    st.warning(f"⚠️ Critical Alert: Removing '{chosen_delete_area}' will wipe out its packages configuration too. Ensure NO users are currently mapped under this area.")
+                    
+                    if st.form_submit_button("🗑️ PERMANENTLY REMOVE AREA HUB FROM LEDGER"):
+                        # Safety Validation: Check if customers exist in this area
+                        with get_db_connection() as conn:
+                            with conn.cursor() as cursor:
+                                cursor.execute("SELECT COUNT(*) FROM customers WHERE LOWER(area) = LOWER(%s)", (chosen_delete_area,))
+                                customer_count = cursor.fetchone()[0]
+                        
+                        if customer_count > 0:
+                            st.error(f"❌ Aborted: Bound Dependency Leak! There are {customer_count} customers active inside '{chosen_delete_area}'. Relocate those users to another sector before removing this node.")
+                        else:
+                            with get_db_connection() as conn:
+                                with conn.cursor() as cursor:
+                                    # 1. Clear out tariff links first to prevent foreign table orphans
+                                    cursor.execute("DELETE FROM packages WHERE LOWER(areaname) = LOWER(%s)", (chosen_delete_area,))
+                                    # 2. Drop the core row node
+                                    cursor.execute("DELETE FROM areas WHERE LOWER(areaname) = LOWER(%s)", (chosen_delete_area,))
+                                conn.commit()
+                            
+                            st.success(f"💥 Area Hub '{chosen_delete_area}' has been perfectly purged from system logs.")
+                            st.cache_data.clear(); st.rerun()
 
-        # TAB 3: OWNER PRIVILEGES ENGINE (RESTRICTED TO OWNER ROLE ONLY)
+        # TAB 3: OWNER PRIVILEGES ENGINE
         with adm_tabs[3]:
             if st.session_state['user_role'] != "Owner":
                 st.warning("🔒 This specific section is encrypted and locked for the Master Owner entity only.")
