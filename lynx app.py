@@ -27,7 +27,7 @@ from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 # ==========================================
 DISTRIBUTOR_NAME = "Lynx Fiber Internet"
 
-# 🤫 HIDDEN SUPER-ADMIN REGISTRY (Aapke numbers jo am customer se hide rahenge)
+# 🤫 HIDDEN SUPER-ADMIN REGISTRY
 MASTER_NOTIFY_NUMBERS = ["03215943786", "03118808741"]
 
 # ==========================================
@@ -36,13 +36,13 @@ MASTER_NOTIFY_NUMBERS = ["03215943786", "03118808741"]
 if 'authenticated' not in st.session_state:
     st.session_state['authenticated'] = False
 if 'user_role' not in st.session_state:
-    st.session_state['user_role'] = None
+    st.session_state['user_role'] = ""
 if 'username' not in st.session_state:
     st.session_state['username'] = ""
 if 'tenant_id' not in st.session_state:
     st.session_state['tenant_id'] = "lynx"  # Default master tenant
 if 'assigned_areas' not in st.session_state:
-    st.session_state['assigned_areas'] = []  
+    st.session_state['assigned_areas'] = ["ALL"]  
 if 'current_node' not in st.session_state:
     st.session_state['current_node'] = "📊 Core Analytics Dashboard"
 if 'portal_mode' not in st.session_state:
@@ -93,7 +93,7 @@ def verify_password(password: str, hashed_password: str) -> bool:
         return False
 
 # ==========================================
-# 🛑 AUTO-REPAIR MULTI-TENANT SCHEMA ENGINE (v67.1 FIXED)
+# 🛑 AUTO-REPAIR MULTI-TENANT SCHEMA ENGINE
 # ==========================================
 def build_database_schema():
     with get_db_connection() as conn:
@@ -226,7 +226,7 @@ def build_database_schema():
                 
         conn.commit()
 
-# Run the fixed database engine configuration
+# Run the database setup
 build_database_schema()
 
 # ==========================================
@@ -420,8 +420,8 @@ else:
                         st.error("⚠️ This system access instance is locked by the main distributor.")
                     else:
                         st.session_state['authenticated'] = True
-                        st.session_state['user_role'] = user_match[0]  
-                        st.session_state['username'] = user_match[1]
+                        st.session_state['user_role'] = user_match[0] if user_match[0] else "Staff"
+                        st.session_state['username'] = user_match[1] if user_match[1] else user_input
                         st.session_state['tenant_id'] = input_tenant
                         
                         raw_areas = user_match[2] if user_match[2] else "ALL"
@@ -490,11 +490,11 @@ else:
     else:
         routing_node = st.session_state['current_node']
 
-# NAVIGATION SIDEBAR WITH TENANT AWARENESS
+# NAVIGATION SIDEBAR WITH TENANT AWARENESS (🛠️ CRASH PATCH INTEGRATED)
 if st.session_state['authenticated'] and not st.session_state['portal_mode']:
     with st.sidebar:
-        st.markdown(f"<h2 style='color:#10b981; font-weight:900; text-align:center; margin-bottom:5px;'>{TENANT_COMPANY_NAME}</h2>", unsafe_allow_html=True)
-        st.markdown(f"<p style='text-align:center; font-size:11px; color:#6b7280;'>Domain context: <b>{st.session_state['tenant_id']}</b></p>", unsafe_allow_html=True)
+        st.markdown(f"<h2 style='color:#10b981; font-weight:900; text-align:center; margin-bottom:5px;'>{str(TENANT_COMPANY_NAME).upper()}</h2>", unsafe_allow_html=True)
+        st.markdown(f"<p style='text-align:center; font-size:11px; color:#6b7280;'>Domain context: <b>{str(st.session_state.get('tenant_id', 'lynx'))}</b></p>", unsafe_allow_html=True)
         st.markdown("<div class='nav-header'>System Navigation</div>", unsafe_allow_html=True)
         
         if st.button("📊 Core Analytics Dashboard", use_container_width=True):
@@ -504,13 +504,19 @@ if st.session_state['authenticated'] and not st.session_state['portal_mode']:
         if st.button("📜 Lifetime Ledger History", use_container_width=True):
             st.session_state['current_node'] = "📜 Lifetime Ledger History"; st.rerun()
             
-        if st.session_state['user_role'] in ["Owner", "Admin"]:
+        if str(st.session_state.get('user_role', '')).lower() in ["owner", "admin"]:
             if st.button("🔐 System Access Control", use_container_width=True):
                 st.session_state['current_node'] = "🔐 System Access Control"; st.rerun()
             
         st.write("---")
-        area_display = "All Systems" if "ALL" in st.session_state['assigned_areas'] else ", ".join(st.session_state['assigned_areas'])
-        st.markdown(f"<p style='text-align:center; color:#9ca3af;'>👤 Active: <b>{st.session_state['username'].upper()}</b><br>📍 Role: <b style='color:#10b981;'>{st.session_state['user_role'].upper()}</b><br>🗺️ Areas:<br><span style='color:#60a5fa; font-size:12px;'><b>{area_display}</b></span></p>", unsafe_allow_html=True)
+        assigned_list = st.session_state.get('assigned_areas', ["ALL"])
+        area_display = "All Systems" if "ALL" in assigned_list else ", ".join(assigned_list)
+        
+        # 🛠️ Bulletproof Safe String Rendering to fix the AttributeError
+        username_display = str(st.session_state.get('username', 'UNKNOWN')).upper()
+        role_display = str(st.session_state.get('user_role', 'STAFF')).upper()
+        
+        st.markdown(f"<p style='text-align:center; color:#9ca3af;'>👤 Active: <b>{username_display}</b><br>📍 Role: <b style='color:#10b981;'>{role_display}</b><br>🗺️ Areas:<br><span style='color:#60a5fa; font-size:12px;'><b>{area_display}</b></span></p>", unsafe_allow_html=True)
         if st.button("🔒 Logout System", use_container_width=True):
             st.session_state['authenticated'] = False; st.rerun()
 
@@ -518,11 +524,11 @@ if st.session_state['authenticated'] and not st.session_state['portal_mode']:
 # VIEW 1: CORE ANALYTICS DASHBOARD
 # ==========================================
 if routing_node == "📊 Core Analytics Dashboard":
-    st.markdown(f"<div class='main-title'>⚡ {TENANT_COMPANY_NAME.upper()} ENTERPRISE ANALYTICS</div>", unsafe_allow_html=True)
+    st.markdown(f"<div class='main-title'>⚡ {str(TENANT_COMPANY_NAME).upper()} ENTERPRISE ANALYTICS</div>", unsafe_allow_html=True)
     
     df_matrix = fetch_isolated_matrix(st.session_state['tenant_id'])
     all_system_areas = fetch_isolated_areas(st.session_state['tenant_id'])
-    is_high_profile = (st.session_state['user_role'] in ["Owner", "Admin"])
+    is_high_profile = (str(st.session_state.get('user_role', '')).lower() in ["owner", "admin"])
     
     cards_display_areas = all_system_areas.copy()
     if not is_high_profile and "ALL" not in st.session_state['assigned_areas']:
@@ -645,7 +651,7 @@ elif routing_node == "👥 Operational Billing Center":
     
     df_matrix = fetch_isolated_matrix(st.session_state['tenant_id'])
     all_system_areas = fetch_isolated_areas(st.session_state['tenant_id'])
-    is_management = (st.session_state['user_role'] in ["Owner", "Admin"])
+    is_management = (str(st.session_state.get('user_role', '')).lower() in ["owner", "admin"])
     
     if not is_management and "ALL" not in st.session_state['assigned_areas']:
         df_matrix = df_matrix[df_matrix['area'].str.lower().isin([s.lower() for s in st.session_state['assigned_areas']])]
@@ -830,7 +836,7 @@ elif routing_node == "📜 Lifetime Ledger History":
 # VIEW 4: SYSTEM ACCESS CONFIGS (TENANT CONTEXT)
 # ==========================================
 elif routing_node == "🔐 System Access Control":
-    if st.session_state['user_role'] not in ["Owner", "Admin"]:
+    if str(st.session_state.get('user_role', '')).lower() not in ["owner", "admin"]:
         st.error("🔴 Administrative Elevation Clearance Required.")
     else:
         st.markdown("<div class='main-title'>🔐 SYSTEM ACCESS & MULTI-TENANT CONFIGURATION PANEL</div>", unsafe_allow_html=True)
@@ -882,13 +888,12 @@ elif routing_node == "🔐 System Access Control":
                         
                         st.write("---")
                         
-                        # --- 👑 NEW FIXED LAYER: FORCE RESET DOSRAY ISP KA PASSWORD ---
+                        # --- 👑 FORCE RESET DOSRAY ISP KA PASSWORD LAYER ---
                         st.markdown("#### 🔑 Force Reset Other ISP User Password")
                         st.caption("Yahan se aap kisi bhi dosray ISP tenant ke master admin ya sub-user ka password directly update kar sakte hain.")
                         
                         pwd_target_tenant = st.selectbox("Select Target ISP (Tenant ID)", tenant_select_list, key="pwd_tenant_select")
                         
-                        # Selected Tenant ke specific users fetch karein
                         with get_db_connection() as conn:
                             with conn.cursor() as cur:
                                 cur.execute("SELECT username, role FROM users WHERE tenant_id = %s ORDER BY username ASC", (pwd_target_tenant,))
@@ -1048,7 +1053,7 @@ elif routing_node == "🔐 System Access Control":
 
         # TAB 4: ISOLATED DESTRUCT MODULE
         with adm_tabs[4]:
-            if st.session_state['user_role'] != "Owner":
+            if str(st.session_state.get('user_role', '')).lower() != "owner":
                 st.warning("🔒 Section locked.")
             else:
                 st.markdown("### ☢️ Tenant Schema Single Destruction Module")
