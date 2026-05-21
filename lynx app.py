@@ -104,6 +104,20 @@ def verify_password(password: str, hashed_password: str) -> bool:
     except Exception:
         return False
 
+# Activity Logger Helper Function
+def log_activity(tenant_id, username, action_type, action_details):
+    try:
+        log_uuid = f"LOG-{uuid.uuid4().hex[:10].upper()}"
+        current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        with get_db_connection() as conn:
+            with conn.cursor() as cursor:
+                cursor.execute("""
+                    INSERT INTO activity_logs (log_id, tenant_id, username, action_type, action_details, datetimestamp)
+                    VALUES (%s, %s, %s, %s, %s, %s)
+                """, (log_uuid, tenant_id, username, action_type, action_details, current_time))
+    except Exception:
+        pass  # Fails silently to prevent system lockups if logging misfires
+
 # Invoice PDF Builder Function with XML Safeguards
 def generate_receipt_pdf(company_name, phone_ref, inv_id, c_id, c_name, area, package, paid, arrears, method):
     buffer = io.BytesIO()
@@ -327,6 +341,26 @@ def build_database_schema():
                 'tenant_id': "TEXT NOT NULL DEFAULT 'lynx'"
             }, ['invoiceid'])
 
+            # New Feature Table: Activity System Registry 
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS activity_logs (
+                    log_id TEXT PRIMARY KEY,
+                    tenant_id TEXT NOT NULL,
+                    username TEXT NOT NULL,
+                    action_type TEXT NOT NULL,
+                    action_details TEXT NOT NULL,
+                    datetimestamp TEXT NOT NULL
+                )
+            """)
+            safe_migrate_table_constraints(cursor, 'activity_logs', {
+                'log_id': 'TEXT PRIMARY KEY',
+                'tenant_id': 'TEXT NOT NULL',
+                'username': 'TEXT NOT NULL',
+                'action_type': 'TEXT NOT NULL',
+                'action_details': 'TEXT NOT NULL',
+                'datetimestamp': 'TEXT NOT NULL'
+            }, ['log_id'])
+
             cursor.execute("SELECT COUNT(*) FROM system_tenants WHERE tenant_id = 'lynx'")
             if cursor.fetchone()[0] == 0:
                 cursor.execute("""
@@ -544,6 +578,10 @@ else:
                                 else:
                                     st.session_state['assigned_areas'] = [a.strip() for a in raw_areas.split(",") if a.strip()]
                                 st.session_state['current_node'] = "📊 Lynx Dashboard"
+                                
+                                # Activity Track: Login Log
+                                log_activity(input_tenant, st.session_state['username'], "LOGIN", "Authorized securely into dashboard session.")
+                                
                                 st.cache_data.clear()
                                 st.rerun()
                         else:
@@ -581,6 +619,10 @@ else:
                                             INSERT INTO users (username, password, role, assignedarea, tenant_id)
                                             VALUES (%s, %s, 'Owner', 'ALL', %s)
                                         """, (reg_owner_user, hash_password(reg_owner_pass), reg_tenant_id))
+                                        
+                                        # Activity Track: Onboarding
+                                        log_activity(reg_tenant_id, reg_owner_user, "TENANT_REGISTRATION", f"ISP Registered Application: {reg_company_name}")
+                                        
                                         st.success("🎉 Registration Proposal Saved onto Supabase Ledger Engine!")
                                         alert_payload = f"🔒 LYNX SAAS LICENSE ALERT:\nNew enterprise system activation initiated.\nTenant ID: {reg_tenant_id}\nISP Company: {reg_company_name}"
                                         encoded_msg = urllib.parse.quote(alert_payload)
@@ -617,6 +659,8 @@ if st.session_state['authenticated'] and not st.session_state['portal_mode']:
         role_display = str(st.session_state.get('user_role', 'STAFF')).upper()
         st.markdown(f"<p style='text-align:center;'>👤 Active: <b>{username_display}</b><br>📍 Role: <b style='color:#10b981;'>{role_display}</b></p>", unsafe_allow_html=True)
         if st.button("🔒 Logout System", use_container_width=True):
+            # Activity Track: Logout
+            log_activity(st.session_state['tenant_id'], st.session_state['username'], "LOGOUT", "Logged out of terminal control pane.")
             st.session_state['authenticated'] = False; st.rerun()
 
 # ==========================================
@@ -820,6 +864,10 @@ elif routing_node == "👥 Operational Billing Center":
                             INSERT INTO billing_history (invoiceid, customerid, customername, area, phone, datetimestamp, currentpackage, amountpaid, remainingarrears, transactiontype, paymentmethod, discountgiven, tenant_id)
                             VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, 'BILL_PAYMENT', %s, %s, %s)
                         """, (invoice_uuid, resolved_uid, node_row_dict.get('customername'), node_row_dict.get('area'), node_row_dict.get('phone'), datetime.now().strftime("%Y-%m-%d %H:%M:%S"), node_row_dict.get('package'), int(cash_in), future_shift, pay_method, int(discount), st.session_state['tenant_id']))
+                
+                # Activity Track: Bill Payment
+                log_activity(st.session_state['tenant_id'], st.session_state['username'], "BILL_COLLECTION", f"Collected Rs. {cash_in} from customer '{resolved_uid}'. Arrears set to Rs. {future_shift}. Expiry extended to {new_expiry}.")
+                
                 st.success(f"🎉 Collection Recorded Cleanly! Extended Lock To: {new_expiry}")
                 pdf_bytes = generate_receipt_pdf(TENANT_COMPANY_NAME, TENANT_SUPPORT_PHONE, invoice_uuid, resolved_uid, node_row_dict.get('customername'), node_row_dict.get('area'), node_row_dict.get('package'), cash_in, future_shift, pay_method)
                 st.download_button("📥 Download PDF Receipt", data=pdf_bytes, file_name=f"Receipt_{invoice_uuid}.pdf", mime="application/pdf")
@@ -871,6 +919,10 @@ elif routing_node == "👥 Operational Billing Center":
                                         INSERT INTO customers (username, customername, phone, cnic, package, billamount, area, address, onuserialnumber, balanceshift, status, expirydate, tenant_id)
                                         VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, 0, 'UNPAID', %s, %s)
                                     """, (in_id, in_name, norm_p, in_cnic, chosen_pkg, int(in_rate), in_area, in_address, in_sn, default_expiry, st.session_state['tenant_id']))
+                                    
+                                    # Activity Track: Provision Account
+                                    log_activity(st.session_state['tenant_id'], st.session_state['username'], "CLIENT_PROVISION", f"Created terminal client profile for user '{in_id}' ({in_name}) inside network sector '{in_area}'.")
+                                    
                                     st.success(f"🚀 Profile allocated! Expiry: {default_expiry}.")
                                     st.cache_data.clear(); st.rerun()
                                     
@@ -916,6 +968,10 @@ elif routing_node == "👥 Operational Billing Center":
                                         inserted_rows += 1
                                     except Exception:
                                         pass
+                        
+                        # Activity Track: Bulk Import
+                        log_activity(st.session_state['tenant_id'], st.session_state['username'], "BULK_IMPORT", f"Uploaded bulk matrix data. Successfully stored/skipped rows. Processed entries: {inserted_rows}")
+                        
                         st.success(f"🚀 Bulk Isolation processed {inserted_rows} entries cleanly!")
                         st.cache_data.clear()
                 except Exception as ex:
@@ -948,6 +1004,10 @@ elif routing_node == "👥 Operational Billing Center":
                                 UPDATE customers SET customername=%s, phone=%s, address=%s, onuserialnumber=%s, billamount=%s, status=%s 
                                 WHERE username=%s AND tenant_id=%s
                             """, (up_name, clean_and_validate_phone(up_phone), up_address, up_sn, int(up_rate), up_status, edit_uid, st.session_state['tenant_id']))
+                    
+                    # Activity Track: Modification Update
+                    log_activity(st.session_state['tenant_id'], st.session_state['username'], "CLIENT_UPDATE", f"Modified details of customer profile '{edit_uid}'. Updated Status: {up_status}, Rate: Rs. {up_rate}.")
+                    
                     st.success("Profile Changes Logged within Tenant context.")
                     st.cache_data.clear(); st.rerun()
 
@@ -956,18 +1016,38 @@ elif routing_node == "👥 Operational Billing Center":
 # ==========================================
 elif routing_node == "📜 Lifetime Ledger History":
     st.markdown("<div class='main-title'>📜 ACCOUNT LEDGER METRICS & AUDIT TRAIL</div>", unsafe_allow_html=True)
-    df_ledger = pd.DataFrame()
-    with get_db_connection() as conn:
-        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-            cur.execute("SELECT * FROM billing_history WHERE tenant_id = %s ORDER BY datetimestamp DESC", (st.session_state['tenant_id'],))
-            l_rows = cur.fetchall()
-            if l_rows:
-                df_ledger = pd.DataFrame(l_rows)
-    if df_ledger.empty:
-        st.info("No transactional logs found inside your tenant node registry.")
-    else:
-        df_ledger.columns = [c.lower() for c in df_ledger.columns]
-        st.dataframe(df_ledger, use_container_width=True)
+    
+    # Render Double Tabs for Split Ledgers (Finance vs Activity System)
+    tab_ledger, tab_logs = st.tabs(["💳 Financial Collection Ledger", "🐾 User Activity Audit Logs"])
+    
+    with tab_ledger:
+        df_ledger = pd.DataFrame()
+        with get_db_connection() as conn:
+            with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                cur.execute("SELECT * FROM billing_history WHERE tenant_id = %s ORDER BY datetimestamp DESC", (st.session_state['tenant_id'],))
+                l_rows = cur.fetchall()
+                if l_rows:
+                    df_ledger = pd.DataFrame(l_rows)
+        if df_ledger.empty:
+            st.info("No transactional logs found inside your tenant node registry.")
+        else:
+            df_ledger.columns = [c.lower() for c in df_ledger.columns]
+            st.dataframe(df_ledger, use_container_width=True)
+            
+    with tab_logs:
+        df_activities = pd.DataFrame()
+        with get_db_connection() as conn:
+            with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                cur.execute("SELECT datetimestamp, username, action_type, action_details FROM activity_logs WHERE tenant_id = %s ORDER BY datetimestamp DESC", (st.session_state['tenant_id'],))
+                act_rows = cur.fetchall()
+                if act_rows:
+                    df_activities = pd.DataFrame(act_rows)
+        if df_activities.empty:
+            st.info("No system activity logs tracked for this tenant node.")
+        else:
+            # Format dataframe columns beautifully
+            df_activities.columns = ["TIMESTAMP", "OPERATOR USER", "ACTION CATEGORY", "DETAILED DESCRIPTION LOG"]
+            st.dataframe(df_activities, use_container_width=True)
 
 # ==========================================
 # VIEW 4: SYSTEM ACCESS CONFIGS
@@ -1030,6 +1110,9 @@ elif routing_node == "🔐 System Access Control":
                                     """, (hashed_f, t_owner, chosen_target_tenant))
                                     st.success(f"🔑 Successfully overrode password for master root key: `{t_owner}`")
                                     
+                        # Activity Track: Master License Update
+                        log_activity("lynx", "owner", "MASTER_LICENSE_UPDATE", f"Admin altered tenant authorization lock status on '{chosen_target_tenant}'. Active toggle state: {new_license_toggle}")
+                        
                         st.success("Dynamic access lock state and subscription loop updated.")
                         st.cache_data.clear(); st.rerun()
         else:
@@ -1046,6 +1129,10 @@ elif routing_node == "🔐 System Access Control":
                         with get_db_connection() as conn:
                             with conn.cursor() as cursor:
                                 cursor.execute("UPDATE system_tenants SET company_name=%s, support_phone=%s WHERE tenant_id=%s", (b_name, b_phone, st.session_state['tenant_id']))
+                        
+                        # Activity Track: Branding Update
+                        log_activity(st.session_state['tenant_id'], st.session_state['username'], "BRANDING_UPDATE", f"Branding adjusted to Brand name: '{b_name}' and helpline phone: '{b_phone}'.")
+                        
                         st.success("Metadata Saved cleanly inside cluster engine.")
                         st.cache_data.clear(); st.rerun()
                         
@@ -1064,6 +1151,10 @@ elif routing_node == "🔐 System Access Control":
                                 current_pwd_row = cursor.fetchone()
                                 if current_pwd_row and verify_password(current_self_pass, current_pwd_row[0]):
                                     cursor.execute("UPDATE users SET password = %s WHERE username = %s AND tenant_id = %s", (hash_password(new_self_pass), st.session_state['username'], st.session_state['tenant_id']))
+                                    
+                                    # Activity Track: Password Change
+                                    log_activity(st.session_state['tenant_id'], st.session_state['username'], "PASSWORD_CHANGE", "Operator successfully changed their dashboard access password.")
+                                    
                                     st.success("🎉 Your credentials updated successfully!")
                                 else:
                                     st.error("❌ Validation failed.")
@@ -1082,6 +1173,10 @@ elif routing_node == "🔐 System Access Control":
                         with get_db_connection() as conn:
                             with conn.cursor() as cursor:
                                 cursor.execute("INSERT INTO users (username, password, role, assignedarea, tenant_id) VALUES (%s, %s, %s, %s, %s) ON CONFLICT (username, tenant_id) DO UPDATE SET password=EXCLUDED.password, role=EXCLUDED.role, assignedarea=EXCLUDED.assignedarea", (new_username, hash_password(new_password), new_role, assigned_areas_str, st.session_state['tenant_id']))
+                        
+                        # Activity Track: Provision Sub-user
+                        log_activity(st.session_state['tenant_id'], st.session_state['username'], "SUBUSER_PROVISION", f"Created/Updated control account access credentials for operator '{new_username}' allocated as role '{new_role}'.")
+                        
                         st.success("User configuration posted.")
                         st.cache_data.clear(); st.rerun()
                         
@@ -1098,6 +1193,10 @@ elif routing_node == "🔐 System Access Control":
                         with get_db_connection() as conn:
                             with conn.cursor() as cursor:
                                 cursor.execute("INSERT INTO packages (packagename, areaname, packagerate, tenant_id) VALUES (%s, %s, %s, %s) ON CONFLICT (packagename, areaname, tenant_id) DO UPDATE SET packagerate = EXCLUDED.packagerate", (p_name, p_area, int(p_rate), st.session_state['tenant_id']))
+                        
+                        # Activity Track: Package Lock Matrix Entry
+                        log_activity(st.session_state['tenant_id'], st.session_state['username'], "PACKAGE_UPSERT", f"Created or adjusted tariff plan '{p_name}' for node network hub '{p_area}' priced at Rs. {p_rate}.")
+                        
                         st.success("Configured matrix row entry.")
                         st.cache_data.clear(); st.rerun()
             
@@ -1127,6 +1226,10 @@ elif routing_node == "🔐 System Access Control":
                                     WHERE LOWER(packagename) = LOWER(%s) AND LOWER(areaname) = LOWER(%s) AND tenant_id = %s
                                 """, (target_del_pkg['packagename'], target_del_pkg['areaname'], st.session_state['tenant_id']))
                                 d_pkg = target_del_pkg['packagename']
+                                
+                                # Activity Track: Delete Package
+                                log_activity(st.session_state['tenant_id'], st.session_state['username'], "PACKAGE_DELETE", f"Wiped tariff profile plan matrix: '{d_pkg}' configured under network hub area context '{target_del_pkg['areaname']}'.")
+                                
                                 st.success(f"✅ Tariff '{d_pkg}' removed successfully!")
                                 st.cache_data.clear(); st.rerun()
             else:
@@ -1141,6 +1244,10 @@ elif routing_node == "🔐 System Access Control":
                         with get_db_connection() as conn:
                             with conn.cursor() as cursor:
                                 cursor.execute("INSERT INTO areas VALUES (%s, %s) ON CONFLICT DO NOTHING", (new_area_name, st.session_state['tenant_id']))
+                        
+                        # Activity Track: Add Area Sector
+                        log_activity(st.session_state['tenant_id'], st.session_state['username'], "AREA_CREATE", f"Deployed new dynamic dynamic sector network node location hub named '{new_area_name}'.")
+                        
                         st.success("Area logged to network.")
                         st.cache_data.clear(); st.rerun()
             
@@ -1161,6 +1268,10 @@ elif routing_node == "🔐 System Access Control":
                                 st.error(f"❌ Deletion Aborted! '{del_area}' sector has {assigned_clients} active clients and {linked_packages} assigned packages. Clear dependencies first to prevent runtime system crash.")
                             else:
                                 cursor.execute("DELETE FROM areas WHERE LOWER(areaname) = LOWER(%s) AND tenant_id = %s", (del_area, st.session_state['tenant_id']))
+                                
+                                # Activity Track: Delete Area Node
+                                log_activity(st.session_state['tenant_id'], st.session_state['username'], "AREA_DELETE", f"Purged sector network location hub: '{del_area}' completely from the database architecture maps.")
+                                
                                 st.success(f"✅ Area '{del_area}' wiped cleanly from cloud database cluster.")
                                 st.cache_data.clear(); st.rerun()
             else:
@@ -1182,6 +1293,10 @@ elif routing_node == "🔐 System Access Control":
                                 cursor.execute("DELETE FROM customers WHERE tenant_id = %s", (st.session_state['tenant_id'],))
                                 cursor.execute("DELETE FROM packages WHERE tenant_id = %s", (st.session_state['tenant_id'],))
                                 cursor.execute("DELETE FROM areas WHERE tenant_id = %s", (st.session_state['tenant_id'],))
+                                
+                                # Activity Track: Data Purge Wiped
+                                log_activity(st.session_state['tenant_id'], st.session_state['username'], "TENANT_DATA_PURGE", "CRITICAL WARNING: Executed complete isolation loop data wipe across subscriber and financial records.")
+                                
                                 st.success("🚀 Your isolated tenant segment data has been cleared cleanly!")
                                 st.cache_data.clear(); st.rerun()
                             else:
@@ -1201,7 +1316,7 @@ elif routing_node == "🔐 System Access Control":
                 with st.spinner("Database se data safe download kiya ja raha hai..."):
                     try:
                         backup_payload = {}
-                        tables = ['system_tenants', 'users', 'customers', 'areas', 'packages', 'billing_history']
+                        tables = ['system_tenants', 'users', 'customers', 'areas', 'packages', 'billing_history', 'activity_logs']
                         
                         with get_db_connection() as conn:
                             for t_name in tables:
@@ -1215,6 +1330,10 @@ elif routing_node == "🔐 System Access Control":
                                 backup_payload[t_name] = df_bak.to_dict(orient='records')
                         
                         json_str = json.dumps(backup_payload, default=str, indent=4)
+                        
+                        # Activity Track: Cloud Backup Vault Trigger
+                        log_activity(st.session_state['tenant_id'], st.session_state['username'], "BACKUP_GENERATED", f"Generated snapshot database backup cluster payload for scope selection '{backup_scope}'.")
+                        
                         st.success("✅ Database Snapshot processed successfully! Niche diye gaye button se file download karein.")
                         st.download_button(
                             label="📥 DOWNLOAD BACKUP FILE (.JSON)",
