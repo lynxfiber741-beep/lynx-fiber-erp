@@ -443,11 +443,11 @@ else:
                         st.cache_data.clear()
                         st.rerun()
                 else:
-                    st.error("❌ Invalid Tenant, Username, or Password Node Variant.")
+                    st.error("❌ Invalid Tenant, Username, or Password Variant.")
                     
         with register_tab:
             st.markdown("<h3 style='text-align:center; color:#3b82f6;'>SaaS Tenant Onboarding</h3>", unsafe_allow_html=True)
-            st.caption("Naya ISP Account banana ke liye niche diye gaye parameters fill karein:")
+            st.caption("Naya ISP Account banana ke liye parameters fill karein:")
             
             with st.form("saas_tenant_registration_form"):
                 reg_tenant_id = st.text_input("Choose Unique Tenant Code (e.g., falcon, alpha)").strip().lower()
@@ -461,13 +461,15 @@ else:
                         st.error("❌ Tamam mandatory fields fill karna lazmi hain.")
                     elif len(reg_tenant_id) < 3:
                         st.error("❌ Tenant Code kam se kam 3 harf ka hona chahiye.")
+                    elif len(reg_owner_pass) < 6:
+                        st.error("❌ Password kam se kam 6 characters ka hona lazmi hai.")
                     else:
                         try:
                             with get_db_connection() as conn:
                                 with conn.cursor() as cursor:
                                     cursor.execute("SELECT COUNT(*) FROM system_tenants WHERE tenant_id = %s", (reg_tenant_id,))
                                     if cursor.fetchone()[0] > 0:
-                                        st.error("❌ Box unique variant already recorded on server logs.")
+                                        st.error("❌ Unique tenant identifier already registered.")
                                     else:
                                         cursor.execute("""
                                             INSERT INTO system_tenants (tenant_id, company_name, support_phone, owner_username, license_active, registration_date)
@@ -486,7 +488,7 @@ else:
                                         encoded_msg = urllib.parse.quote(alert_payload)
                                         
                                         st.markdown("#### 📲 Send Activation Alert to Distributor")
-                                        st.warning("Niche diye gaye links par click karke Admin ko activate karne ki request bhejein:")
+                                        st.warning("Links par click karke Admin ko activate karne ki request bhejein:")
                                         
                                         st.markdown(f'<a href="https://wa.me/92{MASTER_NOTIFY_NUMBERS[0]}?text={encoded_msg}" target="_blank" style="background:#10b981; color:white; padding:12px; border-radius:8px; display:block; text-align:center; text-decoration:none; font-weight:bold; margin-bottom:10px;">📲 Dispatch Verification Code (Line 1)</a>', unsafe_allow_html=True)
                                         st.markdown(f'<a href="https://wa.me/92{MASTER_NOTIFY_NUMBERS[1]}?text={encoded_msg}" target="_blank" style="background:#3b82f6; color:white; padding:12px; border-radius:8px; display:block; text-align:center; text-decoration:none; font-weight:bold;">📲 Dispatch Verification Code (Line 2)</a>', unsafe_allow_html=True)
@@ -503,7 +505,7 @@ else:
 if st.session_state['authenticated'] and not st.session_state['portal_mode']:
     with st.sidebar:
         st.markdown(f"<h2 style='color:#10b981; font-weight:900; text-align:center; margin-bottom:5px;'>{str(TENANT_COMPANY_NAME).upper()}</h2>", unsafe_allow_html=True)
-        st.markdown(f"<p style='text-align:center; font-size:11px; color:#6b7280;'>Domain context: <b>{str(st.session_state.get('tenant_id', 'lynx'))}</b></p>", unsafe_allow_html=True)
+        st.markdown(f"<p style='text-align:center; font-size:11px; color:#6b7280;'>Environment Instance: <b>{str(st.session_state.get('tenant_id', 'lynx'))}</b></p>", unsafe_allow_html=True)
         st.markdown("<div class='nav-header'>System Navigation</div>", unsafe_allow_html=True)
         
         if st.button("📊 Core Analytics Dashboard", use_container_width=True):
@@ -747,7 +749,7 @@ elif routing_node == "👥 Operational Billing Center":
                     in_address = st.text_input("Physical Core Address").strip()
                     in_sn = st.text_input("ONU Hardware Serial ID").strip()
                     
-                    if st.form_submit_button("➕ COMMENCE PROVISION INJECTION"):
+                    if st.form_submit_button("➕ SAVE PROVISION ACCOUNT"):
                         norm_p = clean_and_validate_phone(in_phone)
                         if not in_id or not in_name or not norm_p: 
                             st.error("❌ Key structural missing data elements identified.")
@@ -781,14 +783,22 @@ elif routing_node == "👥 Operational Billing Center":
                         with get_db_connection() as conn:
                             with conn.cursor() as cursor:
                                 for idx, row in df_upload.iterrows():
-                                    clean_id = str(row['username']).strip().lower()
-                                    default_expiry = (datetime.now() + relativedelta(months=1)).strftime("%Y-%m-%d")
-                                    cursor.execute("""
-                                        INSERT INTO customers (username, customername, phone, cnic, package, billamount, area, address, onuserialnumber, balanceshift, status, expirydate, tenant_id)
-                                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, 0, 'UNPAID', %s, %s)
-                                        ON CONFLICT (username, tenant_id) DO NOTHING
-                                    """, (clean_id, str(row['customername']), clean_and_validate_phone(str(row['phone'])), str(row.get('cnic','')), str(row.get('package','Standard')), int(float(str(row.get('billamount', 1500)))), str(row['area']), str(row.get('address','')), str(row.get('onuserialnumber','')), default_expiry, st.session_state['tenant_id']))
-                                    inserted_rows += 1
+                                    try:
+                                        clean_id = str(row['username']).strip().lower()
+                                        default_expiry = (datetime.now() + relativedelta(months=1)).strftime("%Y-%m-%d")
+                                        try:
+                                            bill_amt = int(float(str(row.get('billamount', 1500))))
+                                        except ValueError:
+                                            bill_amt = 1500
+                                            
+                                        cursor.execute("""
+                                            INSERT INTO customers (username, customername, phone, cnic, package, billamount, area, address, onuserialnumber, balanceshift, status, expirydate, tenant_id)
+                                            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, 0, 'UNPAID', %s, %s)
+                                            ON CONFLICT (username, tenant_id) DO NOTHING
+                                        """, (clean_id, str(row['customername']), clean_and_validate_phone(str(row['phone'])), str(row.get('cnic','')), str(row.get('package','Standard')), bill_amt, str(row['area']), str(row.get('address','')), str(row.get('onuserialnumber','')), default_expiry, st.session_state['tenant_id']))
+                                        inserted_rows += 1
+                                    except Exception:
+                                        pass
                             conn.commit()
                         st.success(f"🚀 Bulk Isolation processed {inserted_rows} entries cleanly!")
                         st.cache_data.clear()
@@ -858,78 +868,81 @@ elif routing_node == "🔐 System Access Control":
             "🛠️ Core Structural Destruct Engine"
         ])
 
-        # TAB 0: LYNX EXCLUSIVE MASTER COMMAND HUB
+        # TAB 0: LYNX EXCLUSIVE MASTER COMMAND HUB (STRICTLY OWNER RESTRICTED)
         if st.session_state['tenant_id'] == 'lynx':
             with adm_tabs[0]:
-                st.markdown("### 👑 LYNX MASTER ENTERPRISE DISTRIBUTOR COMMAND HUB")
-                st.caption("Umer Bhai! Yahan se aap kisi bhi naye registered ISP dealer ka system aur license status live approve ya block kar sakte hain.")
-                
-                with get_db_connection() as conn:
-                    with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-                        cur.execute("SELECT * FROM system_tenants ORDER BY registration_date DESC")
-                        all_tenants_rows = cur.fetchall()
-                
-                if all_tenants_rows:
-                    df_tenants_view = pd.DataFrame(all_tenants_rows)
-                    st.write("#### 📋 Live Registered Tenants Matrix Logs")
-                    st.dataframe(df_tenants_view, use_container_width=True)
+                if st.session_state['user_role'] != 'Owner':
+                    st.warning("🔒 Administrative Root Lock: Only the System Root Owner can modify Global SaaS Licensing Licenses.")
+                else:
+                    st.markdown("### 👑 LYNX MASTER ENTERPRISE DISTRIBUTOR COMMAND HUB")
+                    st.caption("Umer Bhai! Yahan se aap naye registered ISP dealers ka license status live approve ya block kar sakte hain.")
                     
-                    st.write("---")
-                    st.markdown("#### ⚙️ Update Tenant License Activation State")
-                    tenant_select_list = [t['tenant_id'] for t in all_tenants_rows if t['tenant_id'] != 'lynx']
+                    with get_db_connection() as conn:
+                        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                            cur.execute("SELECT * FROM system_tenants ORDER BY registration_date DESC")
+                            all_tenants_rows = cur.fetchall()
                     
-                    if not tenant_select_list:
-                        st.info("Aap ke ilawa abhi tak koi aur tenant register nahi hua.")
-                    else:
-                        chosen_target_tenant = st.selectbox("Select Target Tenant ID to Modify Access", tenant_select_list, key="lic_tenant_select")
-                        current_status = next(item for item in all_tenants_rows if item["tenant_id"] == chosen_target_tenant)["license_active"]
-                        
-                        new_license_toggle = st.checkbox("Grant Premium Software Activation Access Link", value=current_status)
-                        
-                        if st.button("💾 LOCK CONFIGURATION STATUS KEY"):
-                            with get_db_connection() as conn:
-                                with conn.cursor() as cursor:
-                                    cursor.execute("UPDATE system_tenants SET license_active = %s WHERE tenant_id = %s", (new_license_toggle, chosen_target_tenant))
-                                conn.commit()
-                            st.success(f"🎉 Tenant '{chosen_target_tenant}' dynamic lock access updated successfully!")
-                            st.cache_data.clear(); st.rerun()
+                    if all_tenants_rows:
+                        df_tenants_view = pd.DataFrame(all_tenants_rows)
+                        st.write("#### 📋 Live Registered Tenants Matrix Logs")
+                        st.dataframe(df_tenants_view, use_container_width=True)
                         
                         st.write("---")
+                        st.markdown("#### ⚙️ Update Tenant License Activation State")
+                        tenant_select_list = [t['tenant_id'] for t in all_tenants_rows if t['tenant_id'] != 'lynx']
                         
-                        # --- 👑 FORCE RESET DOSRAY ISP KA PASSWORD LAYER ---
-                        st.markdown("#### 🔑 Force Reset Other ISP User Password")
-                        st.caption("Yahan se aap kisi bhi dosray ISP tenant ke master admin ya sub-user ka password directly update kar sakte hain.")
-                        
-                        pwd_target_tenant = st.selectbox("Select Target ISP (Tenant ID)", tenant_select_list, key="pwd_tenant_select")
-                        
-                        with get_db_connection() as conn:
-                            with conn.cursor() as cur:
-                                cur.execute("SELECT username, role FROM users WHERE tenant_id = %s ORDER BY username ASC", (pwd_target_tenant,))
-                                tenant_users = cur.fetchall()
-                        
-                        if tenant_users:
-                            user_options = [f"{u[0]} ({u[1]})" for u in tenant_users]
-                            selected_user_string = st.selectbox("Select User to Reset Password", user_options, key="pwd_user_select")
-                            resolved_username = selected_user_string.split(" (")[0]
-                            
-                            new_isp_password = st.text_input("Enter New Password Structure", type="password", key="new_isp_pwd_input")
-                            
-                            if st.button("🔒 FORCE UPDATE USER PASSWORD", use_container_width=True):
-                                if len(new_isp_password) < 4:
-                                    st.error("❌ Security Password kam se kam 4 characters ka hona chahiye.")
-                                else:
-                                    hashed_new_pwd = hash_password(new_isp_password)
-                                    with get_db_connection() as conn:
-                                        with conn.cursor() as cursor:
-                                            cursor.execute(
-                                                "UPDATE users SET password = %s WHERE username = %s AND tenant_id = %s", 
-                                                (hashed_new_pwd, resolved_username, pwd_target_tenant)
-                                            )
-                                        conn.commit()
-                                    st.success(f"🎉 Success! ISP '{pwd_target_tenant}' ke User '{resolved_username}' ka password securely change kar diya gaya hai.")
-                                    st.cache_data.clear()
+                        if not tenant_select_list:
+                            st.info("Aap ke ilawa abhi tak koi aur tenant register nahi hua.")
                         else:
-                            st.info("Is selected ISP segment mein filhal koi user records majood nahi hain.")
+                            chosen_target_tenant = st.selectbox("Select Target Tenant ID to Modify Access", tenant_select_list, key="lic_tenant_select")
+                            current_status = next(item for item in all_tenants_rows if item["tenant_id"] == chosen_target_tenant)["license_active"]
+                            
+                            new_license_toggle = st.checkbox("Grant Premium Software Activation Access Link", value=current_status)
+                            
+                            if st.button("💾 LOCK CONFIGURATION STATUS KEY"):
+                                with get_db_connection() as conn:
+                                    with conn.cursor() as cursor:
+                                        cursor.execute("UPDATE system_tenants SET license_active = %s WHERE tenant_id = %s", (new_license_toggle, chosen_target_tenant))
+                                    conn.commit()
+                                st.success(f"🎉 Tenant '{chosen_target_tenant}' dynamic lock access updated successfully!")
+                                st.cache_data.clear(); st.rerun()
+                            
+                            st.write("---")
+                            
+                            # --- 👑 FORCE RESET DOSRAY ISP KA PASSWORD LAYER ---
+                            st.markdown("#### 🔑 Force Reset Other ISP User Password")
+                            st.caption("Yahan se aap kisi bhi dosray ISP tenant ke master admin ya sub-user ka password directly update kar sakte hain.")
+                            
+                            pwd_target_tenant = st.selectbox("Select Target ISP (Tenant ID)", tenant_select_list, key="pwd_tenant_select")
+                            
+                            with get_db_connection() as conn:
+                                with conn.cursor() as cur:
+                                    cur.execute("SELECT username, role FROM users WHERE tenant_id = %s ORDER BY username ASC", (pwd_target_tenant,))
+                                    tenant_users = cur.fetchall()
+                            
+                            if tenant_users:
+                                user_options = [f"{u[0]} ({u[1]})" for u in tenant_users]
+                                selected_user_string = st.selectbox("Select User to Reset Password", user_options, key="pwd_user_select")
+                                resolved_username = selected_user_string.split(" (")[0]
+                                
+                                new_isp_password = st.text_input("Enter New Password", type="password", key="new_isp_pwd_input")
+                                
+                                if st.button("🔒 FORCE UPDATE USER PASSWORD", use_container_width=True):
+                                    if len(new_isp_password) < 6:
+                                        st.error("❌ Security Password kam se kam 6 characters ka hona chahiye.")
+                                    else:
+                                        hashed_new_pwd = hash_password(new_isp_password)
+                                        with get_db_connection() as conn:
+                                            with conn.cursor() as cursor:
+                                                cursor.execute(
+                                                    "UPDATE users SET password = %s WHERE username = %s AND tenant_id = %s", 
+                                                    (hashed_new_pwd, resolved_username, pwd_target_tenant)
+                                                )
+                                            conn.commit()
+                                        st.success(f"🎉 Success! ISP '{pwd_target_tenant}' ke User '{resolved_username}' ka password securely change kar diya gaya hai.")
+                                        st.cache_data.clear()
+                            else:
+                               st.info("Is selected ISP segment mein filhal koi user records majood nahi hain.")
         else:
             with adm_tabs[0]:
                 st.markdown("### 🏢 ISP Whitelabel Branding Controls")
@@ -949,19 +962,27 @@ elif routing_node == "🔐 System Access Control":
                         st.success("Metadata Saved cleanly inside cluster engine.")
                         st.cache_data.clear(); st.rerun()
 
-        # TAB 1: ACCESS ACCOUNTS MANAGEMENT
+        # TAB 1: ACCESS ACCOUNTS MANAGEMENT (FULLY RE-AUTHENTICATED AND HIJACK-PROOF)
         with adm_tabs[1]:
             st.markdown("### ⚙️ Access Accounts Management & Credentials")
             with st.form("owner_self_password_form"):
-                new_self_pass = st.text_input("Enter New Password Structure", type="password")
+                current_self_pass = st.text_input("Enter Current Password Verification", type="password")
+                new_self_pass = st.text_input("Enter New Secure Password", type="password")
                 if st.form_submit_button("🔒 Securely Change My Password"):
-                    if len(new_self_pass) < 4: st.error("Password string too short.")
+                    if len(new_self_pass) < 6: 
+                        st.error("Password string too short. Minimum 6 characters required.")
                     else:
                         with get_db_connection() as conn:
                             with conn.cursor() as cursor:
-                                cursor.execute("UPDATE users SET password = %s WHERE username = %s AND tenant_id = %s", (hash_password(new_self_pass), st.session_state['username'], st.session_state['tenant_id']))
-                            conn.commit()
-                        st.success("🎉 Updated successfully!")
+                                cursor.execute("SELECT password FROM users WHERE username = %s AND tenant_id = %s", (st.session_state['username'], st.session_state['tenant_id']))
+                                current_pwd_row = cursor.fetchone()
+                                
+                                if current_pwd_row and verify_password(current_self_pass, current_pwd_row[0]):
+                                    cursor.execute("UPDATE users SET password = %s WHERE username = %s AND tenant_id = %s", (hash_password(new_self_pass), st.session_state['username'], st.session_state['tenant_id']))
+                                    conn.commit()
+                                    st.success("🎉 Your credentials updated successfully!")
+                                else:
+                                    st.error("❌ Identification failure: Current password validation failed.")
             
             st.write("---")
             st.markdown("#### ➕ Provision Sub-User Entity (Admin / Staff Node)")
@@ -970,14 +991,15 @@ elif routing_node == "🔐 System Access Control":
                 new_password = st.text_input("Security Access Code / Password", type="password")
                 new_role = st.selectbox("System Architecture Role Level", ["Admin", "Staff"])
                 
-                # 🛠️ FIXED: Text Input badal kar List (st.multiselect) laga di hai
                 area_options = ["ALL"] + all_system_areas
                 selected_clearance = st.multiselect("Allocated Sector Clearance", options=area_options, default=["ALL"])
                 
-                if st.form_submit_button("🚀 Inject User Profile Node"):
-                    if not new_username or not new_password: st.error("Complete mandatory fields.")
+                if st.form_submit_button("🚀 Create User Profile"):
+                    if not new_username or not new_password: 
+                        st.error("Complete mandatory fields.")
+                    elif len(new_password) < 6:
+                        st.error("Password must be at least 6 characters long.")
                     else:
-                        # Convert list selection into comma-separated string for DB compatibility
                         if "ALL" in selected_clearance or not selected_clearance:
                             assigned_areas_str = "ALL"
                         else:
@@ -985,23 +1007,32 @@ elif routing_node == "🔐 System Access Control":
                             
                         with get_db_connection() as conn:
                             with conn.cursor() as cursor:
-                                cursor.execute("""
-                                    INSERT INTO users (username, password, role, assignedarea, tenant_id)
-                                    VALUES (%s, %s, %s, %s, %s)
-                                    ON CONFLICT (username, tenant_id) DO UPDATE 
-                                    SET password = EXCLUDED.password, role = EXCLUDED.role, assignedarea = EXCLUDED.assignedarea
-                                """, (new_username, hash_password(new_password), new_role, assigned_areas_str, st.session_state['tenant_id']))
-                            conn.commit()
-                        st.success(f"✅ User node locked onto your isolation segment.")
-                        st.cache_data.clear(); st.rerun()
+                                # Anti-Hijack Layer: Prevent Admins from overwriting or changing an Owner's profile structure
+                                cursor.execute("SELECT role FROM users WHERE username = %s AND tenant_id = %s", (new_username, st.session_state['tenant_id']))
+                                target_profile_role = cursor.fetchone()
+                                
+                                if target_profile_role and target_profile_role[0] == 'Owner' and st.session_state['user_role'] != 'Owner':
+                                    st.error("❌ Privilege Escalation Denied: Standard Administrators cannot modify or overwrite Owner Nodes.")
+                                else:
+                                    cursor.execute("""
+                                        INSERT INTO users (username, password, role, assignedarea, tenant_id)
+                                        VALUES (%s, %s, %s, %s, %s)
+                                        ON CONFLICT (username, tenant_id) DO UPDATE 
+                                        SET password = EXCLUDED.password, role = EXCLUDED.role, assignedarea = EXCLUDED.assignedarea
+                                    """, (new_username, hash_password(new_password), new_role, assigned_areas_str, st.session_state['tenant_id']))
+                                    conn.commit()
+                                    st.success(f"✅ User node saved safely within isolation system.")
+                                    st.cache_data.clear(); st.rerun()
                         
-            # 🛠️ FIXED: Naya Delete Feature Section yahan laga diya hai
             st.write("---")
             st.markdown("#### ❌ Remove Sub-User Profile")
             with get_db_connection() as conn:
                 with conn.cursor() as cur:
-                    # Current login user ke ilawa baqi users fetch honge taake aap khud delete na ho jayein
-                    cur.execute("SELECT username, role FROM users WHERE tenant_id = %s AND username != %s ORDER BY username ASC", (st.session_state['tenant_id'], st.session_state['username']))
+                    # Role Privilege Check: Admin profiles can only delete Staff profiles. Owners can delete both Admins and Staff.
+                    if st.session_state['user_role'] == 'Owner':
+                        cur.execute("SELECT username, role FROM users WHERE tenant_id = %s AND username != %s ORDER BY username ASC", (st.session_state['tenant_id'], st.session_state['username']))
+                    else:
+                        cur.execute("SELECT username, role FROM users WHERE tenant_id = %s AND role = 'Staff' ORDER BY username ASC", (st.session_state['tenant_id'],))
                     live_users = cur.fetchall()
             
             if live_users:
@@ -1016,7 +1047,7 @@ elif routing_node == "🔐 System Access Control":
                     st.success(f"🎉 User '{target_del_user}' removed successfully.")
                     st.cache_data.clear(); st.rerun()
             else:
-                st.info("Koi dosra sub-user (Staff/Admin) profile majood nahi hai.")
+                st.info("No sub-user profiles available for removal within your authorization limits.")
 
         # TAB 2: PACKAGES PRICING MATRIX
         with adm_tabs[2]:
@@ -1095,7 +1126,7 @@ elif routing_node == "🔐 System Access Control":
         # TAB 4: ISOLATED DESTRUCT MODULE
         with adm_tabs[4]:
             if str(st.session_state.get('user_role', '')).lower() != "owner":
-                st.warning("🔒 Section locked.")
+                st.warning("🔒 Section locked. Only the Root Organization Owner can wipe datasets.")
             else:
                 st.markdown("### ☢️ Tenant Schema Single Destruction Module")
                 st.caption("Yeh action sirf aapke is current tenant scope ka saara data clear karega. Baqi tenants safe rahenge.")
