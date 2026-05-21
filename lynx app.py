@@ -38,6 +38,8 @@ if 'current_node' not in st.session_state:
     st.session_state['current_node'] = "📊 Core Analytics Dashboard"
 if 'dashboard_filter' not in st.session_state:
     st.session_state['dashboard_filter'] = "ALL"
+if 'dashboard_filter' not in st.session_state:
+    st.session_state['dashboard_filter'] = "ALL"
 if 'portal_mode' not in st.session_state:
     st.session_state['portal_mode'] = False
 if 'column_order' not in st.session_state:
@@ -527,6 +529,7 @@ elif routing_node == "👥 Operational Billing Center":
             if pd.notna(uid) and str(uid).strip() != "" and str(uid).lower() != "nan":
                 sub_map[f"[{uid}] - {row_dict.get('customername', '')} ({row_dict.get('phone', '')})"] = uid
 
+    # TAB: Capital Collection Hub
     with tabs[0]:
         if not sub_map: 
             st.info("No active subscriber nodes found for your system area.")
@@ -582,7 +585,9 @@ elif routing_node == "👥 Operational Billing Center":
                         st.cache_data.clear()
                         st.rerun()
 
+    # ADMIN-ONLY TABS (SAFE ISOLATION)
     if is_admin:
+        # TAB: Provision New Client
         with tabs[1]:
             with st.form("add_client_form_v50", clear_on_submit=True):
                 in_id = (st.text_input("Desired Username Key") or "").strip().lower()
@@ -615,6 +620,7 @@ elif routing_node == "👥 Operational Billing Center":
                                         st.cache_data.clear(); st.rerun()
                                     except psycopg2.IntegrityError: st.error("❌ Phone Number already allocated!")
 
+        # TAB: Bulk Import Engine
         with tabs[2]:
             st.markdown("### 📥 BULK EXCEL / CSV UPLOADER ENGINE")
             uploaded_file = st.file_uploader("Choose Excel or CSV File", type=['xlsx', 'csv'], key="bulk_file_uploader_master")
@@ -683,11 +689,11 @@ elif routing_node == "👥 Operational Billing Center":
                                         cursor.execute(f"ROLLBACK TO SAVEPOINT {savepoint_id}"); skip_count += 1; continue
                                 conn.commit()
                         st.success("🎉 **Excel file data kamyabi se upload aur live database mein safe ho chuka hai!**")
-                        st.cache_data.clear(); st.stop()
+                        st.cache_data.clear(); st.rerun()
                 except Exception as e: st.error(f"❌ Mapping Error: {e}")
 
-    edit_tab_index = tabs_list.index("🛠️ Edit Terminal Profile")
-    with tabs[edit_tab_index]:
+    # FIXED TAB IDENTIFICATION FOR BOTH ROLES
+    with tabs[-1]:
         if not sub_map: st.info("No active terminals.")
         else:
             edit_target = st.selectbox("Select Target Username to Modify", list(sub_map.keys()), key="edit_tgt_box")
@@ -823,7 +829,6 @@ elif routing_node == "🔐 System Access Control":
                 col_purge1, col_purge2 = st.columns(2)
                 with col_purge1:
                     if st.button("✅ پاسورڈ کی تصدیق کریں اور ڈیٹا اڑائیں", use_container_width=True):
-                        # Secure Check: Current active admin's real password matched directly
                         with get_db_connection() as conn:
                             with conn.cursor() as cursor:
                                 cursor.execute("SELECT password FROM users WHERE username = %s", (st.session_state['username'],))
@@ -839,7 +844,6 @@ elif routing_node == "🔐 System Access Control":
                                 st.success("🚀 System successfully completely reset ho chuka hai!")
                                 st.session_state['purge_requested'] = False
                                 st.cache_data.clear()
-                                # Security wipe session state to enforce clean registration redirection
                                 st.session_state['authenticated'] = False
                                 st.session_state['user_role'] = None
                                 st.rerun()
@@ -866,7 +870,6 @@ elif routing_node == "🔐 System Access Control":
                                     st.success(f"Admin account '{new_admin_user}' ban gaya hai!")
                                 except Exception as u_ex: 
                                     st.error(f"Error: {u_ex}")
-            # Staff Form
             with st.form("new_staff_form_v50"):
                 new_user = st.text_input("New Staff Username").strip().lower()
                 new_pass = st.text_input("New Staff Password", type="password").strip()
