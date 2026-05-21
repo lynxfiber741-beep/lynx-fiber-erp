@@ -349,9 +349,15 @@ def build_database_schema():
                     username TEXT NOT NULL,
                     action_type TEXT NOT NULL,
                     description TEXT NOT NULL,
-                    timestamp TEXT NOT NULL
+                    timestamp TEXT NOT NULL DEFAULT ''
                 )
             """)
+            
+            # Auto Migration Repair Force-Injection for timestamp column constraint alignment
+            try:
+                cursor.execute("ALTER TABLE activity_logs ADD COLUMN IF NOT EXISTS timestamp TEXT NOT NULL DEFAULT '';")
+            except Exception:
+                pass
 
             cursor.execute("SELECT COUNT(*) FROM system_tenants WHERE tenant_id = 'lynx'")
             if cursor.fetchone()[0] == 0:
