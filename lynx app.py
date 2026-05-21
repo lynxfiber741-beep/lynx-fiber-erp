@@ -126,7 +126,7 @@ st.markdown("""
     """, unsafe_allow_html=True)
 
 # ==========================================
-# 3. DIRECT DATABASE ENGINE (OPTIMIZED CACHE)
+# 3. DIRECT DATABASE ENGINE (OPTIMIZED POOLING WITH TIMEOUTS)
 # ==========================================
 try:
     DB_URL = st.secrets["DB_URL"]
@@ -137,7 +137,8 @@ except Exception:
 def get_db_connection():
     conn = None
     try:
-        conn = psycopg2.connect(DB_URL, connect_timeout=10)
+        # Added dynamic statement timeouts to prevent connection pool jamming
+        conn = psycopg2.connect(DB_URL, connect_timeout=5, options="-c statement_timeout=5000")
         conn.autocommit = False
         yield conn
     except Exception as e:
@@ -161,7 +162,6 @@ def verify_password(password: str, hashed_password: str) -> bool:
 def build_database_schema():
     with get_db_connection() as conn:
         with conn.cursor() as cursor:
-            # ADVANCED FIX ENGINE: Kisi bhi adhe-adhure table ko dhoond kar use drop karega
             tables_to_check = ['areas', 'customers', 'billing_history']
             needs_reset = False
             
@@ -187,7 +187,6 @@ def build_database_schema():
                 cursor.execute("DROP TABLE IF EXISTS app_settings CASCADE;")
                 conn.commit()
             
-            # Fresh Table Generation with Sahi Columns
             cursor.execute("CREATE TABLE IF NOT EXISTS areas (areaname TEXT PRIMARY KEY)")
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS customers (
@@ -233,7 +232,7 @@ except Exception as e:
     st.error(f"Schema Builder Failed: {e}")
 
 # High efficiency caching strategy
-@st.cache_data(ttl=60)
+@st.cache_data(ttl=5) # Reduced cache duration for rapid dynamic feedback loop troubleshooting
 def fetch_live_matrix():
     try:
         with get_db_connection() as conn:
@@ -249,7 +248,7 @@ def fetch_live_matrix():
     except Exception:
         return pd.DataFrame()
 
-@st.cache_data(ttl=60)
+@st.cache_data(ttl=5)
 def fetch_system_packages():
     try:
         with get_db_connection() as conn:
@@ -260,7 +259,7 @@ def fetch_system_packages():
     except Exception:
         return {"15 Mbps Fiber": 1500}
 
-@st.cache_data(ttl=60)
+@st.cache_data(ttl=5)
 def fetch_active_areas():
     try:
         with get_db_connection() as conn:
@@ -271,7 +270,7 @@ def fetch_active_areas():
     except Exception:
         return ["Sanghoi System", "Saeela System"]
 
-@st.cache_data(ttl=60)
+@st.cache_data(ttl=5)
 def fetch_current_month_billing_summary():
     try:
         current_month_str = datetime.now().strftime("%Y-%m")
@@ -825,14 +824,22 @@ elif routing_node == "🔐 System Access Control":
                 purge_password = st.text_input("سیکیورٹی پاسورڈ درج کریں (Security Password)", type="password")
                 col_purge1, col_purge2 = st.columns(2)
                 with col_purge1:
-                    if st.button("✅ پاسورڈ کی تصدیق کریں اور ڈیٹا اڑائیں", use_container_width=True) and purge_password == "lynx@secure786":
-                        with get_db_connection() as conn:
-                            with conn.cursor() as cursor:
-                                cursor.execute("DROP TABLE IF EXISTS billing_history CASCADE; DROP TABLE IF EXISTS customers CASCADE;")
+                    if st.button("✅ پاسورڈ کی تصدیق کریں اور ڈیٹا اڑائیں", use_container_width=True):
+                        if purge_password == "lynx@secure786":
+                            try:
+                                with get_db_connection() as conn:
+                                    with conn.cursor() as cursor:
+                                        cursor.execute("DROP TABLE IF EXISTS billing_history CASCADE; DROP TABLE IF EXISTS customers CASCADE; DROP TABLE IF EXISTS areas CASCADE; DROP TABLE IF EXISTS packages CASCADE; DROP TABLE IF EXISTS users CASCADE;")
+                                        conn.commit()
                                 build_database_schema()
-                        st.success("🚀 System success fully reset ho chuka hai!")
-                        st.session_state['purge_requested'] = False
-                        st.cache_data.clear(); st.rerun()
+                                st.success("🚀 System successfully completely reset ho chuka hai!")
+                                st.session_state['purge_requested'] = False
+                                st.cache_data.clear()
+                                st.rerun()
+                            except Exception as schema_ex:
+                                st.error(f"❌ Reset Failed: {schema_ex}")
+                        else:
+                            st.error("❌ Galat Password!")
                 with col_purge2:
                     if st.button("❌ کینسل کریں (Cancel)", use_container_width=True): st.session_state['purge_requested'] = False; st.rerun()
 
@@ -841,20 +848,34 @@ elif routing_node == "🔐 System Access Control":
                 new_admin_user = st.text_input("New Admin Username").strip().lower()
                 new_admin_pass = st.text_input("New Admin Password", type="password").strip()
                 if st.form_submit_button("➕ Create Admin", use_container_width=True):
-                    with get_db_connection() as conn:
-                        with conn.cursor() as cursor:
-                            try: cursor.execute("INSERT INTO users VALUES (%s, %s, 'Admin', 'ALL')", (new_admin_user, hash_password(new_admin_pass))); conn.commit(); st.success("Created!")
-                            except: st.error("Exists!")
+                    if not new_admin_user or not new_admin_pass:
+                        st.error("Fields cannot be empty!")
+                    else:
+                        with get_db_connection() as conn:
+                            with conn.cursor() as cursor:
+                                try: 
+                                    cursor.execute("INSERT INTO users VALUES (%s, %s, 'Admin', 'ALL')", (new_admin_user, hash_password(new_admin_pass)))
+                                    conn.commit()
+                                    st.success(f"Admin account '{new_admin_user}' ban gaya hai!")
+                                except Exception as u_ex: 
+                                    st.error(f"Error: {u_ex}")
             # Staff Form
             with st.form("new_staff_form_v50"):
                 new_user = st.text_input("New Staff Username").strip().lower()
                 new_pass = st.text_input("New Staff Password", type="password").strip()
                 new_area_lock = st.selectbox("Assign & Lock System Area", all_system_areas)
                 if st.form_submit_button("🚀 Add Staff Account & Lock Area", use_container_width=True):
-                    with get_db_connection() as conn:
-                        with conn.cursor() as cursor:
-                            try: cursor.execute("INSERT INTO users VALUES (%s, %s, 'Staff', %s)", (new_user, hash_password(new_pass), new_area_lock)); conn.commit(); st.success("Created!")
-                            except: st.error("Exists!")
+                    if not new_user or not new_pass:
+                        st.error("Fields cannot be empty!")
+                    else:
+                        with get_db_connection() as conn:
+                            with conn.cursor() as cursor:
+                                try: 
+                                    cursor.execute("INSERT INTO users VALUES (%s, %s, 'Staff', %s)", (new_user, hash_password(new_pass), new_area_lock))
+                                    conn.commit()
+                                    st.success(f"Staff account '{new_user}' Area '{new_area_lock}' k liye register ho gaya!")
+                                except Exception as staff_ex: 
+                                    st.error(f"Database Error: {staff_ex}")
 
         with adm_tab3:
             with st.form("add_package_form"):
@@ -863,17 +884,26 @@ elif routing_node == "🔐 System Access Control":
                 if st.form_submit_button("💾 Save Fixed Package to System", use_container_width=True):
                     with get_db_connection() as conn:
                         with conn.cursor() as cursor: cursor.execute("INSERT INTO packages VALUES (%s, %s) ON CONFLICT (packagename) DO UPDATE SET packagerate = EXCLUDED.packagerate", (p_name, p_rate)); conn.commit()
+                    st.success("✅ Package configuration updated!")
                     st.cache_data.clear(); st.rerun()
 
         with adm_tab4:
             with st.form("dynamic_add_area_form"):
                 fresh_area_name = st.text_input("Enter New Area Name").strip()
                 if st.form_submit_button("➕ REGISTER NEW AREA NODE", use_container_width=True):
-                    with get_db_connection() as conn:
-                        with conn.cursor() as cursor:
-                            try: cursor.execute("INSERT INTO areas VALUES (%s)", (fresh_area_name,)); conn.commit()
-                            except: pass
-                    st.cache_data.clear(); st.rerun()
+                    if not fresh_area_name:
+                        st.error("❌ Area name khali nahi ho sakta!")
+                    else:
+                        with get_db_connection() as conn:
+                            with conn.cursor() as cursor:
+                                try: 
+                                    cursor.execute("INSERT INTO areas VALUES (%s)", (fresh_area_name,))
+                                    conn.commit()
+                                    st.success(f"✅ Area '{fresh_area_name}' system mein kamyabi se save ho gaya!")
+                                    st.cache_data.clear()
+                                    st.rerun()
+                                except Exception as area_ex: 
+                                    st.error(f"❌ Database Rejected Area Save: {area_ex}")
 
         with adm_tab5:
             with st.form("admin_profile_form"):
