@@ -23,6 +23,19 @@ from reportlab.lib import colors
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 
 # ==========================================
+# 🛑 SAAS COMMERCIAL LICENSE & HIDDEN MASTER REGISTRY
+# ==========================================
+SOFTWARE_LICENSE_ACTIVE = True  # Client block karne ke liye False kar dein
+DISTRIBUTOR_NAME = "Lynx Fiber Internet"
+
+# 🤫 HIDDEN SUPER-ADMIN REGISTRY (Yeh numbers kisi customer ko show nahi honge)
+MASTER_NOTIFY_NUMBERS = ["03215943786", "03118808741"]
+
+if not SOFTWARE_LICENSE_ACTIVE:
+    st.error(f"⚠️ 🔐 SOFTWARE LICENSE SUSPENDED! Please contact the master administrator to renew your system access ledger. Provider: {DISTRIBUTOR_NAME}")
+    st.stop()
+
+# ==========================================
 # 1. CORE CONFIGURATION & SESSION STATE
 # ==========================================
 if 'authenticated' not in st.session_state:
@@ -46,79 +59,10 @@ GLOBAL_TARGET_ORDER = [
 ]
 
 st.set_page_config(
-    page_title="LYNX Fiber Enterprise ERP v64.0", 
+    page_title=f"Enterprise ERP Panel — Powered by {DISTRIBUTOR_NAME}", 
     layout="wide",
     initial_sidebar_state="expanded"
 )
-
-# Premium Mobile UI Styles CSS Engine
-st.markdown("""
-    <style>
-    .stApp [data-testid="stHeader"] { background: transparent !important; height: 50px !important; }
-    .stApp .block-container { padding-top: 0.5rem !important; padding-bottom: 1rem !important; max-width: 100% !important; }
-    .stApp { background-color: #0b0f19; color: #f1f5f9; font-family: sans-serif; }
-    [data-testid="stSidebar"] { background-color: #111827; border-right: 1px solid #1f2937; }
-    
-    div[data-testid="stTextInput"] input, 
-    div[data-testid="stNumberInput"] input,
-    div[data-testid="stTextArea"] textarea {
-        color: #000000 !important; background-color: #ffffff !important;
-        font-weight: bold !important; font-size: 16px !important;
-        border: 2px solid #3b82f6 !important; border-radius: 8px !important;
-    }
-    div[data-testid="stTextInput"] input[disabled],
-    div[data-testid="stNumberInput"] input[disabled] {
-        color: #4b5563 !important; background-color: #e5e7eb !important; border: 2px solid #9ca3af !important;
-    }
-    div[data-baseweb="select"] > div {
-        background-color: #ffffff !important; color: #000000 !important;
-        font-weight: bold !important; font-size: 16px !important;
-        border: 2px solid #3b82f6 !important; border-radius: 8px !important;
-    }
-    div[data-baseweb="select"] span, div[data-baseweb="select"] div { color: #000000 !important; }
-    ul[role="listbox"] li { color: #000000 !important; background-color: #ffffff !important; font-weight: 600 !important; }
-    ul[role="listbox"] li:hover { background-color: #3b82f6 !important; color: #ffffff !important; }
-    label, p, .stMarkdown div { color: #e5e7eb !important; font-weight: 500; }
-    
-    div.stButton > button, div.stFormSubmitButton > button {
-        background: linear-gradient(135deg, #1e293b 0%, #111827 100%) !important;
-        color: #3b82f6 !important; border: 2px solid #3b82f6 !important;
-        border-radius: 12px !important; padding: 15px !important;
-        font-weight: bold !important; font-size: 15px !important;
-        transition: all 0.3s ease; box-shadow: 0 4px 10px rgba(0,0,0,0.3) !important;
-        width: 100% !important; display: flex !important; align-items: center !important; justify-content: center !important;
-    }
-    div.stButton > button:hover, div.stFormSubmitButton > button:hover {
-        background: #3b82f6 !important; color: #ffffff !important;
-        border: 2px solid #60a5fa !important; box-shadow: 0 0 15px rgba(59, 130, 246, 0.5) !important;
-    }
-    [data-testid="stSidebar"] div.stButton > button {
-        background: #111827 !important; color: #9ca3af !important;
-        border: 1px solid #374151 !important; border-radius: 8px !important;
-        padding: 10px !important; text-align: left !important; justify-content: flex-start !important;
-    }
-    [data-testid="stSidebar"] div.stButton > button:hover { background: #10b981 !important; color: white !important; border: 1px solid #10b981 !important; }
-    
-    .table-wrapper { overflow-x: auto; width: 100%; -webkit-overflow-scrolling: touch; margin-top: 15px; }
-    .premium-table { width: 100%; border-collapse: collapse; border-radius: 12px; overflow: hidden; background: #111827; }
-    .premium-table th { background: #1f2937; color: #10b981; padding: 14px; text-align: left; font-size: 13px; border-bottom: 2px solid #374151; white-space: nowrap; text-transform: uppercase;}
-    .premium-table td { padding: 14px; border-bottom: 1px solid #1f2937; font-size: 13px; color: #e5e7eb; white-space: nowrap; }
-    .btn-action { padding: 6px 12px; border-radius: 6px; font-weight: bold; text-decoration: none; font-size: 12px; display: inline-block; margin-right: 4px; }
-    .btn-c { background-color: #2563eb; color: white !important; }
-    .btn-w { background-color: #16a34a; color: white !important; }
-    .btn-disabled { background-color: #4b5563; color: #9ca3af !important; cursor: not-allowed; }
-    .client-card { background: #1f2937; padding: 20px; border-radius: 12px; border: 1px solid #374151; margin-bottom: 15px; }
-    .main-title { color: #10b981; font-size: 28px; font-weight: 800; text-align: center; margin-bottom: 25px; }
-    .front-login-box { 
-        max-width: 450px; margin: 60px auto; background: #111827; padding: 40px; 
-        border-radius: 16px; border: 1px solid #10b981; box-shadow: 0 15px 35px rgba(16, 185, 129, 0.2); 
-    }
-    .nav-header { font-size: 12px; font-weight: bold; color: #6b7280; text-transform: uppercase; margin-bottom: 10px; padding-left: 5px; }
-    .system-card { background: #1e293b; border: 1px solid #475569; border-radius: 10px; padding: 15px; margin-bottom: 15px; text-align: center; }
-    .system-card h4 { margin: 0 0 10px 0; color: #3b82f6; font-size: 16px; font-weight: bold;}
-    .system-card p { margin: 5px 0; font-size: 14px; }
-    </style>
-    """, unsafe_allow_html=True)
 
 # ==========================================
 # 2. SECURE POOLED DATABASE REGISTRY
@@ -180,16 +124,12 @@ def build_database_schema():
                     balanceshift INTEGER NOT NULL DEFAULT 0, status TEXT NOT NULL DEFAULT 'UNPAID', expirydate TEXT NOT NULL
                 )
             """)
-            
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS packages (
-                    packagename TEXT NOT NULL, 
-                    areaname TEXT NOT NULL, 
-                    packagerate INTEGER NOT NULL CHECK(packagerate >= 0),
+                    packagename TEXT NOT NULL, areaname TEXT NOT NULL, packagerate INTEGER NOT NULL CHECK(packagerate >= 0),
                     PRIMARY KEY (packagename, areaname)
                 )
             """)
-            
             cursor.execute("CREATE TABLE IF NOT EXISTS app_settings (settingkey TEXT PRIMARY KEY, settingvalue TEXT NOT NULL)")
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS billing_history (
@@ -199,22 +139,43 @@ def build_database_schema():
                 )
             """)
             
+            # App default settings checks for Tenant Branding
+            cursor.execute("SELECT COUNT(*) FROM app_settings WHERE settingkey = 'tenant_name'")
+            if cursor.fetchone()[0] == 0:
+                cursor.execute("INSERT INTO app_settings VALUES ('tenant_name', 'Lynx Fiber Pvt Ltd')")
+            cursor.execute("SELECT COUNT(*) FROM app_settings WHERE settingkey = 'tenant_phone'")
+            if cursor.fetchone()[0] == 0:
+                cursor.execute("INSERT INTO app_settings VALUES ('tenant_phone', '03135776263')")
+                
             cursor.execute("SELECT COUNT(*) FROM users WHERE role = 'Owner'")
             if cursor.fetchone()[0] == 0:
                 cursor.execute("INSERT INTO users VALUES ('owner', %s, 'Owner', 'ALL')", (hash_password('lynxowner123'),))
                 
-            cursor.execute("SELECT COUNT(*) FROM users WHERE username IN ('admin', 'staff')")
-            if cursor.fetchone()[0] == 0:
-                cursor.execute("INSERT INTO users VALUES ('admin', %s, 'Admin', 'ALL')", (hash_password('lynxadmin123'),))
-                cursor.execute("INSERT INTO users VALUES ('staff', %s, 'Staff', 'None')", (hash_password('lynxstaff123'),))
-                    
         conn.commit()
 
 build_database_schema()
 
 # ==========================================
-# 3. HIGH PERFORMANCE DATA RETRIEVALS
+# 3. HIGH PERFORMANCE RETRIEVALS & TENANT FETCH
 # ==========================================
+@st.cache_data(ttl=2)
+def fetch_tenant_metadata():
+    try:
+        with get_db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT settingkey, settingvalue FROM app_settings")
+                res = dict(cur.fetchall())
+        return {
+            "name": res.get("tenant_name", "Lynx Fiber Pvt Ltd"),
+            "phone": res.get("tenant_phone", "03135776263")
+        }
+    except Exception:
+        return {"name": "Lynx Fiber Pvt Ltd", "phone": "03135776263"}
+
+tenant_meta = fetch_tenant_metadata()
+TENANT_COMPANY_NAME = tenant_meta["name"]
+TENANT_SUPPORT_PHONE = tenant_meta["phone"]
+
 @st.cache_data(ttl=5)
 def fetch_live_matrix():
     try:
@@ -276,6 +237,81 @@ def clean_and_validate_phone(phone_str: str) -> str:
     if len(cleaned) == 10 and cleaned.startswith("3"): cleaned = "0" + cleaned
     return cleaned
 
+# Premium Mobile UI Styles CSS Engine
+st.markdown(f"""
+    <style>
+    .stApp [data-testid="stHeader"] {{ background: transparent !important; height: 50px !important; }}
+    .stApp .block-container {{ padding-top: 0.5rem !important; padding-bottom: 1rem !important; max-width: 100% !important; }}
+    .stApp {{ background-color: #0b0f19; color: #f1f5f9; font-family: sans-serif; }}
+    [data-testid="stSidebar"] {{ background-color: #111827; border-right: 1px solid #1f2937; }}
+    
+    div[data-testid="stTextInput"] input, 
+    div[data-testid="stNumberInput"] input,
+    div[data-testid="stTextArea"] textarea {{
+        color: #000000 !important; background-color: #ffffff !important;
+        font-weight: bold !important; font-size: 16px !important;
+        border: 2px solid #3b82f6 !important; border-radius: 8px !important;
+    }}
+    div[data-testid="stTextInput"] input[disabled],
+    div[data-testid="stNumberInput"] input[disabled] {{
+        color: #4b5563 !important; background-color: #e5e7eb !important; border: 2px solid #9ca3af !important;
+    }}
+    div[data-baseweb="select"] > div {{
+        background-color: #ffffff !important; color: #000000 !important;
+        font-weight: bold !important; font-size: 16px !important;
+        border: 2px solid #3b82f6 !important; border-radius: 8px !important;
+    }}
+    div[data-baseweb="select"] span, div[data-baseweb="select"] div {{ color: #000000 !important; }}
+    ul[role="listbox"] li {{ color: #000000 !important; background-color: #ffffff !important; font-weight: 600 !important; }}
+    ul[role="listbox"] li:hover {{ background-color: #3b82f6 !important; color: #ffffff !important; }}
+    label, p, .stMarkdown div {{ color: #e5e7eb !important; font-weight: 500; }}
+    
+    div.stButton > button, div.stFormSubmitButton > button {{
+        background: linear-gradient(135deg, #1e293b 0%, #111827 100%) !important;
+        color: #3b82f6 !important; border: 2px solid #3b82f6 !important;
+        border-radius: 12px !important; padding: 15px !important;
+        font-weight: bold !important; font-size: 15px !important;
+        transition: all 0.3s ease; box-shadow: 0 4px 10px rgba(0,0,0,0.3) !important;
+        width: 100% !important; display: flex !important; align-items: center !important; justify-content: center !important;
+    }}
+    div.stButton > button:hover, div.stFormSubmitButton > button:hover {{
+        background: #3b82f6 !important; color: #ffffff !important;
+        border: 2px solid #60a5fa !important; box-shadow: 0 0 15px rgba(59, 130, 246, 0.5) !important;
+    }}
+    [data-testid="stSidebar"] div.stButton > button {{
+        background: #111827 !important; color: #9ca3af !important;
+        border: 1px solid #374151 !important; border-radius: 8px !important;
+        padding: 10px !important; text-align: left !important; justify-content: flex-start !important;
+    }}
+    [data-testid="stSidebar"] div.stButton > button:hover {{ background: #10b981 !important; color: white !important; border: 1px solid #10b981 !important; }}
+    
+    .table-wrapper {{ overflow-x: auto; width: 100%; -webkit-overflow-scrolling: touch; margin-top: 15px; }}
+    .premium-table {{ width: 100%; border-collapse: collapse; border-radius: 12px; overflow: hidden; background: #111827; }}
+    .premium-table th {{ background: #1f2937; color: #10b981; padding: 14px; text-align: left; font-size: 13px; border-bottom: 2px solid #374151; white-space: nowrap; text-transform: uppercase;}}
+    .premium-table td {{ padding: 14px; border-bottom: 1px solid #1f2937; font-size: 13px; color: #e5e7eb; white-space: nowrap; }}
+    .btn-action {{ padding: 6px 12px; border-radius: 6px; font-weight: bold; text-decoration: none; font-size: 12px; display: inline-block; margin-right: 4px; }}
+    .btn-c {{ background-color: #2563eb; color: white !important; }}
+    .btn-w {{ background-color: #16a34a; color: white !important; }}
+    .btn-disabled {{ background-color: #4b5563; color: #9ca3af !important; cursor: not-allowed; }}
+    .client-card {{ background: #1f2937; padding: 20px; border-radius: 12px; border: 1px solid #374151; margin-bottom: 15px; }}
+    .main-title {{ color: #10b981; font-size: 28px; font-weight: 800; text-align: center; margin-bottom: 25px; }}
+    .front-login-box {{ 
+        max-width: 450px; margin: 60px auto; background: #111827; padding: 40px; 
+        border-radius: 16px; border: 1px solid #10b981; box-shadow: 0 15px 35px rgba(16, 185, 129, 0.2); 
+    }}
+    .nav-header {{ font-size: 12px; font-weight: bold; color: #6b7280; text-transform: uppercase; margin-bottom: 10px; padding-left: 5px; }}
+    .system-card {{ background: #1e293b; border: 1px solid #475569; border-radius: 10px; padding: 15px; margin-bottom: 15px; text-align: center; }}
+    .system-card h4 {{ margin: 0 0 10px 0; color: #3b82f6; font-size: 16px; font-weight: bold;}}
+    .system-card p {{ margin: 5px 0; font-size: 14px; }}
+    
+    /* Commercial Whitelabel Footer */
+    .saas-footer {{
+        text-align: center; font-size: 12px; color: #6b7280; margin-top: 50px; padding: 15px; border-top: 1px solid #1f2937;
+    }}
+    .saas-footer b {{ color: #3b82f6; }}
+    </style>
+    """, unsafe_allow_html=True)
+
 # ==========================================
 # 4. PORTAL SECURITY ROUTING ENGINE
 # ==========================================
@@ -290,8 +326,8 @@ if st.session_state['portal_mode']:
 else:
     if not st.session_state['authenticated']:
         st.markdown("<div class='front-login-box'>", unsafe_allow_html=True)
-        st.markdown("<h2 style='text-align:center; color:#10b981; font-weight:900; margin-bottom:5px;'>LYNX FIBER NET</h2>", unsafe_allow_html=True)
-        st.markdown("<p style='text-align:center; color:#9ca3af; margin-bottom:30px;'>Enterprise ERP System v64.0</p>", unsafe_allow_html=True)
+        st.markdown(f"<h2 style='text-align:center; color:#10b981; font-weight:900; margin-bottom:5px;'>{TENANT_COMPANY_NAME.upper()}</h2>", unsafe_allow_html=True)
+        st.markdown(f"<p style='text-align:center; color:#9ca3af; margin-bottom:30px;'>Enterprise Core Network Billing ERP</p>", unsafe_allow_html=True)
         
         user_input = (st.text_input("Username Key", key="front_user") or "").strip().lower()
         pass_input = st.text_input("Security Password", type="password", key="front_pass")
@@ -318,6 +354,8 @@ else:
                 st.rerun()
             else:
                 st.error("❌ Invalid Access Credentials!")
+        
+        st.markdown(f"<p style='text-align:center; font-size:11px; color:#4b5563; margin-top:20px;'>Powered by {DISTRIBUTOR_NAME}</p>", unsafe_allow_html=True)
         st.markdown("</div>", unsafe_allow_html=True)
         st.stop()
     else:
@@ -326,7 +364,7 @@ else:
 # NAVIGATION SIDEBAR
 if st.session_state['authenticated'] and not st.session_state['portal_mode']:
     with st.sidebar:
-        st.markdown(f"<h2 style='color:#10b981; font-weight:900; text-align:center; margin-bottom:20px;'>LYNX FIBER</h2>", unsafe_allow_html=True)
+        st.markdown(f"<h2 style='color:#10b981; font-weight:900; text-align:center; margin-bottom:20px;'>{TENANT_COMPANY_NAME}</h2>", unsafe_allow_html=True)
         st.markdown("<div class='nav-header'>System Navigation</div>", unsafe_allow_html=True)
         
         if st.button("📊 Core Analytics Dashboard", use_container_width=True):
@@ -351,7 +389,7 @@ if st.session_state['authenticated'] and not st.session_state['portal_mode']:
 # VIEW 1: CORE ANALYTICS DASHBOARD
 # ==========================================
 if routing_node == "📊 Core Analytics Dashboard":
-    st.markdown("<div class='main-title'>⚡ LYNX FIBER ENTERPRISE ANALYTICS</div>", unsafe_allow_html=True)
+    st.markdown(f"<div class='main-title'>⚡ {TENANT_COMPANY_NAME.upper()} ENTERPRISE ANALYTICS</div>", unsafe_allow_html=True)
     
     df_matrix = fetch_live_matrix()
     all_system_areas = fetch_active_areas()
@@ -448,7 +486,7 @@ if routing_node == "📊 Core Analytics Dashboard":
                 
                 if len(pure_digits) >= 10:
                     wa_number = "92" + pure_digits[-10:]
-                    wa_payload = f"Dear {row_dict.get('customername','')}, Lynx Fiber Bill Update. Arrears: Rs.{row_dict.get('balanceshift',0)}. Expiry: {row_dict.get('expirydate','')}"
+                    wa_payload = f"Dear {row_dict.get('customername','')}, {TENANT_COMPANY_NAME} Bill Update. Arrears: Rs.{row_dict.get('balanceshift',0)}. Expiry: {row_dict.get('expirydate','')}. Support: {TENANT_SUPPORT_PHONE}"
                     wa_action_html = f'<a href="https://wa.me/{wa_number}?text={urllib.parse.quote(wa_payload)}" target="_blank" class="btn-action btn-w">💬 WA</a>'
                 else:
                     wa_action_html = '<span class="btn-action btn-disabled">🚫 WA</span>'
@@ -467,6 +505,8 @@ if routing_node == "📊 Core Analytics Dashboard":
                 html_rows.append(f'<td><a href="tel:{pure_digits}" class="btn-action btn-c">📞 Call</a> {wa_action_html}</td></tr>')
             html_rows.append("</table></div>")
             st.markdown("".join(html_rows), unsafe_allow_html=True)
+            
+    st.markdown(f"<div class='saas-footer'>Distributed & Licensed by: <b>{DISTRIBUTOR_NAME}</b></div>", unsafe_allow_html=True)
 
 # ==========================================
 # VIEW 2: OPERATIONS CENTER (AREA DRIVEN)
@@ -495,7 +535,7 @@ elif routing_node == "👥 Operational Billing Center":
             uid = row_dict.get('username')
             if pd.notna(uid): sub_map[f"[{uid}] - {row_dict.get('customername', '')}"] = uid
 
-    # TAB 1: Collection Cash Postings (WITH ADVANCE & LATE AUTOMATIC DATE ALGORITHM)
+    # TAB 1: Collection Cash Postings
     with tabs[0]:
         if not sub_map: st.info("No subscribers found.")
         else:
@@ -524,7 +564,6 @@ elif routing_node == "👥 Operational Billing Center":
                     
                     try:
                         old_expiry_dt = datetime.strptime(current_expiry_str, "%Y-%m-%d")
-                        # 3 Months Max Buffer validation to prevent runaway old chains
                         if old_expiry_dt < (today_dt - relativedelta(months=3)):
                             base_dt = today_dt
                         else:
@@ -534,7 +573,6 @@ elif routing_node == "👥 Operational Billing Center":
                     
                     computed_new_expiry = base_dt + relativedelta(months=billing_months)
                     new_expiry = computed_new_expiry.strftime("%Y-%m-%d")
-                    # ---------------------------------------------
                     
                     invoice_uuid = f"INV-{uuid.uuid4().hex[:10].upper()}"
                     
@@ -587,7 +625,6 @@ elif routing_node == "👥 Operational Billing Center":
                         else:
                             with get_db_connection() as conn:
                                 with conn.cursor() as cursor:
-                                    # Exact date-to-date monthly structural setup rule
                                     default_expiry = (datetime.now() + relativedelta(months=1)).strftime("%Y-%m-%d")
                                     cursor.execute("""
                                         INSERT INTO customers (username, customername, phone, cnic, package, billamount, area, address, onuserialnumber, balanceshift, status, expirydate)
@@ -692,10 +729,11 @@ elif routing_node == "🔐 System Access Control":
     if st.session_state['user_role'] not in ["Owner", "Admin"]:
         st.error("🔴 Administrative Elevation Clearance Required.")
     else:
-        st.markdown("<div class='main-title'>🔐 LYNX FIBER ACCESS CONTROL PANEL</div>", unsafe_allow_html=True)
+        st.markdown("<div class='main-title'>🔐 SYSTEM ACCESS & SAAS CONFIGURATION PANEL</div>", unsafe_allow_html=True)
         all_system_areas = fetch_active_areas()
         
         tab_titles = [
+            "🏢 Dynamic Tenant Branding Engine",
             "⚙️ Access Accounts Management", 
             "📦 Fixed Packages Pricing Matrix", 
             "🗺️ Dynamic Area Hubs Sector",
@@ -704,10 +742,44 @@ elif routing_node == "🔐 System Access Control":
         
         adm_tabs = st.tabs(tab_titles)
 
-        # TAB 0: ACCESS ACCOUNTS MANAGEMENT
+        # TAB 0: BRANDING ENGINE WITH MASTER ACTIVATION NOTIFY PAYLOAD
         with adm_tabs[0]:
-            st.markdown("### ⚙️ Access Accounts Management & Credentials")
+            st.markdown("### 🏢 Client ISP Whitelabel Branding Control")
+            st.caption("Yahan se aap jis company ko software bech rahe hain, unki details save karein. Pura system automatic unke naam par chalega.")
             
+            with st.form("saas_branding_form"):
+                new_tenant_name = st.text_input("Client ISP Company Name", value=TENANT_COMPANY_NAME)
+                new_tenant_phone = st.text_input("Client Official Support/Helpline No.", value=TENANT_SUPPORT_PHONE)
+                
+                # Hidden tracking calculation in memory logic
+                branding_submitted = st.form_submit_button("💾 LOCK BRANDING MATRIX")
+                
+                if branding_submitted:
+                    with get_db_connection() as conn:
+                        with conn.cursor() as cursor:
+                            cursor.execute("INSERT INTO app_settings VALUES ('tenant_name', %s) ON CONFLICT (settingkey) DO UPDATE SET settingvalue = EXCLUDED.settingvalue", (new_tenant_name,))
+                            cursor.execute("INSERT INTO app_settings VALUES ('tenant_phone', %s) ON CONFLICT (settingkey) DO UPDATE SET settingvalue = EXCLUDED.settingvalue", (new_tenant_phone,))
+                        conn.commit()
+                    
+                    st.success("🎉 Whitelabel Branding Updated Dynamically!")
+                    
+                    # 🚀 AUTOMATED ACTIVATION TRIGGER DISPATCHER (For Owner Verification Only)
+                    st.markdown("#### 🔒 SaaS License Activation Ledger")
+                    st.info("System values saved! Click below to send activation signature to Lynx Master Registry:")
+                    
+                    alert_payload = f"🔒 LYNX SAAS LICENSE ALERT:\nNew enterprise system activation initiated.\nISP Company: {new_tenant_name}\nHelpline Ref: {new_tenant_phone}\nStatus: Verification Needed."
+                    encoded_msg = urllib.parse.quote(alert_payload)
+                    
+                    # Multi-Target Route Dispatcher loop inside admin view
+                    col_net1, col_net2 = st.columns(2)
+                    with col_net1:
+                        st.markdown(f'<a href="https://wa.me/92{MASTER_NOTIFY_NUMBERS[0]}?text={encoded_msg}" target="_blank" style="background:#10b981; color:white; padding:12px; border-radius:8px; display:block; text-align:center; text-decoration:none; font-weight:bold;">📲 Dispatch Verification Code (Line 1)</a>', unsafe_allow_html=True)
+                    with col_net2:
+                        st.markdown(f'<a href="https://wa.me/92{MASTER_NOTIFY_NUMBERS[1]}?text={encoded_msg}" target="_blank" style="background:#3b82f6; color:white; padding:12px; border-radius:8px; display:block; text-align:center; text-decoration:none; font-weight:bold;">📲 Dispatch Verification Code (Line 2)</a>', unsafe_allow_html=True)
+
+        # TAB 1: ACCESS ACCOUNTS MANAGEMENT
+        with adm_tabs[1]:
+            st.markdown("### ⚙️ Access Accounts Management & Credentials")
             st.markdown("#### 🔑 Update Your Account Password")
             with st.form("owner_self_password_form"):
                 new_self_pass = st.text_input("Enter New Password Structure", type="password")
@@ -722,14 +794,11 @@ elif routing_node == "🔐 System Access Control":
                         st.success("🎉 Your password has been successfully updated cryptographically!")
             
             st.write("---")
-            
             st.markdown("#### ➕ Provision Sub-User Entity (Admin / Staff)")
             with st.form("create_subuser_form"):
                 new_username = st.text_input("Entity Username ID").strip().lower()
                 new_password = st.text_input("Security Access Code / Password", type="password")
                 new_role = st.selectbox("System Architecture Role Level", ["Admin", "Staff"])
-                
-                st.caption("For Staff: Input comma-separated areas (e.g. Saeela, Sanghoi) or 'ALL' for absolute visibility.")
                 assigned_areas_input = st.text_input("Allocated Terminal Area Sector Clearance", value="ALL").strip()
                 
                 if st.form_submit_button("🚀 Inject User Profile Node"):
@@ -747,15 +816,13 @@ elif routing_node == "🔐 System Access Control":
                             conn.commit()
                         st.success(f"✅ User node '{new_username}' synced onto master ledger.")
 
-        # TAB 1: PACKAGES PRICING MATRIX
-        with adm_tabs[1]:
+        # TAB 2: PACKAGES PRICING MATRIX
+        with adm_tabs[2]:
             st.markdown("### 📦 Structural Location Pricing Allocation Configurator")
-            
             if not all_system_areas:
                 st.info("💡 Empty State: Configure an active Operating Area first.")
             else:
                 with st.form("matrix_package_form"):
-                    st.markdown("#### ➕ Add or Update Tariff Plan")
                     p_name = st.text_input("Tarif Identification Flag (e.g., 12 Mbps Fiber)").strip()
                     p_area = st.selectbox("Target Core Distribution Area Node Hub", all_system_areas)
                     p_rate = st.number_input("Assigned Monthly Price Configuration (Rs.)", min_value=0, value=1500)
@@ -776,10 +843,8 @@ elif routing_node == "🔐 System Access Control":
                             st.cache_data.clear(); st.rerun()
 
             st.write("---")
-            
             st.markdown("#### ❌ Remove Wrong/Unwanted Package Profile")
             live_packages_list = fetch_all_packages()
-            
             if not live_packages_list:
                 st.info("No package variations registered inside system memory to remove.")
             else:
@@ -791,28 +856,20 @@ elif routing_node == "🔐 System Access Control":
                 selected_remove_label = st.selectbox("Select Package to Permanently Remove", list(pkg_options_map.keys()))
                 
                 with st.form("remove_package_secure_form"):
-                    st.caption("🚨 Warning: Deleting this profile row will instantly disconnect this preset tariff matching inside network provisioning.")
                     if st.form_submit_button("🗑️ PERMANENTLY DELETE CHOSEN PACKAGE"):
                         target_pkg_name, target_area_name = pkg_options_map[selected_remove_label]
-                        
                         with get_db_connection() as conn:
                             with conn.cursor() as cursor:
-                                cursor.execute("""
-                                    DELETE FROM packages 
-                                    WHERE packagename = %s AND areaname = %s
-                                """, (target_pkg_name, target_area_name))
+                                cursor.execute("DELETE FROM packages WHERE packagename = %s AND areaname = %s", (target_pkg_name, target_area_name))
                             conn.commit()
-                            
-                        st.success(f"💥 Package '{target_pkg_name}' for Area '{target_area_name}' has been completely removed!")
+                        st.success(f"💥 Package '{target_pkg_name}' has been completely removed!")
                         st.cache_data.clear(); st.rerun()
 
-        # TAB 2: DYNAMIC AREA HUBS SECTOR (WITH INTEGRATED REMOVE AREA ENGINE)
-        with adm_tabs[2]:
+        # TAB 3: DYNAMIC AREA HUBS SECTOR
+        with adm_tabs[3]:
             st.markdown("### 🗺️ Sector Node Operations")
-            
             with st.form("add_area_sector_form"):
-                st.markdown("#### ➕ Register New Network Hub Location")
-                new_area_name = st.text_input("Enter New Network Location Name (e.g., Bagga, Saeela, Sanghoi)").strip()
+                new_area_name = st.text_input("Enter New Network Location Name").strip()
                 if st.form_submit_button("➕ COMMIT SECTOR DEPLOYMENT REGISTRY"):
                     if new_area_name:
                         with get_db_connection() as conn:
@@ -823,16 +880,12 @@ elif routing_node == "🔐 System Access Control":
                         st.cache_data.clear(); st.rerun()
             
             st.write("---")
-            
             st.markdown("#### ❌ Remove Operating Area Hub Node")
             if not all_system_areas:
                 st.info("No active areas registered on the database system to remove.")
             else:
                 chosen_delete_area = st.selectbox("Select Area Hub to Permanently Remove", all_system_areas)
-                
                 with st.form("delete_area_secure_form"):
-                    st.warning(f"⚠️ Critical Alert: Removing '{chosen_delete_area}' will wipe out its packages configuration too. Ensure NO users are currently mapped under this area.")
-                    
                     if st.form_submit_button("🗑️ PERMANENTLY REMOVE AREA HUB FROM LEDGER"):
                         with get_db_connection() as conn:
                             with conn.cursor() as cursor:
@@ -847,18 +900,15 @@ elif routing_node == "🔐 System Access Control":
                                     cursor.execute("DELETE FROM packages WHERE LOWER(areaname) = LOWER(%s)", (chosen_delete_area,))
                                     cursor.execute("DELETE FROM areas WHERE LOWER(areaname) = LOWER(%s)", (chosen_delete_area,))
                                 conn.commit()
-                            
                             st.success(f"💥 Area Hub '{chosen_delete_area}' has been perfectly purged from system logs.")
                             st.cache_data.clear(); st.rerun()
 
-        # TAB 3: OWNER PRIVILEGES ENGINE
-        with adm_tabs[3]:
+        # TAB 4: OWNER PRIVILEGES ENGINE
+        with adm_tabs[4]:
             if st.session_state['user_role'] != "Owner":
                 st.warning("🔒 This specific section is encrypted and locked for the Master Owner entity only.")
             else:
                 st.markdown("### 👑 Master Schema Dynamic Destruction Module")
-                st.warning("⚠️ Critical Alert: Wiping database drops structural relationships completely.")
-                
                 purge_password = st.text_input("Verify Master Owner Confirmation Passphrase", type="password", key="purge_pass_gate")
                 if st.button("☢️ INITIATE COMPLETE SYSTEM ZERO-DATA PURGE"):
                     with get_db_connection() as conn:
@@ -871,9 +921,8 @@ elif routing_node == "🔐 System Access Control":
                             with conn.cursor() as cursor:
                                 cursor.execute("DROP TABLE IF EXISTS billing_history CASCADE; DROP TABLE IF EXISTS customers CASCADE; DROP TABLE IF EXISTS areas CASCADE; DROP TABLE IF EXISTS packages CASCADE; DROP TABLE IF EXISTS users CASCADE; DROP TABLE IF EXISTS app_settings CASCADE;")
                             conn.commit()
-                        
                         build_database_schema()
-                        st.success("🚀 System Hard Purge Complete. Complete structural clean state achieved!")
+                        st.success("🚀 System Hard Purge Complete. Clean state achieved!")
                         st.cache_data.clear(); st.rerun()
                     else:
                         st.error("❌ Password Cryptographic signature mismatch. Operation Aborted.")
@@ -882,8 +931,8 @@ elif routing_node == "🔐 System Access Control":
 # VIEW 5: SUBSCRIBER SELF-SERVICE INVENTORY
 # ==========================================
 elif routing_node == "📱 Client Portal":
-    st.markdown("<div class='main-title'>📱 LYNX FIBER SUBSCRIBER PORTAL</div>", unsafe_allow_html=True)
-    portal_input = st.text_input("Enter Username or Mobile Number")
+    st.markdown(f"<div class='main-title'>📱 {html.escape(TENANT_COMPANY_NAME.upper())} SUBSCRIBER PORTAL</div>", unsafe_allow_html=True)
+    portal_input = st.text_input("Enter Subscriber Username or Mobile Number")
     
     if portal_input:
         search_term = portal_input.strip()
@@ -895,9 +944,29 @@ elif routing_node == "📱 Client Portal":
             st.error("❌ No active profile linked on server records.")
         else:
             c_dict = c_rows[0]
-            html_card = f"""<div class="client-card"><h3 style="color:#10b981; margin-top:0;">👤 Account ID: {html.escape(str(c_dict.get('username','')))}</h3>"""
-            for k in GLOBAL_TARGET_ORDER:
-                if k != 'username':
-                    html_card += f"<p><b>{k.upper()}:</b> {html.escape(str(c_dict.get(k, '')))}</p>"
-            html_card += f"<p><b>LINE EXPIRY CYCLE:</b> {c_dict.get('expirydate')}</p></div>"
-            st.markdown(html_card, unsafe_allow_html=True)
+            
+            # COMMERCIAL QUOTATION / INVOICE DISPLAY UNIT
+            st.markdown(f"""
+            <div class="client-card" style="border: 2px solid #3b82f6;">
+                <h2 style="color:#3b82f6; text-align:center; margin-bottom:5px; font-weight:bold;">📄 DIGITAL BILL & ACCOUNT QUOTATION</h2>
+                <p style="text-align:center; color:#9ca3af; font-size:13px; margin-bottom:20px;">Provider: {TENANT_COMPANY_NAME} | Helpline: {TENANT_SUPPORT_PHONE}</p>
+                <hr style="border: 1px solid #374151;">
+                
+                <h3 style="color:#10b981; margin-top:15px;">👤 Account ID: {html.escape(str(c_dict.get('username','')))}</h3>
+                <p><b>CUSTOMER NAME:</b> {html.escape(str(c_dict.get('customername','')))}</p>
+                <p><b>CONTACT NUMBER:</b> {html.escape(str(c_dict.get('phone','')))}</p>
+                <p><b>CONNECTED AREA:</b> {html.escape(str(c_dict.get('area','')))}</p>
+                <p><b>ACTIVE PACKAGE PLAN:</b> {html.escape(str(c_dict.get('package','')))}</p>
+                <p><b>MONTHLY CHARGES:</b> Rs. {c_dict.get('billamount', 0):,}</p>
+                <p style="color:#f43f5e; font-weight:bold;"><b>OUTSTANDING ARREARS:</b> Rs. {c_dict.get('balanceshift', 0):,}</p>
+                <p style="color:#10b981; font-weight:bold;"><b>LINE EXPIRY DATE:</b> {c_dict.get('expirydate')}</p>
+                
+                <hr style="border: 1px solid #374151; margin-top:20px;">
+                <p style="text-align:center; font-size:11px; color:#6b7280; margin-bottom:0;">
+                    🛠️ Systems Distribution Platform Engine. Distributed & Maintained by:<br>
+                    <span style="color:#3b82f6; font-weight:bold;">{DISTRIBUTOR_NAME}</span>
+                </p>
+            </div>
+            """, unsafe_allow_html=True)
+
+    st.markdown(f"<div class='saas-footer'>Distributed & Licensed by: <b>{DISTRIBUTOR_NAME}</b></div>", unsafe_allow_html=True)
