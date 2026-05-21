@@ -46,7 +46,7 @@ GLOBAL_TARGET_ORDER = [
 ]
 
 st.set_page_config(
-    page_title="LYNX Fiber Enterprise ERP v60.0", 
+    page_title="LYNX Fiber Enterprise ERP v61.0", 
     layout="wide",
     initial_sidebar_state="expanded"
 )
@@ -126,7 +126,7 @@ st.markdown("""
 try:
     DB_URL = st.secrets["DB_URL"]
 except Exception:
-    DB_URL = "postgresql://postgres.snbmurjcggthdvxyxyrd:DlLaglY98SkOzDq2@aws-1-ap-southeast-1.pooler.southeast-1.pooler.southeast-1.pooler.supabase.com:6543/postgres?sslmode=require"
+    DB_URL = "postgresql://postgres.snbmurjcggthdvxyxyrd:DlLaglY98SkOzDq2@aws-1-ap-southeast-1.pooler.southeast-1.pooler.southeast-1.pooler.southeast-1.pooler.supabase.com:6543/postgres?sslmode=require"
 
 @st.cache_resource
 def init_connection_pool():
@@ -291,7 +291,7 @@ else:
     if not st.session_state['authenticated']:
         st.markdown("<div class='front-login-box'>", unsafe_allow_html=True)
         st.markdown("<h2 style='text-align:center; color:#10b981; font-weight:900; margin-bottom:5px;'>LYNX FIBER NET</h2>", unsafe_allow_html=True)
-        st.markdown("<p style='text-align:center; color:#9ca3af; margin-bottom:30px;'>Enterprise ERP System v60.0</p>", unsafe_allow_html=True)
+        st.markdown("<p style='text-align:center; color:#9ca3af; margin-bottom:30px;'>Enterprise ERP System v61.0</p>", unsafe_allow_html=True)
         
         user_input = (st.text_input("Username Key", key="front_user") or "").strip().lower()
         pass_input = st.text_input("Security Password", type="password", key="front_pass")
@@ -532,7 +532,7 @@ elif routing_node == "👥 Operational Billing Center":
                     st.cache_data.clear(); st.rerun()
 
     if is_management:
-        # TAB 2: PROVISION NEW CLIENT WITH AREA-SPECIFIC DYNAMIC PACKAGES FLOW
+        # TAB 2: FIXED CURSOR NAME MISMATCH CRASH BUG
         with tabs[1]:
             if not all_system_areas:
                 st.error("❌ Register an Area Sector inside System Access Controls first.")
@@ -541,10 +541,10 @@ elif routing_node == "👥 Operational Billing Center":
                 
                 with get_db_connection() as conn:
                     with conn.cursor() as cur:
-                        cursor.execute("SELECT packagename, packagerate FROM packages WHERE areaname = %s", (in_area,))
+                        cur.execute("SELECT packagename, packagerate FROM packages WHERE areaname = %s", (in_area,))
                         area_pkgs = dict(cur.fetchall())
                 
-                with st.form("add_client_form_v60"):
+                with st.form("add_client_form_v61"):
                     in_id = st.text_input("Desired Unique Username Key").strip().lower()
                     in_name = st.text_input("Customer Full Name").strip()
                     in_phone = st.text_input("Phone Number").strip()
@@ -578,11 +578,47 @@ elif routing_node == "👥 Operational Billing Center":
                             st.success(f"🚀 Profile allocated cleanly for {in_id}!")
                             st.cache_data.clear(); st.rerun()
 
-        # TAB 3: Bulk Import Excel Matrix Engine
+        # TAB 3: INTEGRATED LIVE EXCEL MATRIX ENGINE ROW INJECTION
         with tabs[2]:
             uploaded_file = st.file_uploader("Upload Excel Sheet", type=['xlsx', 'csv'])
-            if uploaded_file and st.button("⚡ Save Sheet Rows to Live Engine"):
-                st.success("Processing Sheet Engine Matrix Rows...")
+            if uploaded_file:
+                try:
+                    if uploaded_file.name.endswith('.csv'):
+                        df_upload = pd.read_csv(uploaded_file)
+                    else:
+                        df_upload = pd.read_excel(uploaded_file)
+                    
+                    st.write("📊 Row Preview Data:", df_upload.head(3))
+                    
+                    if st.button("⚡ Save Sheet Rows to Live Engine"):
+                        required_csv_nodes = ['username', 'customername', 'phone', 'area', 'billamount']
+                        missing_nodes = [col for col in required_csv_nodes if col not in [c.lower() for c in df_upload.columns]]
+                        
+                        if missing_nodes:
+                            st.error(f"❌ Columns Missing in Sheet Structure: {missing_nodes}")
+                        else:
+                            df_upload.columns = [c.lower() for c in df_upload.columns]
+                            inserted_rows = 0
+                            
+                            with get_db_connection() as conn:
+                                with conn.cursor() as cursor:
+                                    for idx, row in df_upload.iterrows():
+                                        clean_id = str(row['username']).strip().lower()
+                                        clean_p = clean_and_validate_phone(str(row['phone']))
+                                        clean_rate = int(float(str(row.get('billamount', 1500))))
+                                        default_expiry = (datetime.now() + timedelta(days=30)).strftime("%Y-%m-%d")
+                                        
+                                        cursor.execute("""
+                                            INSERT INTO customers (username, customername, phone, cnic, package, billamount, area, address, onuserialnumber, balanceshift, status, expirydate)
+                                            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, 0, 'UNPAID', %s)
+                                            ON CONFLICT (username) DO NOTHING
+                                        """, (clean_id, str(row['customername']), clean_p, str(row.get('cnic','')), str(row.get('package','Standard')), clean_rate, str(row['area']), str(row.get('address','')), str(row.get('onuserialnumber','')), default_expiry))
+                                        inserted_rows += 1
+                                conn.commit()
+                            st.success(f"🚀 Bulk Insertion Engine successfully processed {inserted_rows} rows into Supabase!")
+                            st.cache_data.clear()
+                except Exception as ex:
+                    st.error(f"Processing Matrix Exception Error: {ex}")
 
     # TAB: Edit Profiles Engine Block
     with tabs[-1]:
@@ -710,7 +746,6 @@ elif routing_node == "🔐 System Access Control":
             if not live_packages_list:
                 st.info("No package variations registered inside system memory to remove.")
             else:
-                # Format options into scannable strings for selection mapping
                 pkg_options_map = {}
                 for p in live_packages_list:
                     label = f"📦 {p['packagename']} — 📍 Area: {p['areaname']} (Rs. {p['packagerate']})"
