@@ -188,6 +188,9 @@ def build_database_schema():
                     registration_date TEXT NOT NULL
                 )
             """)
+            safe_migrate_table_constraints(cursor, 'system_tenants', {
+                'license_expiry_date': "TEXT NOT NULL DEFAULT ''"
+            }, ['tenant_id'])
             
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS users (
@@ -305,8 +308,8 @@ def build_database_schema():
             cursor.execute("SELECT COUNT(*) FROM system_tenants WHERE tenant_id = 'lynx'")
             if cursor.fetchone()[0] == 0:
                 cursor.execute("""
-                    INSERT INTO system_tenants (tenant_id, company_name, support_phone, owner_username, license_active, registration_date)
-                    VALUES ('lynx', 'Lynx Fiber Pvt Ltd', '03135776263', 'owner', TRUE, %s)
+                    INSERT INTO system_tenants (tenant_id, company_name, support_phone, owner_username, license_active, registration_date, license_expiry_date)
+                    VALUES ('lynx', 'Lynx Fiber Pvt Ltd', '03135776263', 'owner', TRUE, %s, '')
                 """, (datetime.now().strftime("%Y-%m-%d"),))
                 
             cursor.execute("SELECT COUNT(*) FROM users WHERE username = 'owner' AND tenant_id = 'lynx'")
@@ -330,20 +333,49 @@ def fetch_active_tenant_metadata(tenant_id):
     try:
         with get_db_connection() as conn:
             with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-                cur.execute("SELECT company_name, support_phone, license_active FROM system_tenants WHERE tenant_id = %s", (tenant_id,))
+                cur.execute("SELECT company_name, support_phone, license_active, license_expiry_date FROM system_tenants WHERE tenant_id = %s", (tenant_id,))
                 res = cur.fetchone()
                 if res:
-                    return {"name": res["company_name"], "phone": res["support_phone"], "active": res["license_active"]}
+                    return {
+                        "name": res["company_name"], 
+                        "phone": res["support_phone"], 
+                        "active": res["license_active"],
+                        "expiry_date": res.get("license_expiry_date", "")
+                    }
+        return {"name": "Lynx Fiber Pvt Ltd", "phone": "03135776263", "active": True, "expiry_date": ""}
     except Exception:
-        pass
-    return {"name": "Lynx Fiber Pvt Ltd", "phone": "03135776263", "active": True}
+        return {"name": "Lynx Fiber Pvt Ltd", "phone": "03135776263", "active": True, "expiry_date": ""}
+
+def calculate_license_days(expiry_str):
+    if not expiry_str or expiry_str.strip() == "":
+        return "Lifetime Plan Active", True
+    try:
+        expiry_dt = datetime.strptime(expiry_str.strip(), "%Y-%m-%d")
+        expiry_end = expiry_dt.replace(hour=23, minute=59, second=59)
+        today_dt = datetime.now()
+        time_diff = expiry_end - today_dt
+        
+        if time_diff.total_seconds() <= 0:
+            return "Expired", False
+        
+        days = time_diff.days
+        if days >= 1:
+            return f"{days} Days Remaining", True
+        else:
+            hours = int(time_diff.total_seconds() // 3600)
+            minutes = int((time_diff.total_seconds() % 3600) // 60)
+            return f"Last Day! ({hours}h {minutes}m remaining)", True
+    except Exception:
+        return "Invalid Expiry Mapping", False
 
 tenant_meta = fetch_active_tenant_metadata(st.session_state['tenant_id'])
 TENANT_COMPANY_NAME = tenant_meta["name"]
 TENANT_SUPPORT_PHONE = tenant_meta["phone"]
 
-if not tenant_meta["active"]:
-    st.error(f"⚠️ 🔐 SOFTWARE LICENSE SUSPENDED! Please contact the master administrator. Provider: {DISTRIBUTOR_NAME}")
+license_status_text, is_license_valid = calculate_license_days(tenant_meta.get("expiry_date", ""))
+
+if not tenant_meta["active"] or not is_license_valid:
+    st.error(f"⚠️ 🔐 SOFTWARE LICENSE SUSPENDED OR EXPIRED! Status: {license_status_text}. Please contact Lynx Fiber Online to renew your portal instance.")
     st.stop()
 
 @st.cache_data(ttl=3)
@@ -476,8 +508,9 @@ else:
                         user_match = cursor.fetchone()
                         if user_match and verify_password(pass_input, user_match[3]):
                             t_meta = fetch_active_tenant_metadata(input_tenant)
-                            if not t_meta["active"]:
-                                st.error("⚠️ This system access instance is locked by the main distributor.")
+                            _, valid_chk = calculate_license_days(t_meta.get("expiry_date", ""))
+                            if not t_meta["active"] or not valid_chk:
+                                st.error("⚠️ This system access instance is locked or license has expired.")
                             else:
                                 st.session_state['authenticated'] = True
                                 st.session_state['user_role'] = user_match[0] if user_match[0] else "Staff"
@@ -519,8 +552,8 @@ else:
                                         st.error("❌ Unique tenant identifier already registered.")
                                     else:
                                         cursor.execute("""
-                                            INSERT INTO system_tenants (tenant_id, company_name, support_phone, owner_username, license_active, registration_date)
-                                            VALUES (%s, %s, %s, %s, FALSE, %s)
+                                            INSERT INTO system_tenants (tenant_id, company_name, support_phone, owner_username, license_active, registration_date, license_expiry_date)
+                                            VALUES (%s, %s, %s, %s, FALSE, %s, '')
                                         """, (reg_tenant_id, reg_company_name, reg_support_phone, reg_owner_user, datetime.now().strftime("%Y-%m-%d")))
                                         cursor.execute("""
                                             INSERT INTO users (username, password, role, assignedarea, tenant_id)
@@ -541,6 +574,8 @@ if st.session_state['authenticated'] and not st.session_state['portal_mode']:
     with st.sidebar:
         st.markdown(f"<h2 style='color:#10b981; font-weight:900; text-align:center;'>{str(TENANT_COMPANY_NAME).upper()}</h2>", unsafe_allow_html=True)
         st.markdown(f"<p style='text-align:center; font-size:11px;'>Instance: <b>{st.session_state.get('tenant_id', 'lynx')}</b></p>", unsafe_allow_html=True)
+        st.markdown(f"<p style='text-align:center; font-size:12px; color:#f59e0b;'>⏳ Account Life: <br><b>{license_status_text}</b></p>", unsafe_allow_html=True)
+        
         if st.button("📊 Lynx Dashboard", use_container_width=True):
             st.session_state['current_node'] = "📊 Lynx Dashboard"; st.rerun()
         if st.button("👥 Operational Billing Center", use_container_width=True):
@@ -935,13 +970,37 @@ elif routing_node == "🔐 System Access Control":
                 tenant_select_list = [t['tenant_id'] for t in all_tenants_rows if t['tenant_id'] != 'lynx']
                 if tenant_select_list:
                     chosen_target_tenant = st.selectbox("Select Target Tenant ID to Modify Access", tenant_select_list)
-                    current_status = next(item for item in all_tenants_rows if item["tenant_id"] == chosen_target_tenant)["license_active"]
-                    new_license_toggle = st.checkbox("Grant Premium Software Activation", value=current_status)
+                    tenant_record = next(item for item in all_tenants_rows if item["tenant_id"] == chosen_target_tenant)
+                    current_status = tenant_record["license_active"]
+                    current_expiry_val = tenant_record.get("license_expiry_date", "")
+                    
+                    st.write("---")
+                    st.markdown(f"#### ⚙️ Edit Authorization System: `{chosen_target_tenant}`")
+                    new_license_toggle = st.checkbox("Grant Premium Software Activation Status", value=current_status)
+                    new_expiry_input = st.text_input("Set License Expiry Date (YYYY-MM-DD) [Blank = Lifetime]", value=current_expiry_val)
+                    
+                    st.markdown("##### 🔑 Master Password Override Tool")
+                    new_tenant_pass_force = st.text_input("Force Reset Tenant Admin Password", type="password", help="Leave empty to maintain existing pass")
+                    
                     if st.button("💾 LOCK CONFIGURATION STATUS KEY"):
                         with get_db_connection() as conn:
                             with conn.cursor() as cursor:
-                                cursor.execute("UPDATE system_tenants SET license_active = %s WHERE tenant_id = %s", (new_license_toggle, chosen_target_tenant))
-                        st.success("Dynamic access lock state updated.")
+                                cursor.execute("""
+                                    UPDATE system_tenants 
+                                    SET license_active = %s, license_expiry_date = %s 
+                                    WHERE tenant_id = %s
+                                """, (new_license_toggle, new_expiry_input.strip(), chosen_target_tenant))
+                                
+                                if new_tenant_pass_force.strip():
+                                    t_owner = tenant_record["owner_username"]
+                                    hashed_f = hash_password(new_tenant_pass_force.strip())
+                                    cursor.execute("""
+                                        UPDATE users SET password = %s 
+                                        WHERE username = %s AND tenant_id = %s
+                                    """, (hashed_f, t_owner, chosen_target_tenant))
+                                    st.success(f"🔑 Successfully overrode password for master root key: `{t_owner}`")
+                                    
+                        st.success("Dynamic access lock state and subscription loop updated.")
                         st.cache_data.clear(); st.rerun()
         else:
             with adm_tabs[0]:
@@ -1011,6 +1070,35 @@ elif routing_node == "🔐 System Access Control":
                                 cursor.execute("INSERT INTO packages (packagename, areaname, packagerate, tenant_id) VALUES (%s, %s, %s, %s) ON CONFLICT (packagename, areaname, tenant_id) DO UPDATE SET packagerate = EXCLUDED.packagerate", (p_name, p_area, p_rate, st.session_state['tenant_id']))
                         st.success("Configured matrix row entry.")
                         st.cache_data.clear(); st.rerun()
+            
+            st.write("---")
+            st.markdown("#### 🗑️ Remove Package from Matrix")
+            all_pkgs_list = fetch_isolated_packages(st.session_state['tenant_id'])
+            if all_pkgs_list:
+                pkg_options = [f"{pk['packagename']} — Area: {pk['areaname']} (Rs. {pk['packagerate']})" for pk in all_pkgs_list]
+                chosen_del_idx = st.selectbox("Select Target Package Profile to Wipe", range(len(pkg_options)), format_func=lambda x: pkg_options[x])
+                target_del_pkg = all_pkgs_list[chosen_del_idx]
+                
+                if st.button("🗑️ PURGE PACKAGE FROM REGISTRY", use_container_width=True):
+                    with get_db_connection() as conn:
+                        with conn.cursor() as cursor:
+                            cursor.execute("""
+                                SELECT COUNT(*) FROM customers 
+                                WHERE LOWER(package) = LOWER(%s) AND LOWER(area) = LOWER(%s) AND tenant_id = %s
+                            """, (target_del_pkg['packagename'], target_del_pkg['areaname'], st.session_state['tenant_id']))
+                            active_deps = cursor.fetchone()[0]
+                            
+                            if active_deps > 0:
+                                st.error(f"❌ Purge Refused! '{target_del_pkg['packagename']}' target profile possesses {active_deps} active customer terminals. Re-assign them to clean dependencies.")
+                            else:
+                                cursor.execute("""
+                                    DELETE FROM packages 
+                                    WHERE LOWER(packagename) = LOWER(%s) AND LOWER(areaname) = LOWER(%s) AND tenant_id = %s
+                                """, (target_del_pkg['packagename'], target_del_pkg['areaname'], st.session_state['tenant_id']))
+                                st.success(f"✅ Tariff '{target_del_pkg['packagename']}' removed successfully!")
+                                st.cache_data.clear(); st.rerun()
+            else:
+                st.info("No active billing packages stored inside database registry context.")
                         
         with adm_tabs[3]:
             st.markdown("### 🗺️ Sector Node Operations")
