@@ -161,15 +161,33 @@ def verify_password(password: str, hashed_password: str) -> bool:
 def build_database_schema():
     with get_db_connection() as conn:
         with conn.cursor() as cursor:
-            # FIX ENGINE: Purane ghalat structure wale tables ko drop kar ke fresh banata hai
-            try:
-                cursor.execute("SELECT areaname FROM areas LIMIT 1;")
-            except Exception:
+            # ADVANCED FIX ENGINE: Kisi bhi adhe-adhure table ko dhoond kar use drop karega
+            tables_to_check = ['areas', 'customers', 'billing_history']
+            needs_reset = False
+            
+            for t in tables_to_check:
+                try:
+                    if t == 'areas':
+                        cursor.execute("SELECT areaname FROM areas LIMIT 1;")
+                    elif t == 'customers':
+                        cursor.execute("SELECT username FROM customers LIMIT 1;")
+                    elif t == 'billing_history':
+                        cursor.execute("SELECT datetimestamp FROM billing_history LIMIT 1;")
+                except Exception:
+                    needs_reset = True
+                    break
+            
+            if needs_reset:
                 conn.rollback()
+                cursor.execute("DROP TABLE IF EXISTS billing_history CASCADE;")
                 cursor.execute("DROP TABLE IF EXISTS customers CASCADE;")
                 cursor.execute("DROP TABLE IF EXISTS areas CASCADE;")
+                cursor.execute("DROP TABLE IF EXISTS packages CASCADE;")
+                cursor.execute("DROP TABLE IF EXISTS users CASCADE;")
+                cursor.execute("DROP TABLE IF EXISTS app_settings CASCADE;")
                 conn.commit()
             
+            # Fresh Table Generation with Sahi Columns
             cursor.execute("CREATE TABLE IF NOT EXISTS areas (areaname TEXT PRIMARY KEY)")
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS customers (
