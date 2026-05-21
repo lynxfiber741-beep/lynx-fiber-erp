@@ -23,17 +23,12 @@ from reportlab.lib import colors
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 
 # ==========================================
-# 🛑 SAAS COMMERCIAL LICENSE & HIDDEN MASTER REGISTRY
+# 🛑 SAAS MASTER CONFIGURATION & HIDDEN REGISTRY
 # ==========================================
-SOFTWARE_LICENSE_ACTIVE = True  # Client block karne ke liye False kar dein
 DISTRIBUTOR_NAME = "Lynx Fiber Internet"
 
-# 🤫 HIDDEN SUPER-ADMIN REGISTRY (Yeh numbers kisi customer ko show nahi honge)
+# 🤫 HIDDEN SUPER-ADMIN REGISTRY (Aapke numbers jo am customer se hide rahenge)
 MASTER_NOTIFY_NUMBERS = ["03215943786", "03118808741"]
-
-if not SOFTWARE_LICENSE_ACTIVE:
-    st.error(f"⚠️ 🔐 SOFTWARE LICENSE SUSPENDED! Please contact the master administrator to renew your system access ledger. Provider: {DISTRIBUTOR_NAME}")
-    st.stop()
 
 # ==========================================
 # 1. CORE CONFIGURATION & SESSION STATE
@@ -44,12 +39,12 @@ if 'user_role' not in st.session_state:
     st.session_state['user_role'] = None
 if 'username' not in st.session_state:
     st.session_state['username'] = ""
+if 'tenant_id' not in st.session_state:
+    st.session_state['tenant_id'] = "lynx"  # Default master tenant
 if 'assigned_areas' not in st.session_state:
     st.session_state['assigned_areas'] = []  
 if 'current_node' not in st.session_state:
     st.session_state['current_node'] = "📊 Core Analytics Dashboard"
-if 'dashboard_filter' not in st.session_state:
-    st.session_state['dashboard_filter'] = "ALL"
 if 'portal_mode' not in st.session_state:
     st.session_state['portal_mode'] = False
 
@@ -57,12 +52,6 @@ GLOBAL_TARGET_ORDER = [
     "username", "customername", "phone", "cnic", "package",
     "billamount", "area", "address", "onuserialnumber"
 ]
-
-st.set_page_config(
-    page_title=f"Enterprise ERP Panel — Powered by {DISTRIBUTOR_NAME}", 
-    layout="wide",
-    initial_sidebar_state="expanded"
-)
 
 # ==========================================
 # 2. SECURE POOLED DATABASE REGISTRY
@@ -103,123 +92,164 @@ def verify_password(password: str, hashed_password: str) -> bool:
     except Exception:
         return False
 
-# Master Schema Engine
+# Master Schema Engine with Multi-Tenant Security Layers
 def build_database_schema():
     with get_db_connection() as conn:
         with conn.cursor() as cursor:
+            # 1. Tenants Master Control Table
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS system_tenants (
+                    tenant_id TEXT PRIMARY KEY,
+                    company_name TEXT NOT NULL,
+                    support_phone TEXT NOT NULL,
+                    owner_username TEXT NOT NULL,
+                    license_active BOOLEAN DEFAULT FALSE,
+                    registration_date TEXT NOT NULL
+                )
+            """)
+            
+            # 2. Core Users Table
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS users (
-                    username TEXT PRIMARY KEY, 
+                    username TEXT NOT NULL, 
                     password TEXT NOT NULL, 
                     role TEXT NOT NULL CHECK(role IN ('Owner', 'Admin', 'Staff')), 
-                    assignedarea TEXT DEFAULT 'ALL'
+                    assignedarea TEXT DEFAULT 'ALL',
+                    tenant_id TEXT NOT NULL DEFAULT 'lynx',
+                    PRIMARY KEY (username, tenant_id)
                 )
             """)
-            cursor.execute("CREATE TABLE IF NOT EXISTS areas (areaname TEXT PRIMARY KEY)")
+            
+            # 3. Areas Table
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS areas (
+                    areaname TEXT NOT NULL,
+                    tenant_id TEXT NOT NULL DEFAULT 'lynx',
+                    PRIMARY KEY (areaname, tenant_id)
+                )
+            """)
+            
+            # 4. Customers Isolation Table
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS customers (
-                    username TEXT PRIMARY KEY, customername TEXT NOT NULL, phone TEXT UNIQUE NOT NULL,
+                    username TEXT NOT NULL, customername TEXT NOT NULL, phone TEXT NOT NULL,
                     cnic TEXT DEFAULT '', package TEXT NOT NULL, billamount INTEGER NOT NULL CHECK(billamount >= 0),
                     area TEXT NOT NULL, address TEXT DEFAULT '', onuserialnumber TEXT DEFAULT '',
-                    balanceshift INTEGER NOT NULL DEFAULT 0, status TEXT NOT NULL DEFAULT 'UNPAID', expirydate TEXT NOT NULL
+                    balanceshift INTEGER NOT NULL DEFAULT 0, status TEXT NOT NULL DEFAULT 'UNPAID', expirydate TEXT NOT NULL,
+                    tenant_id TEXT NOT NULL DEFAULT 'lynx',
+                    PRIMARY KEY (username, tenant_id)
                 )
             """)
+            
+            # 5. Packages Matrix Table
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS packages (
                     packagename TEXT NOT NULL, areaname TEXT NOT NULL, packagerate INTEGER NOT NULL CHECK(packagerate >= 0),
-                    PRIMARY KEY (packagename, areaname)
+                    tenant_id TEXT NOT NULL DEFAULT 'lynx',
+                    PRIMARY KEY (packagename, areaname, tenant_id)
                 )
             """)
-            cursor.execute("CREATE TABLE IF NOT EXISTS app_settings (settingkey TEXT PRIMARY KEY, settingvalue TEXT NOT NULL)")
+            
+            # 6. Billing History Audit Table
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS billing_history (
                     invoiceid TEXT PRIMARY KEY, customerid TEXT NOT NULL, customername TEXT NOT NULL, area TEXT NOT NULL,
                     phone TEXT, datetimestamp TEXT NOT NULL, currentpackage TEXT NOT NULL, amountpaid INTEGER NOT NULL CHECK(amountpaid >= 0),
-                    remainingarrears INTEGER NOT NULL, transactiontype TEXT NOT NULL, paymentmethod TEXT NOT NULL, discountgiven INTEGER DEFAULT 0
+                    remainingarrears INTEGER NOT NULL, transactiontype TEXT NOT NULL, paymentmethod TEXT NOT NULL, discountgiven INTEGER DEFAULT 0,
+                    tenant_id TEXT NOT NULL DEFAULT 'lynx'
                 )
             """)
             
-            # App default settings checks for Tenant Branding
-            cursor.execute("SELECT COUNT(*) FROM app_settings WHERE settingkey = 'tenant_name'")
+            # Seed Lynx Master Tenant if missing
+            cursor.execute("SELECT COUNT(*) FROM system_tenants WHERE tenant_id = 'lynx'")
             if cursor.fetchone()[0] == 0:
-                cursor.execute("INSERT INTO app_settings VALUES ('tenant_name', 'Lynx Fiber Pvt Ltd')")
-            cursor.execute("SELECT COUNT(*) FROM app_settings WHERE settingkey = 'tenant_phone'")
-            if cursor.fetchone()[0] == 0:
-                cursor.execute("INSERT INTO app_settings VALUES ('tenant_phone', '03135776263')")
+                cursor.execute("""
+                    INSERT INTO system_tenants VALUES ('lynx', 'Lynx Fiber Pvt Ltd', '03135776263', 'owner', TRUE, %s)
+                """, (datetime.now().strftime("%Y-%m-%d"),))
                 
-            cursor.execute("SELECT COUNT(*) FROM users WHERE role = 'Owner'")
+            # Seed Lynx Master Owner Account if missing
+            cursor.execute("SELECT COUNT(*) FROM users WHERE username = 'owner' AND tenant_id = 'lynx'")
             if cursor.fetchone()[0] == 0:
-                cursor.execute("INSERT INTO users VALUES ('owner', %s, 'Owner', 'ALL')", (hash_password('lynxowner123'),))
+                cursor.execute("INSERT INTO users VALUES ('owner', %s, 'Owner', 'ALL', 'lynx')", (hash_password('lynxowner123'),))
                 
         conn.commit()
 
 build_database_schema()
 
 # ==========================================
-# 3. HIGH PERFORMANCE RETRIEVALS & TENANT FETCH
+# 3. HIGH PERFORMANCE RETRIEVALS & TENANT ISOLATION FETCH
 # ==========================================
 @st.cache_data(ttl=2)
-def fetch_tenant_metadata():
-    try:
-        with get_db_connection() as conn:
-            with conn.cursor() as cur:
-                cur.execute("SELECT settingkey, settingvalue FROM app_settings")
-                res = dict(cur.fetchall())
-        return {
-            "name": res.get("tenant_name", "Lynx Fiber Pvt Ltd"),
-            "phone": res.get("tenant_phone", "03135776263")
-        }
-    except Exception:
-        return {"name": "Lynx Fiber Pvt Ltd", "phone": "03135776263"}
-
-tenant_meta = fetch_tenant_metadata()
-TENANT_COMPANY_NAME = tenant_meta["name"]
-TENANT_SUPPORT_PHONE = tenant_meta["phone"]
-
-@st.cache_data(ttl=5)
-def fetch_live_matrix():
+def fetch_active_tenant_metadata(tenant_id):
     try:
         with get_db_connection() as conn:
             with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-                cur.execute("SELECT * FROM customers ORDER BY customername ASC")
+                cur.execute("SELECT company_name, support_phone, license_active FROM system_tenants WHERE tenant_id = %s", (tenant_id,))
+                res = cur.fetchone()
+        if res:
+            return {
+                "name": res["company_name"],
+                "phone": res["support_phone"],
+                "active": res["license_active"]
+            }
+    except Exception:
+        pass
+    return {"name": "Lynx Fiber Pvt Ltd", "phone": "03135776263", "active": True}
+
+# Load Metadata context dynamically based on session
+tenant_meta = fetch_active_tenant_metadata(st.session_state['tenant_id'])
+TENANT_COMPANY_NAME = tenant_meta["name"]
+TENANT_SUPPORT_PHONE = tenant_meta["phone"]
+
+# Check License Lock Layer
+if not tenant_meta["active"]:
+    st.error(f"⚠️ 🔐 SOFTWARE LICENSE SUSPENDED! Please contact the master administrator to renew your system access ledger. Provider: {DISTRIBUTOR_NAME}")
+    st.stop()
+
+@st.cache_data(ttl=3)
+def fetch_isolated_matrix(tenant_id):
+    try:
+        with get_db_connection() as conn:
+            with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                cur.execute("SELECT * FROM customers WHERE tenant_id = %s ORDER BY customername ASC", (tenant_id,))
                 rows = cur.fetchall()
         if rows:
             df = pd.DataFrame(rows)
             df.columns = [c.lower() for c in df.columns]
             extended_cols = GLOBAL_TARGET_ORDER + [c for c in df.columns if c not in GLOBAL_TARGET_ORDER]
             return df.reindex(columns=extended_cols)
-        return pd.DataFrame(columns=GLOBAL_TARGET_ORDER + ['balanceshift', 'status', 'expirydate'])
+        return pd.DataFrame(columns=GLOBAL_TARGET_ORDER + ['balanceshift', 'status', 'expirydate', 'tenant_id'])
     except Exception:
         return pd.DataFrame()
 
-@st.cache_data(ttl=5)
-def fetch_active_areas():
+@st.cache_data(ttl=3)
+def fetch_isolated_areas(tenant_id):
     try:
         with get_db_connection() as conn:
             with conn.cursor() as cur:
-                cur.execute("SELECT areaname FROM areas ORDER BY areaname ASC")
+                cur.execute("SELECT areaname FROM areas WHERE tenant_id = %s ORDER BY areaname ASC", (tenant_id,))
                 rows = cur.fetchall()
         return [r[0] for r in rows] if rows else []
     except Exception:
         return []
 
-@st.cache_data(ttl=5)
-def fetch_all_packages():
+@st.cache_data(ttl=3)
+def fetch_isolated_packages(tenant_id):
     try:
         with get_db_connection() as conn:
             with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-                cur.execute("SELECT packagename, areaname, packagerate FROM packages ORDER BY packagename ASC, areaname ASC")
+                cur.execute("SELECT packagename, areaname, packagerate FROM packages WHERE tenant_id = %s ORDER BY packagename ASC, areaname ASC", (tenant_id,))
                 return cur.fetchall()
     except Exception:
         return []
 
-@st.cache_data(ttl=5)
-def fetch_current_month_billing_summary():
+@st.cache_data(ttl=3)
+def fetch_isolated_billing_summary(tenant_id):
     try:
         current_month_str = datetime.now().strftime("%Y-%m")
         with get_db_connection() as conn:
             with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-                cur.execute("SELECT LOWER(TRIM(customerid)) as customerid, amountpaid FROM billing_history WHERE datetimestamp LIKE %s", (current_month_str + '%',))
+                cur.execute("SELECT LOWER(TRIM(customerid)) as customerid, amountpaid FROM billing_history WHERE tenant_id = %s AND datetimestamp LIKE %s", (tenant_id, current_month_str + '%'))
                 rows = cur.fetchall()
         if rows:
             df = pd.DataFrame(rows)
@@ -237,6 +267,13 @@ def clean_and_validate_phone(phone_str: str) -> str:
     if len(cleaned) == 10 and cleaned.startswith("3"): cleaned = "0" + cleaned
     return cleaned
 
+# Page Configuration Setup
+st.set_page_config(
+    page_title=f"Enterprise ERP Panel — Powered by {DISTRIBUTOR_NAME}", 
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
+
 # Premium Mobile UI Styles CSS Engine
 st.markdown(f"""
     <style>
@@ -252,10 +289,6 @@ st.markdown(f"""
         font-weight: bold !important; font-size: 16px !important;
         border: 2px solid #3b82f6 !important; border-radius: 8px !important;
     }}
-    div[data-testid="stTextInput"] input[disabled],
-    div[data-testid="stNumberInput"] input[disabled] {{
-        color: #4b5563 !important; background-color: #e5e7eb !important; border: 2px solid #9ca3af !important;
-    }}
     div[data-baseweb="select"] > div {{
         background-color: #ffffff !important; color: #000000 !important;
         font-weight: bold !important; font-size: 16px !important;
@@ -263,7 +296,6 @@ st.markdown(f"""
     }}
     div[data-baseweb="select"] span, div[data-baseweb="select"] div {{ color: #000000 !important; }}
     ul[role="listbox"] li {{ color: #000000 !important; background-color: #ffffff !important; font-weight: 600 !important; }}
-    ul[role="listbox"] li:hover {{ background-color: #3b82f6 !important; color: #ffffff !important; }}
     label, p, .stMarkdown div {{ color: #e5e7eb !important; font-weight: 500; }}
     
     div.stButton > button, div.stFormSubmitButton > button {{
@@ -278,12 +310,6 @@ st.markdown(f"""
         background: #3b82f6 !important; color: #ffffff !important;
         border: 2px solid #60a5fa !important; box-shadow: 0 0 15px rgba(59, 130, 246, 0.5) !important;
     }}
-    [data-testid="stSidebar"] div.stButton > button {{
-        background: #111827 !important; color: #9ca3af !important;
-        border: 1px solid #374151 !important; border-radius: 8px !important;
-        padding: 10px !important; text-align: left !important; justify-content: flex-start !important;
-    }}
-    [data-testid="stSidebar"] div.stButton > button:hover {{ background: #10b981 !important; color: white !important; border: 1px solid #10b981 !important; }}
     
     .table-wrapper {{ overflow-x: auto; width: 100%; -webkit-overflow-scrolling: touch; margin-top: 15px; }}
     .premium-table {{ width: 100%; border-collapse: collapse; border-radius: 12px; overflow: hidden; background: #111827; }}
@@ -292,22 +318,15 @@ st.markdown(f"""
     .btn-action {{ padding: 6px 12px; border-radius: 6px; font-weight: bold; text-decoration: none; font-size: 12px; display: inline-block; margin-right: 4px; }}
     .btn-c {{ background-color: #2563eb; color: white !important; }}
     .btn-w {{ background-color: #16a34a; color: white !important; }}
-    .btn-disabled {{ background-color: #4b5563; color: #9ca3af !important; cursor: not-allowed; }}
     .client-card {{ background: #1f2937; padding: 20px; border-radius: 12px; border: 1px solid #374151; margin-bottom: 15px; }}
     .main-title {{ color: #10b981; font-size: 28px; font-weight: 800; text-align: center; margin-bottom: 25px; }}
     .front-login-box {{ 
-        max-width: 450px; margin: 60px auto; background: #111827; padding: 40px; 
+        max-width: 450px; margin: 40px auto; background: #111827; padding: 40px; 
         border-radius: 16px; border: 1px solid #10b981; box-shadow: 0 15px 35px rgba(16, 185, 129, 0.2); 
     }}
-    .nav-header {{ font-size: 12px; font-weight: bold; color: #6b7280; text-transform: uppercase; margin-bottom: 10px; padding-left: 5px; }}
     .system-card {{ background: #1e293b; border: 1px solid #475569; border-radius: 10px; padding: 15px; margin-bottom: 15px; text-align: center; }}
     .system-card h4 {{ margin: 0 0 10px 0; color: #3b82f6; font-size: 16px; font-weight: bold;}}
-    .system-card p {{ margin: 5px 0; font-size: 14px; }}
-    
-    /* Commercial Whitelabel Footer */
-    .saas-footer {{
-        text-align: center; font-size: 12px; color: #6b7280; margin-top: 50px; padding: 15px; border-top: 1px solid #1f2937;
-    }}
+    .saas-footer {{ text-align: center; font-size: 12px; color: #6b7280; margin-top: 50px; padding: 15px; border-top: 1px solid #1f2937; }}
     .saas-footer b {{ color: #3b82f6; }}
     </style>
     """, unsafe_allow_html=True)
@@ -325,35 +344,98 @@ if st.session_state['portal_mode']:
     routing_node = "📱 Client Portal"
 else:
     if not st.session_state['authenticated']:
+        # MAIN DUAL GATEWAY LOG IN SCREEN
         st.markdown("<div class='front-login-box'>", unsafe_allow_html=True)
-        st.markdown(f"<h2 style='text-align:center; color:#10b981; font-weight:900; margin-bottom:5px;'>{TENANT_COMPANY_NAME.upper()}</h2>", unsafe_allow_html=True)
-        st.markdown(f"<p style='text-align:center; color:#9ca3af; margin-bottom:30px;'>Enterprise Core Network Billing ERP</p>", unsafe_allow_html=True)
         
-        user_input = (st.text_input("Username Key", key="front_user") or "").strip().lower()
-        pass_input = st.text_input("Security Password", type="password", key="front_pass")
+        login_tab, register_tab = st.tabs(["🔒 Secure Login Portal", "➕ Register New ISP Application"])
         
-        if st.button("🚀 Authorize & Launch Dashboard", use_container_width=True):
-            with get_db_connection() as conn:
-                with conn.cursor() as cursor:
-                    cursor.execute("SELECT role, username, assignedarea, password FROM users WHERE LOWER(username) = %s", (user_input,))
-                    user_match = cursor.fetchone()
-                
-            if user_match and verify_password(pass_input, user_match[3]):
-                st.session_state['authenticated'] = True
-                st.session_state['user_role'] = user_match[0]  
-                st.session_state['username'] = user_match[1]
-                
-                raw_areas = user_match[2] if user_match[2] else "ALL"
-                if user_match[0] in ["Owner", "Admin"] or raw_areas == "ALL":
-                    st.session_state['assigned_areas'] = ["ALL"]
-                else:
-                    st.session_state['assigned_areas'] = [a.strip() for a in raw_areas.split(",") if a.strip()]
+        with login_tab:
+            st.markdown(f"<h3 style='text-align:center; color:#10b981;'>ERP SYSTEM LOGIN</h3>", unsafe_allow_html=True)
+            input_tenant = st.text_input("Tenant Domain ID / Code (e.g., lynx)", key="log_tenant").strip().lower()
+            user_input = (st.text_input("Username Key", key="front_user") or "").strip().lower()
+            pass_input = st.text_input("Security Password", type="password", key="front_pass")
+            
+            if st.button("🚀 Authorize & Launch Dashboard", use_container_width=True):
+                with get_db_connection() as conn:
+                    with conn.cursor() as cursor:
+                        cursor.execute("SELECT role, username, assignedarea, password FROM users WHERE LOWER(username) = %s AND tenant_id = %s", (user_input, input_tenant))
+                        user_match = cursor.fetchone()
                     
-                st.session_state['current_node'] = "📊 Core Analytics Dashboard"
-                st.cache_data.clear()
-                st.rerun()
-            else:
-                st.error("❌ Invalid Access Credentials!")
+                if user_match and verify_password(pass_input, user_match[3]):
+                    # Validate tenant license activity state explicitly
+                    t_meta = fetch_active_tenant_metadata(input_tenant)
+                    if not t_meta["active"]:
+                        st.error("⚠️ This system access instance is locked by the main distributor.")
+                    else:
+                        st.session_state['authenticated'] = True
+                        st.session_state['user_role'] = user_match[0]  
+                        st.session_state['username'] = user_match[1]
+                        st.session_state['tenant_id'] = input_tenant
+                        
+                        raw_areas = user_match[2] if user_match[2] else "ALL"
+                        if user_match[0] in ["Owner", "Admin"] or raw_areas == "ALL":
+                            st.session_state['assigned_areas'] = ["ALL"]
+                        else:
+                            st.session_state['assigned_areas'] = [a.strip() for a in raw_areas.split(",") if a.strip()]
+                            
+                        st.session_state['current_node'] = "📊 Core Analytics Dashboard"
+                        st.cache_data.clear()
+                        st.rerun()
+                else:
+                    st.error("❌ Invalid Tenant, Username, or Password Node Variant.")
+                    
+        with register_tab:
+            st.markdown("<h3 style='text-align:center; color:#3b82f6;'>SaaS Tenant Onboarding</h3>", unsafe_allow_html=True)
+            st.caption("Naya ISP Account banana ke liye niche diye gaye parameters fill karein:")
+            
+            with st.form("saas_tenant_registration_form"):
+                reg_tenant_id = st.text_input("Choose Unique Tenant Code (e.g., falcon, alpha)").strip().lower()
+                reg_company_name = st.text_input("ISP Company Full Brand Name").strip()
+                reg_support_phone = st.text_input("Official Support Helpline Number").strip()
+                reg_owner_user = st.text_input("Create Master Admin Username").strip().lower()
+                reg_owner_pass = st.text_input("Create Master Admin Password", type="password")
+                
+                if st.form_submit_button("➕ SUBMIT ACTIVATION APP PROPOSAL"):
+                    if not reg_tenant_id or not reg_company_name or not reg_owner_user or not reg_owner_pass:
+                        st.error("❌ Tamam mandatory structural fields fill karna lazmi hain.")
+                    elif len(reg_tenant_id) < 3:
+                        st.error("❌ Tenant Code kam se kam 3 harf ka hona chahiye.")
+                    else:
+                        try:
+                            with get_db_connection() as conn:
+                                with conn.cursor() as cursor:
+                                    # Check collision matrix
+                                    cursor.execute("SELECT COUNT(*) FROM system_tenants WHERE tenant_id = %s", (reg_tenant_id,))
+                                    if cursor.fetchone()[0] > 0:
+                                        st.error("❌ Yeh Tenant Code pehle se taken hai. Koi aur code chunein.")
+                                    else:
+                                        # Inject pending application state into system_tenants
+                                        cursor.execute("""
+                                            INSERT INTO system_tenants (tenant_id, company_name, support_phone, owner_username, license_active, registration_date)
+                                            VALUES (%s, %s, %s, %s, FALSE, %s)
+                                        """, (reg_tenant_id, reg_company_name, reg_support_phone, reg_owner_user, datetime.now().strftime("%Y-%m-%d")))
+                                        
+                                        # Inject Master User node for that tenant scope
+                                        cursor.execute("""
+                                            INSERT INTO users (username, password, role, assignedarea, tenant_id)
+                                            VALUES (%s, %s, 'Owner', 'ALL', %s)
+                                        """, (reg_owner_user, hash_password(reg_owner_pass), reg_tenant_id))
+                                        
+                                        conn.commit()
+                                        
+                                        st.success("🎉 Registration Proposal Saved onto Supabase Ledger Engine!")
+                                        
+                                        # Trigger Hidden Activation Alert Dispatches
+                                        alert_payload = f"🔒 LYNX SAAS LICENSE ALERT:\nNew enterprise system activation initiated.\nTenant ID: {reg_tenant_id}\nISP Company: {reg_company_name}\nHelpline Ref: {reg_support_phone}\nStatus: Verification Needed."
+                                        encoded_msg = urllib.parse.quote(alert_payload)
+                                        
+                                        st.markdown("#### 📲 Send Activation Alert to Distributor")
+                                        st.warning("Niche diye gaye links par click karke Admin ko activate karne ki request bhejein:")
+                                        
+                                        st.markdown(f'<a href="https://wa.me/92{MASTER_NOTIFY_NUMBERS[0]}?text={encoded_msg}" target="_blank" style="background:#10b981; color:white; padding:12px; border-radius:8px; display:block; text-align:center; text-decoration:none; font-weight:bold; margin-bottom:10px;">📲 Dispatch Verification Code (Line 1)</a>', unsafe_allow_html=True)
+                                        st.markdown(f'<a href="https://wa.me/92{MASTER_NOTIFY_NUMBERS[1]}?text={encoded_msg}" target="_blank" style="background:#3b82f6; color:white; padding:12px; border-radius:8px; display:block; text-align:center; text-decoration:none; font-weight:bold;">📲 Dispatch Verification Code (Line 2)</a>', unsafe_allow_html=True)
+                        except Exception as ex:
+                            st.error(f"Transaction Fault Error: {ex}")
         
         st.markdown(f"<p style='text-align:center; font-size:11px; color:#4b5563; margin-top:20px;'>Powered by {DISTRIBUTOR_NAME}</p>", unsafe_allow_html=True)
         st.markdown("</div>", unsafe_allow_html=True)
@@ -361,10 +443,11 @@ else:
     else:
         routing_node = st.session_state['current_node']
 
-# NAVIGATION SIDEBAR
+# NAVIGATION SIDEBAR WITH TENANT AWARENESS
 if st.session_state['authenticated'] and not st.session_state['portal_mode']:
     with st.sidebar:
-        st.markdown(f"<h2 style='color:#10b981; font-weight:900; text-align:center; margin-bottom:20px;'>{TENANT_COMPANY_NAME}</h2>", unsafe_allow_html=True)
+        st.markdown(f"<h2 style='color:#10b981; font-weight:900; text-align:center; margin-bottom:5px;'>{TENANT_COMPANY_NAME}</h2>", unsafe_allow_html=True)
+        st.markdown(f"<p style='text-align:center; font-size:11px; color:#6b7280;'>Domain context: <b>{st.session_state['tenant_id']}</b></p>", unsafe_allow_html=True)
         st.markdown("<div class='nav-header'>System Navigation</div>", unsafe_allow_html=True)
         
         if st.button("📊 Core Analytics Dashboard", use_container_width=True):
@@ -380,8 +463,7 @@ if st.session_state['authenticated'] and not st.session_state['portal_mode']:
             
         st.write("---")
         area_display = "All Systems" if "ALL" in st.session_state['assigned_areas'] else ", ".join(st.session_state['assigned_areas'])
-        role_color = "#f59e0b" if st.session_state['user_role'] == "Owner" else "#10b981"
-        st.markdown(f"<p style='text-align:center; color:#9ca3af;'>👤 Active: <b>{st.session_state['username'].upper()}</b><br>📍 Role: <b style='color:{role_color};'>{st.session_state['user_role'].upper()}</b><br>🗺️ Areas:<br><span style='color:#60a5fa; font-size:12px;'><b>{area_display}</b></span></p>", unsafe_allow_html=True)
+        st.markdown(f"<p style='text-align:center; color:#9ca3af;'>👤 Active: <b>{st.session_state['username'].upper()}</b><br>📍 Role: <b style='color:#10b981;'>{st.session_state['user_role'].upper()}</b><br>🗺️ Areas:<br><span style='color:#60a5fa; font-size:12px;'><b>{area_display}</b></span></p>", unsafe_allow_html=True)
         if st.button("🔒 Logout System", use_container_width=True):
             st.session_state['authenticated'] = False; st.rerun()
 
@@ -391,8 +473,8 @@ if st.session_state['authenticated'] and not st.session_state['portal_mode']:
 if routing_node == "📊 Core Analytics Dashboard":
     st.markdown(f"<div class='main-title'>⚡ {TENANT_COMPANY_NAME.upper()} ENTERPRISE ANALYTICS</div>", unsafe_allow_html=True)
     
-    df_matrix = fetch_live_matrix()
-    all_system_areas = fetch_active_areas()
+    df_matrix = fetch_isolated_matrix(st.session_state['tenant_id'])
+    all_system_areas = fetch_isolated_areas(st.session_state['tenant_id'])
     is_high_profile = (st.session_state['user_role'] in ["Owner", "Admin"])
     
     cards_display_areas = all_system_areas.copy()
@@ -400,11 +482,11 @@ if routing_node == "📊 Core Analytics Dashboard":
         cards_display_areas = [a for a in all_system_areas if any(a.lower() == s.lower() for s in st.session_state['assigned_areas'])]
     
     if not all_system_areas:
-        st.info("💡 Database is empty. Configure your dynamic sectors inside System Access Control.")
+        st.info("💡 Database mapping is empty. Configure your dynamic sectors inside System Access Control.")
     elif df_matrix.empty:
         st.warning("⚠️ Operational Database is currently empty. No subscribers registered.")
     else:
-        collection_map = fetch_current_month_billing_summary()
+        collection_map = fetch_isolated_billing_summary(st.session_state['tenant_id'])
         st.markdown("### 🌐 Active System Node Overview")
         for i in range(0, len(cards_display_areas), 2):
             cols = st.columns(2)
@@ -445,12 +527,12 @@ if routing_node == "📊 Core Analytics Dashboard":
         if not is_high_profile and "ALL" not in st.session_state['assigned_areas']:
             base_df = base_df[base_df['area'].str.lower().isin([s.lower() for s in st.session_state['assigned_areas']])]
             filter_options = ["ALL ASSIGNED SYSTEMS"] + cards_display_areas
-            system_filter = st.selectbox("🌐 Operational Area System Filter", filter_options)
+            system_filter = st.selectbox("🌐 Area System Filter", filter_options)
             if system_filter != "ALL ASSIGNED SYSTEMS":
                 base_df = base_df[base_df['area'].str.lower() == system_filter.lower()]
         else:
             filter_options = ["ALL SYSTEMS"] + all_system_areas
-            system_filter = st.selectbox("🌐 Operational Area System Filter", filter_options)
+            system_filter = st.selectbox("🌐 Area System Filter", filter_options)
             if system_filter != "ALL SYSTEMS":
                 base_df = base_df[base_df['area'].str.lower() == system_filter.lower()]
 
@@ -509,13 +591,13 @@ if routing_node == "📊 Core Analytics Dashboard":
     st.markdown(f"<div class='saas-footer'>Distributed & Licensed by: <b>{DISTRIBUTOR_NAME}</b></div>", unsafe_allow_html=True)
 
 # ==========================================
-# VIEW 2: OPERATIONS CENTER (AREA DRIVEN)
+# VIEW 2: OPERATIONS CENTER (ISOLATED TRANSACTIONS)
 # ==========================================
 elif routing_node == "👥 Operational Billing Center":
     st.markdown("<div class='main-title'>👥 TRANSACTION & TERMINAL OPERATIONS</div>", unsafe_allow_html=True)
     
-    df_matrix = fetch_live_matrix()
-    all_system_areas = fetch_active_areas()
+    df_matrix = fetch_isolated_matrix(st.session_state['tenant_id'])
+    all_system_areas = fetch_isolated_areas(st.session_state['tenant_id'])
     is_management = (st.session_state['user_role'] in ["Owner", "Admin"])
     
     if not is_management and "ALL" not in st.session_state['assigned_areas']:
@@ -558,62 +640,48 @@ elif routing_node == "👥 Operational Billing Center":
                     future_shift = final_due - cash_in
                     new_state = "PARTIAL" if future_shift > 0 and cash_in > 0 else ("UNPAID" if future_shift > 0 else "PAID")
                     
-                    # --- SMART SYSTEM DATE LOCK TIMELINE ENGINE ---
                     today_dt = datetime.now()
                     current_expiry_str = str(node_row_dict.get('expirydate', '')).strip()
-                    
                     try:
                         old_expiry_dt = datetime.strptime(current_expiry_str, "%Y-%m-%d")
-                        if old_expiry_dt < (today_dt - relativedelta(months=3)):
-                            base_dt = today_dt
-                        else:
-                            base_dt = old_expiry_dt
+                        base_dt = today_dt if old_expiry_dt < (today_dt - relativedelta(months=3)) else old_expiry_dt
                     except Exception:
                         base_dt = today_dt
                     
-                    computed_new_expiry = base_dt + relativedelta(months=billing_months)
-                    new_expiry = computed_new_expiry.strftime("%Y-%m-%d")
-                    
+                    new_expiry = (base_dt + relativedelta(months=billing_months)).strftime("%Y-%m-%d")
                     invoice_uuid = f"INV-{uuid.uuid4().hex[:10].upper()}"
                     
                     with get_db_connection() as conn:
                         with conn.cursor() as cursor:
-                            cursor.execute("UPDATE customers SET balanceshift = %s, status = %s, expirydate = %s WHERE username = %s", (future_shift, new_state, new_expiry, resolved_uid))
+                            cursor.execute("UPDATE customers SET balanceshift = %s, status = %s, expirydate = %s WHERE username = %s AND tenant_id = %s", (future_shift, new_state, new_expiry, resolved_uid, st.session_state['tenant_id']))
                             cursor.execute("""
-                                INSERT INTO billing_history (invoiceid, customerid, customername, area, phone, datetimestamp, currentpackage, amountpaid, remainingarrears, transactiontype, paymentmethod, discountgiven)
-                                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, 'BILL_PAYMENT', %s, %s)
-                            """, (invoice_uuid, resolved_uid, node_row_dict.get('customername'), node_row_dict.get('area'), node_row_dict.get('phone'), datetime.now().strftime("%Y-%m-%d %H:%M:%S"), node_row_dict.get('package'), cash_in, future_shift, pay_method, discount))
+                                INSERT INTO billing_history (invoiceid, customerid, customername, area, phone, datetimestamp, currentpackage, amountpaid, remainingarrears, transactiontype, paymentmethod, discountgiven, tenant_id)
+                                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, 'BILL_PAYMENT', %s, %s, %s)
+                            """, (invoice_uuid, resolved_uid, node_row_dict.get('customername'), node_row_dict.get('area'), node_row_dict.get('phone'), datetime.now().strftime("%Y-%m-%d %H:%M:%S"), node_row_dict.get('package'), cash_in, future_shift, pay_method, discount, st.session_state['tenant_id']))
                         conn.commit()
-                    st.success(f"🎉 Collection Recorded Cleanly! Extended Target Lock To: {new_expiry}")
+                    st.success(f"🎉 Collection Recorded Cleanly! Extended Lock To: {new_expiry}")
                     st.cache_data.clear(); st.rerun()
 
     if is_management:
-        # TAB 2: PROVISION NEW CLIENT WITH EXACT MONTHLY DATE-TO-DATE INTERVAL LOCK
+        # TAB 2: PROVISION NEW CLIENT WITH TENANT SCOPE
         with tabs[1]:
             if not all_system_areas:
                 st.error("❌ Register an Area Sector inside System Access Controls first.")
             else:
                 in_area = st.selectbox("Select Target Hub Location", all_system_areas)
-                
                 with get_db_connection() as conn:
                     with conn.cursor() as cur:
-                        cur.execute("SELECT packagename, packagerate FROM packages WHERE areaname = %s", (in_area,))
+                        cur.execute("SELECT packagename, packagerate FROM packages WHERE areaname = %s AND tenant_id = %s", (in_area, st.session_state['tenant_id']))
                         area_pkgs = dict(cur.fetchall())
                 
-                with st.form("add_client_form_v64"):
+                with st.form("add_client_form_v67"):
                     in_id = st.text_input("Desired Unique Username Key").strip().lower()
                     in_name = st.text_input("Customer Full Name").strip()
                     in_phone = st.text_input("Phone Number").strip()
                     in_cnic = st.text_input("CNIC Number").strip()
                     
-                    if area_pkgs:
-                        chosen_pkg = st.selectbox(f"Valid Packages Configured for {in_area}", list(area_pkgs.keys()))
-                        suggested_rate = area_pkgs[chosen_pkg]
-                    else:
-                        chosen_pkg = "Custom Baseline Plan"
-                        suggested_rate = 1500
-                        st.warning(f"⚠️ No tariffs set for '{in_area}'. Applying standard manual baseline rate.")
-                        
+                    chosen_pkg = st.selectbox(f"Valid Packages for {in_area}", list(area_pkgs.keys())) if area_pkgs else "Standard Manual Baseline"
+                    suggested_rate = area_pkgs[chosen_pkg] if area_pkgs else 1500
                     in_rate = st.number_input("Monthly Plan Bill Amount (Rs.)", min_value=0, value=suggested_rate)
                     in_address = st.text_input("Physical Core Address").strip()
                     in_sn = st.text_input("ONU Hardware Serial ID").strip()
@@ -625,60 +693,51 @@ elif routing_node == "👥 Operational Billing Center":
                         else:
                             with get_db_connection() as conn:
                                 with conn.cursor() as cursor:
-                                    default_expiry = (datetime.now() + relativedelta(months=1)).strftime("%Y-%m-%d")
-                                    cursor.execute("""
-                                        INSERT INTO customers (username, customername, phone, cnic, package, billamount, area, address, onuserialnumber, balanceshift, status, expirydate)
-                                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, 0, 'UNPAID', %s)
-                                    """, (in_id, in_name, norm_p, in_cnic, chosen_pkg, in_rate, in_area, in_address, in_sn, default_expiry))
-                                conn.commit()
-                            st.success(f"🚀 Profile allocated cleanly for {in_id}! Initial Lock Expiry set to {default_expiry}.")
-                            st.cache_data.clear(); st.rerun()
+                                    # Scope duplication checks within this specific tenant boundary
+                                    cursor.execute("SELECT COUNT(*) FROM customers WHERE username = %s AND tenant_id = %s", (in_id, st.session_state['tenant_id']))
+                                    if cursor.fetchone()[0] > 0:
+                                        st.error("❌ Identity Key / Username duplicate inside your tenant logs.")
+                                    else:
+                                        default_expiry = (datetime.now() + relativedelta(months=1)).strftime("%Y-%m-%d")
+                                        cursor.execute("""
+                                            INSERT INTO customers (username, customername, phone, cnic, package, billamount, area, address, onuserialnumber, balanceshift, status, expirydate, tenant_id)
+                                            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, 0, 'UNPAID', %s, %s)
+                                        """, (in_id, in_name, norm_p, in_cnic, chosen_pkg, in_rate, in_area, in_address, in_sn, default_expiry, st.session_state['tenant_id']))
+                                        conn.commit()
+                                        st.success(f"🚀 Profile allocated safely! Expiry: {default_expiry}.")
+                                        st.cache_data.clear(); st.rerun()
 
-        # TAB 3: Bulk Import Excel Matrix Engine
+        # TAB 3: Bulk Import Isolated Rows
         with tabs[2]:
-            uploaded_file = st.file_uploader("Upload Excel Sheet", type=['xlsx', 'csv'])
+            uploaded_file = st.file_uploader("Upload Excel Sheet Matrix Log", type=['xlsx', 'csv'])
             if uploaded_file:
                 try:
-                    if uploaded_file.name.endswith('.csv'):
-                        df_upload = pd.read_csv(uploaded_file)
-                    else:
-                        df_upload = pd.read_excel(uploaded_file)
-                    
-                    st.write("📊 Row Preview Data:", df_upload.head(3))
+                    df_upload = pd.read_csv(uploaded_file) if uploaded_file.name.endswith('.csv') else pd.read_excel(uploaded_file)
+                    st.write("📊 Data Preview:", df_upload.head(3))
                     
                     if st.button("⚡ Save Sheet Rows to Live Engine"):
-                        required_csv_nodes = ['username', 'customername', 'phone', 'area', 'billamount']
-                        missing_nodes = [col for col in required_csv_nodes if col not in [c.lower() for c in df_upload.columns]]
-                        
-                        if missing_nodes:
-                            st.error(f"❌ Columns Missing in Sheet Structure: {missing_nodes}")
-                        else:
-                            df_upload.columns = [c.lower() for c in df_upload.columns]
-                            inserted_rows = 0
-                            
-                            with get_db_connection() as conn:
-                                with conn.cursor() as cursor:
-                                    for idx, row in df_upload.iterrows():
-                                        clean_id = str(row['username']).strip().lower()
-                                        clean_p = clean_and_validate_phone(str(row['phone']))
-                                        clean_rate = int(float(str(row.get('billamount', 1500))))
-                                        default_expiry = (datetime.now() + relativedelta(months=1)).strftime("%Y-%m-%d")
-                                        
-                                        cursor.execute("""
-                                            INSERT INTO customers (username, customername, phone, cnic, package, billamount, area, address, onuserialnumber, balanceshift, status, expirydate)
-                                            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, 0, 'UNPAID', %s)
-                                            ON CONFLICT (username) DO NOTHING
-                                        """, (clean_id, str(row['customername']), clean_p, str(row.get('cnic','')), str(row.get('package','Standard')), clean_rate, str(row['area']), str(row.get('address','')), str(row.get('onuserialnumber','')), default_expiry))
-                                        inserted_rows += 1
-                                conn.commit()
-                            st.success(f"🚀 Bulk Insertion Engine successfully processed {inserted_rows} rows into Supabase!")
-                            st.cache_data.clear()
+                        df_upload.columns = [c.lower() for c in df_upload.columns]
+                        inserted_rows = 0
+                        with get_db_connection() as conn:
+                            with conn.cursor() as cursor:
+                                for idx, row in df_upload.iterrows():
+                                    clean_id = str(row['username']).strip().lower()
+                                    default_expiry = (datetime.now() + relativedelta(months=1)).strftime("%Y-%m-%d")
+                                    cursor.execute("""
+                                        INSERT INTO customers (username, customername, phone, cnic, package, billamount, area, address, onuserialnumber, balanceshift, status, expirydate, tenant_id)
+                                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, 0, 'UNPAID', %s, %s)
+                                        ON CONFLICT (username, tenant_id) DO NOTHING
+                                    """, (clean_id, str(row['customername']), clean_and_validate_phone(str(row['phone'])), str(row.get('cnic','')), str(row.get('package','Standard')), int(float(str(row.get('billamount', 1500)))), str(row['area']), str(row.get('address','')), str(row.get('onuserialnumber','')), default_expiry, st.session_state['tenant_id']))
+                                    inserted_rows += 1
+                            conn.commit()
+                        st.success(f"🚀 Bulk Isolation processed {inserted_rows} entries cleanly!")
+                        st.cache_data.clear()
                 except Exception as ex:
-                    st.error(f"Processing Matrix Exception Error: {ex}")
+                    st.error(f"Processing Error: {ex}")
 
     # TAB: Edit Profiles Engine Block
     with tabs[-1]:
-        if not sub_map: st.info("Empty matrix logs.")
+        if not sub_map: st.info("Empty logs.")
         else:
             edit_target = st.selectbox("Modify Identity Key Node", list(sub_map.keys()), key="edit_box")
             edit_uid = sub_map[edit_target]
@@ -692,15 +751,15 @@ elif routing_node == "👥 Operational Billing Center":
                 up_rate = st.number_input("Monthly Rate (Rs.)", value=int(float(edit_row_dict.get('billamount',0))))
                 up_status = st.selectbox("Line Status", ["PAID", "PARTIAL", "UNPAID", "SUSPENDED"], index=["PAID", "PARTIAL", "UNPAID", "SUSPENDED"].index(edit_row_dict.get('status','UNPAID')))
                 
-                if st.form_submit_button("💾 COMMIT MODIFICATIONS PROFILE"):
+                if st.form_submit_button("💾 COMMIT MODIFICATIONS"):
                     with get_db_connection() as conn:
                         with conn.cursor() as cursor:
                             cursor.execute("""
                                 UPDATE customers SET customername=%s, phone=%s, address=%s, onuserialnumber=%s, billamount=%s, status=%s
-                                WHERE username=%s
-                            """, (up_name, clean_and_validate_phone(up_phone), up_address, up_sn, up_rate, up_status, edit_uid))
+                                WHERE username=%s AND tenant_id=%s
+                            """, (up_name, clean_and_validate_phone(up_phone), up_address, up_sn, up_rate, up_status, edit_uid, st.session_state['tenant_id']))
                         conn.commit()
-                    st.success("Profile Changes Completed Successfully.")
+                    st.success("Profile Changes Logged within Tenant context.")
                     st.cache_data.clear(); st.rerun()
 
 # ==========================================
@@ -709,161 +768,165 @@ elif routing_node == "👥 Operational Billing Center":
 elif routing_node == "📜 Lifetime Ledger History":
     st.markdown("<div class='main-title'>📜 ACCOUNT LEDGER METRICS & AUDIT TRAIL</div>", unsafe_allow_html=True)
     df_ledger = pd.DataFrame()
-    
     with get_db_connection() as conn:
         with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-            cur.execute("SELECT * FROM billing_history ORDER BY datetimestamp DESC")
+            cur.execute("SELECT * FROM billing_history WHERE tenant_id = %s ORDER BY datetimestamp DESC", (st.session_state['tenant_id'],))
             l_rows = cur.fetchall()
             if l_rows: df_ledger = pd.DataFrame(l_rows)
         
     if df_ledger.empty:
-        st.info("No transaction tracking history recorded yet.")
+        st.info("No transactional logs found inside your tenant node registry.")
     else:
         df_ledger.columns = [c.lower() for c in df_ledger.columns]
         st.dataframe(df_ledger, use_container_width=True)
 
 # ==========================================
-# VIEW 4: SYSTEM ACCESS CONFIGS
+# VIEW 4: SYSTEM ACCESS CONFIGS (TENANT CONTEXT)
 # ==========================================
 elif routing_node == "🔐 System Access Control":
     if st.session_state['user_role'] not in ["Owner", "Admin"]:
         st.error("🔴 Administrative Elevation Clearance Required.")
     else:
-        st.markdown("<div class='main-title'>🔐 SYSTEM ACCESS & SAAS CONFIGURATION PANEL</div>", unsafe_allow_html=True)
-        all_system_areas = fetch_active_areas()
+        st.markdown("<div class='main-title'>🔐 SYSTEM ACCESS & MULTI-TENANT CONFIGURATION PANEL</div>", unsafe_allow_html=True)
+        all_system_areas = fetch_isolated_areas(st.session_state['tenant_id'])
         
-        tab_titles = [
-            "🏢 Dynamic Tenant Branding Engine",
+        adm_tabs = st.tabs([
+            "👑 SaaS Whitelabel License Manager" if st.session_state['tenant_id'] == 'lynx' else "🏢 Branding Metadata Controls",
             "⚙️ Access Accounts Management", 
             "📦 Fixed Packages Pricing Matrix", 
             "🗺️ Dynamic Area Hubs Sector",
-            "🛠️ Master Schema Hard Settings"
-        ]
-        
-        adm_tabs = st.tabs(tab_titles)
+            "🛠️ Core Structural Destruct Engine"
+        ])
 
-        # TAB 0: BRANDING ENGINE WITH MASTER ACTIVATION NOTIFY PAYLOAD
-        with adm_tabs[0]:
-            st.markdown("### 🏢 Client ISP Whitelabel Branding Control")
-            st.caption("Yahan se aap jis company ko software bech rahe hain, unki details save karein. Pura system automatic unke naam par chalega.")
-            
-            with st.form("saas_branding_form"):
-                new_tenant_name = st.text_input("Client ISP Company Name", value=TENANT_COMPANY_NAME)
-                new_tenant_phone = st.text_input("Client Official Support/Helpline No.", value=TENANT_SUPPORT_PHONE)
+        # TAB 0: LYNX EXCLUSIVE MASTER PROPOSAL REGISTRY AND ACTIVATION KEYS CONTROL
+        if st.session_state['tenant_id'] == 'lynx':
+            with adm_tabs[0]:
+                st.markdown("### 👑 LYNX MASTER ENTERPRISE DISTRIBUTOR COMMAND HUB")
+                st.caption("Umer Bhai! Yahan se aap kisi bhi naye registered ISP dealer ka system aur license status live approve ya block kar sakte hain.")
                 
-                # Hidden tracking calculation in memory logic
-                branding_submitted = st.form_submit_button("💾 LOCK BRANDING MATRIX")
+                with get_db_connection() as conn:
+                    with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                        cur.execute("SELECT * FROM system_tenants ORDER BY registration_date DESC")
+                        all_tenants_rows = cur.fetchall()
                 
-                if branding_submitted:
-                    with get_db_connection() as conn:
-                        with conn.cursor() as cursor:
-                            cursor.execute("INSERT INTO app_settings VALUES ('tenant_name', %s) ON CONFLICT (settingkey) DO UPDATE SET settingvalue = EXCLUDED.settingvalue", (new_tenant_name,))
-                            cursor.execute("INSERT INTO app_settings VALUES ('tenant_phone', %s) ON CONFLICT (settingkey) DO UPDATE SET settingvalue = EXCLUDED.settingvalue", (new_tenant_phone,))
-                        conn.commit()
+                if all_tenants_rows:
+                    df_tenants_view = pd.DataFrame(all_tenants_rows)
+                    st.write("#### 📋 Live Registered Tenants Matrix Logs")
+                    st.dataframe(df_tenants_view, use_container_width=True)
                     
-                    st.success("🎉 Whitelabel Branding Updated Dynamically!")
+                    st.write("---")
+                    st.markdown("#### ⚙️ Update Tenant License Activation State")
+                    tenant_select_list = [t['tenant_id'] for t in all_tenants_rows if t['tenant_id'] != 'lynx']
                     
-                    # 🚀 AUTOMATED ACTIVATION TRIGGER DISPATCHER (For Owner Verification Only)
-                    st.markdown("#### 🔒 SaaS License Activation Ledger")
-                    st.info("System values saved! Click below to send activation signature to Lynx Master Registry:")
-                    
-                    alert_payload = f"🔒 LYNX SAAS LICENSE ALERT:\nNew enterprise system activation initiated.\nISP Company: {new_tenant_name}\nHelpline Ref: {new_tenant_phone}\nStatus: Verification Needed."
-                    encoded_msg = urllib.parse.quote(alert_payload)
-                    
-                    # Multi-Target Route Dispatcher loop inside admin view
-                    col_net1, col_net2 = st.columns(2)
-                    with col_net1:
-                        st.markdown(f'<a href="https://wa.me/92{MASTER_NOTIFY_NUMBERS[0]}?text={encoded_msg}" target="_blank" style="background:#10b981; color:white; padding:12px; border-radius:8px; display:block; text-align:center; text-decoration:none; font-weight:bold;">📲 Dispatch Verification Code (Line 1)</a>', unsafe_allow_html=True)
-                    with col_net2:
-                        st.markdown(f'<a href="https://wa.me/92{MASTER_NOTIFY_NUMBERS[1]}?text={encoded_msg}" target="_blank" style="background:#3b82f6; color:white; padding:12px; border-radius:8px; display:block; text-align:center; text-decoration:none; font-weight:bold;">📲 Dispatch Verification Code (Line 2)</a>', unsafe_allow_html=True)
+                    if not tenant_select_list:
+                        st.info("Aap ke ilawa abhi tak koi aur tenant register nahi hua.")
+                    else:
+                        chosen_target_tenant = st.selectbox("Select Target Tenant ID to Modify Access", tenant_select_list)
+                        current_status = next(item for item in all_tenants_rows if item["tenant_id"] == chosen_target_tenant)["license_active"]
+                        
+                        new_license_toggle = st.checkbox("Grant Premium Software Activation Access Link", value=current_status)
+                        
+                        if st.button("💾 LOCK CONFIGURATION STATUS KEY"):
+                            with get_db_connection() as conn:
+                                with conn.cursor() as cursor:
+                                    cursor.execute("UPDATE system_tenants SET license_active = %s WHERE tenant_id = %s", (new_license_toggle, chosen_target_tenant))
+                                conn.commit()
+                            st.success(f"🎉 Tenant '{chosen_target_tenant}' dynamic lock access updated successfully!")
+                            st.cache_data.clear(); st.rerun()
+        else:
+            with adm_tabs[0]:
+                st.markdown("### 🏢 ISP Whitelabel Branding Controls")
+                with get_db_connection() as conn:
+                    with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                        cur.execute("SELECT company_name, support_phone FROM system_tenants WHERE tenant_id = %s", (st.session_state['tenant_id'],))
+                        meta_row = cur.fetchone()
+                
+                with st.form("tenant_custom_branding_form"):
+                    b_name = st.text_input("Company Brand Name Display", value=meta_row["company_name"] if meta_row else TENANT_COMPANY_NAME)
+                    b_phone = st.text_input("Official Helpline Reference Phone", value=meta_row["support_phone"] if meta_row else TENANT_SUPPORT_PHONE)
+                    if st.form_submit_button("💾 SAVE BRANDING LOGS"):
+                        with get_db_connection() as conn:
+                            with conn.cursor() as cursor:
+                                cursor.execute("UPDATE system_tenants SET company_name=%s, support_phone=%s WHERE tenant_id=%s", (b_name, b_phone, st.session_state['tenant_id']))
+                            conn.commit()
+                        st.success("Metadata Saved cleanly inside cluster engine.")
+                        st.cache_data.clear(); st.rerun()
 
         # TAB 1: ACCESS ACCOUNTS MANAGEMENT
         with adm_tabs[1]:
             st.markdown("### ⚙️ Access Accounts Management & Credentials")
-            st.markdown("#### 🔑 Update Your Account Password")
             with st.form("owner_self_password_form"):
                 new_self_pass = st.text_input("Enter New Password Structure", type="password")
                 if st.form_submit_button("🔒 Securely Change My Password"):
-                    if len(new_self_pass) < 4:
-                        st.error("❌ Password must be at least 4 characters long.")
+                    if len(new_self_pass) < 4: st.error("Password string too short.")
                     else:
                         with get_db_connection() as conn:
                             with conn.cursor() as cursor:
-                                cursor.execute("UPDATE users SET password = %s WHERE username = %s", (hash_password(new_self_pass), st.session_state['username']))
+                                cursor.execute("UPDATE users SET password = %s WHERE username = %s AND tenant_id = %s", (hash_password(new_self_pass), st.session_state['username'], st.session_state['tenant_id']))
                             conn.commit()
-                        st.success("🎉 Your password has been successfully updated cryptographically!")
+                        st.success("🎉 Updated successfully!")
             
             st.write("---")
-            st.markdown("#### ➕ Provision Sub-User Entity (Admin / Staff)")
+            st.markdown("#### ➕ Provision Sub-User Entity (Admin / Staff Node)")
             with st.form("create_subuser_form"):
                 new_username = st.text_input("Entity Username ID").strip().lower()
                 new_password = st.text_input("Security Access Code / Password", type="password")
                 new_role = st.selectbox("System Architecture Role Level", ["Admin", "Staff"])
-                assigned_areas_input = st.text_input("Allocated Terminal Area Sector Clearance", value="ALL").strip()
+                assigned_areas_input = st.text_input("Allocated Sector Clearance", value="ALL").strip()
                 
                 if st.form_submit_button("🚀 Inject User Profile Node"):
-                    if not new_username or not new_password:
-                        st.error("❌ Complete credentials parameters.")
+                    if not new_username or not new_password: st.error("Complete mandatory fields.")
                     else:
                         with get_db_connection() as conn:
                             with conn.cursor() as cursor:
                                 cursor.execute("""
-                                    INSERT INTO users (username, password, role, assignedarea)
-                                    VALUES (%s, %s, %s, %s)
-                                    ON CONFLICT (username) DO UPDATE 
+                                    INSERT INTO users (username, password, role, assignedarea, tenant_id)
+                                    VALUES (%s, %s, %s, %s, %s)
+                                    ON CONFLICT (username, tenant_id) DO UPDATE 
                                     SET password = EXCLUDED.password, role = EXCLUDED.role, assignedarea = EXCLUDED.assignedarea
-                                """, (new_username, hash_password(new_password), new_role, assigned_areas_input))
+                                """, (new_username, hash_password(new_password), new_role, assigned_areas_input, st.session_state['tenant_id']))
                             conn.commit()
-                        st.success(f"✅ User node '{new_username}' synced onto master ledger.")
+                        st.success(f"✅ User node locked onto your isolation segment.")
 
         # TAB 2: PACKAGES PRICING MATRIX
         with adm_tabs[2]:
-            st.markdown("### 📦 Structural Location Pricing Allocation Configurator")
-            if not all_system_areas:
-                st.info("💡 Empty State: Configure an active Operating Area first.")
+            st.markdown("### 📦 Location Pricing Configurator")
+            if not all_system_areas: st.info("💡 Empty State: Configure an active Operating Area first.")
             else:
                 with st.form("matrix_package_form"):
-                    p_name = st.text_input("Tarif Identification Flag (e.g., 12 Mbps Fiber)").strip()
-                    p_area = st.selectbox("Target Core Distribution Area Node Hub", all_system_areas)
-                    p_rate = st.number_input("Assigned Monthly Price Configuration (Rs.)", min_value=0, value=1500)
+                    p_name = st.text_input("Tarif ID Flag (e.g., 12 Mbps)").strip()
+                    p_area = st.selectbox("Target Core Distribution Area Node", all_system_areas)
+                    p_rate = st.number_input("Monthly Price Config (Rs.)", min_value=0, value=1500)
                     
-                    if st.form_submit_button("💾 LOCK TARIFF MATRIX PROFILE ENTRY"):
+                    if st.form_submit_button("💾 LOCK TARIFF MATRIX ENTRY"):
                         if not p_name: st.error("Name field mandatory.")
                         else:
                             with get_db_connection() as conn:
                                 with conn.cursor() as cursor:
                                     cursor.execute("""
-                                        INSERT INTO packages (packagename, areaname, packagerate) 
-                                        VALUES (%s, %s, %s) 
-                                        ON CONFLICT (packagename, areaname) 
+                                        INSERT INTO packages (packagename, areaname, packagerate, tenant_id) 
+                                        VALUES (%s, %s, %s, %s) 
+                                        ON CONFLICT (packagename, areaname, tenant_id) 
                                         DO UPDATE SET packagerate = EXCLUDED.packagerate
-                                    """, (p_name, p_area, p_rate))
+                                    """, (p_name, p_area, p_rate, st.session_state['tenant_id']))
                                 conn.commit()
-                            st.success(f"✅ Configured {p_name} for area {p_area} successfully.")
+                            st.success(f"✅ Configured matrix row entry.")
                             st.cache_data.clear(); st.rerun()
 
             st.write("---")
-            st.markdown("#### ❌ Remove Wrong/Unwanted Package Profile")
-            live_packages_list = fetch_all_packages()
-            if not live_packages_list:
-                st.info("No package variations registered inside system memory to remove.")
-            else:
-                pkg_options_map = {}
-                for p in live_packages_list:
-                    label = f"📦 {p['packagename']} — 📍 Area: {p['areaname']} (Rs. {p['packagerate']})"
-                    pkg_options_map[label] = (p['packagename'], p['areaname'])
-                
-                selected_remove_label = st.selectbox("Select Package to Permanently Remove", list(pkg_options_map.keys()))
-                
-                with st.form("remove_package_secure_form"):
-                    if st.form_submit_button("🗑️ PERMANENTLY DELETE CHOSEN PACKAGE"):
-                        target_pkg_name, target_area_name = pkg_options_map[selected_remove_label]
-                        with get_db_connection() as conn:
-                            with conn.cursor() as cursor:
-                                cursor.execute("DELETE FROM packages WHERE packagename = %s AND areaname = %s", (target_pkg_name, target_area_name))
-                            conn.commit()
-                        st.success(f"💥 Package '{target_pkg_name}' has been completely removed!")
-                        st.cache_data.clear(); st.rerun()
+            st.markdown("#### ❌ Remove Package Profile")
+            live_packages_list = fetch_isolated_packages(st.session_state['tenant_id'])
+            if live_packages_list:
+                pkg_options_map = {f"📦 {p['packagename']} — 📍 Area: {p['areaname']} (Rs. {p['packagerate']})": (p['packagename'], p['areaname']) for p in live_packages_list}
+                selected_remove_label = st.selectbox("Select Package to Remove", list(pkg_options_map.keys()))
+                if st.button("🗑️ DELETE CHOSEN PACKAGE PROFILE"):
+                    t_pkg, t_ar = pkg_options_map[selected_remove_label]
+                    with get_db_connection() as conn:
+                        with conn.cursor() as cursor:
+                            cursor.execute("DELETE FROM packages WHERE packagename = %s AND areaname = %s AND tenant_id = %s", (t_pkg, t_ar, st.session_state['tenant_id']))
+                        conn.commit()
+                    st.success("Package wiped successfully.")
+                    st.cache_data.clear(); st.rerun()
 
         # TAB 3: DYNAMIC AREA HUBS SECTOR
         with adm_tabs[3]:
@@ -874,98 +937,93 @@ elif routing_node == "🔐 System Access Control":
                     if new_area_name:
                         with get_db_connection() as conn:
                             with conn.cursor() as cursor:
-                                cursor.execute("INSERT INTO areas VALUES (%s) ON CONFLICT DO NOTHING", (new_area_name,))
+                                cursor.execute("INSERT INTO areas VALUES (%s, %s) ON CONFLICT DO NOTHING", (new_area_name, st.session_state['tenant_id']))
                             conn.commit()
-                        st.success(f"✅ {new_area_name} registered successfully.")
+                        st.success(f"✅ Area logged to network.")
                         st.cache_data.clear(); st.rerun()
             
             st.write("---")
             st.markdown("#### ❌ Remove Operating Area Hub Node")
-            if not all_system_areas:
-                st.info("No active areas registered on the database system to remove.")
-            else:
-                chosen_delete_area = st.selectbox("Select Area Hub to Permanently Remove", all_system_areas)
-                with st.form("delete_area_secure_form"):
-                    if st.form_submit_button("🗑️ PERMANENTLY REMOVE AREA HUB FROM LEDGER"):
-                        with get_db_connection() as conn:
-                            with conn.cursor() as cursor:
-                                cursor.execute("SELECT COUNT(*) FROM customers WHERE LOWER(area) = LOWER(%s)", (chosen_delete_area,))
-                                customer_count = cursor.fetchone()[0]
-                        
-                        if customer_count > 0:
-                            st.error(f"❌ Aborted: Bound Dependency Leak! There are {customer_count} customers active inside '{chosen_delete_area}'. Relocate those users to another sector before removing this node.")
-                        else:
-                            with get_db_connection() as conn:
-                                with conn.cursor() as cursor:
-                                    cursor.execute("DELETE FROM packages WHERE LOWER(areaname) = LOWER(%s)", (chosen_delete_area,))
-                                    cursor.execute("DELETE FROM areas WHERE LOWER(areaname) = LOWER(%s)", (chosen_delete_area,))
-                                conn.commit()
-                            st.success(f"💥 Area Hub '{chosen_delete_area}' has been perfectly purged from system logs.")
-                            st.cache_data.clear(); st.rerun()
-
-        # TAB 4: OWNER PRIVILEGES ENGINE
-        with adm_tabs[4]:
-            if st.session_state['user_role'] != "Owner":
-                st.warning("🔒 This specific section is encrypted and locked for the Master Owner entity only.")
-            else:
-                st.markdown("### 👑 Master Schema Dynamic Destruction Module")
-                purge_password = st.text_input("Verify Master Owner Confirmation Passphrase", type="password", key="purge_pass_gate")
-                if st.button("☢️ INITIATE COMPLETE SYSTEM ZERO-DATA PURGE"):
+            if all_system_areas:
+                chosen_delete_area = st.selectbox("Select Area Hub to Remove", all_system_areas)
+                if st.button("🗑️ PERMANENTLY REMOVE AREA HUB FROM LEDGER"):
                     with get_db_connection() as conn:
                         with conn.cursor() as cursor:
-                            cursor.execute("SELECT password FROM users WHERE username = %s AND role='Owner'", (st.session_state['username'],))
+                            cursor.execute("SELECT COUNT(*) FROM customers WHERE LOWER(area) = LOWER(%s) AND tenant_id = %s", (chosen_delete_area, st.session_state['tenant_id']))
+                            customer_count = cursor.fetchone()[0]
+                    if customer_count > 0:
+                        st.error(f"❌ Aborted: Binding active with {customer_count} customers within this sector.")
+                    else:
+                        with get_db_connection() as conn:
+                            with conn.cursor() as cursor:
+                                cursor.execute("DELETE FROM packages WHERE LOWER(areaname) = LOWER(%s) AND tenant_id = %s", (chosen_delete_area, st.session_state['tenant_id']))
+                                cursor.execute("DELETE FROM areas WHERE LOWER(areaname) = LOWER(%s) AND tenant_id = %s", (chosen_delete_area, st.session_state['tenant_id']))
+                            conn.commit()
+                        st.success("Area Hub successfully purged.")
+                        st.cache_data.clear(); st.rerun()
+
+        # TAB 4: ISOLATED DESTRUCT MODULE
+        with adm_tabs[4]:
+            if st.session_state['user_role'] != "Owner":
+                st.warning("🔒 Section locked.")
+            else:
+                st.markdown("### ☢️ Tenant Schema Single Destruction Module")
+                st.caption("Yeh action sirf aapke is current tenant scope ka saara data clear karega. Baqi tenants safe rahenge.")
+                purge_password = st.text_input("Verify Owner Password Passphrase", type="password", key="purge_pass_gate")
+                if st.button("☢️ INITIATE COMPLETE SEGMENT DATA PURGE"):
+                    with get_db_connection() as conn:
+                        with conn.cursor() as cursor:
+                            cursor.execute("SELECT password FROM users WHERE username = %s AND role='Owner' AND tenant_id = %s", (st.session_state['username'], st.session_state['tenant_id']))
                             match_p = cursor.fetchone()
-                    
                     if match_p and verify_password(purge_password, match_p[0]):
                         with get_db_connection() as conn:
                             with conn.cursor() as cursor:
-                                cursor.execute("DROP TABLE IF EXISTS billing_history CASCADE; DROP TABLE IF EXISTS customers CASCADE; DROP TABLE IF EXISTS areas CASCADE; DROP TABLE IF EXISTS packages CASCADE; DROP TABLE IF EXISTS users CASCADE; DROP TABLE IF EXISTS app_settings CASCADE;")
+                                cursor.execute("DELETE FROM billing_history WHERE tenant_id = %s", (st.session_state['tenant_id'],))
+                                cursor.execute("DELETE FROM customers WHERE tenant_id = %s", (st.session_state['tenant_id'],))
+                                cursor.execute("DELETE FROM packages WHERE tenant_id = %s", (st.session_state['tenant_id'],))
+                                cursor.execute("DELETE FROM areas WHERE tenant_id = %s", (st.session_state['tenant_id'],))
                             conn.commit()
-                        build_database_schema()
-                        st.success("🚀 System Hard Purge Complete. Clean state achieved!")
+                        st.success("🚀 Your tenant segment has been cleared cleanly!")
                         st.cache_data.clear(); st.rerun()
                     else:
-                        st.error("❌ Password Cryptographic signature mismatch. Operation Aborted.")
+                        st.error("❌ Cryptographic verification failure.")
 
 # ==========================================
 # VIEW 5: SUBSCRIBER SELF-SERVICE INVENTORY
 # ==========================================
 elif routing_node == "📱 Client Portal":
-    st.markdown(f"<div class='main-title'>📱 {html.escape(TENANT_COMPANY_NAME.upper())} SUBSCRIBER PORTAL</div>", unsafe_allow_html=True)
-    portal_input = st.text_input("Enter Subscriber Username or Mobile Number")
+    st.markdown(f"<div class='main-title'>📱 SUBSCRIBER SELF-SERVICE PORTAL</div>", unsafe_allow_html=True)
     
-    if portal_input:
-        search_term = portal_input.strip()
+    col_p1, col_p2 = st.columns(2)
+    with col_p1:
+        portal_tenant = st.text_input("Enter ISP Provider Domain Code (e.g., lynx)").strip().lower()
+    with col_p2:
+        portal_input = st.text_input("Enter Subscriber Username / Mobile No.")
+    
+    if portal_tenant and portal_input:
+        t_meta = fetch_active_tenant_metadata(portal_tenant)
         with get_db_connection() as conn:
             with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-                cur.execute("SELECT * FROM customers WHERE LOWER(username) = LOWER(%s) OR phone = %s", [search_term, clean_and_validate_phone(search_term)])
+                cur.execute("SELECT * FROM customers WHERE tenant_id = %s AND (LOWER(username) = LOWER(%s) OR phone = %s)", [portal_tenant, portal_input.strip(), clean_and_validate_phone(portal_input)])
                 c_rows = cur.fetchall()
         if not c_rows: 
-            st.error("❌ No active profile linked on server records.")
+            st.error("❌ No active profile linked on server records for this provider.")
         else:
             c_dict = c_rows[0]
-            
-            # COMMERCIAL QUOTATION / INVOICE DISPLAY UNIT
             st.markdown(f"""
             <div class="client-card" style="border: 2px solid #3b82f6;">
                 <h2 style="color:#3b82f6; text-align:center; margin-bottom:5px; font-weight:bold;">📄 DIGITAL BILL & ACCOUNT QUOTATION</h2>
-                <p style="text-align:center; color:#9ca3af; font-size:13px; margin-bottom:20px;">Provider: {TENANT_COMPANY_NAME} | Helpline: {TENANT_SUPPORT_PHONE}</p>
+                <p style="text-align:center; color:#9ca3af; font-size:13px; margin-bottom:20px;">Provider: {t_meta["name"]} | Helpline: {t_meta["phone"]}</p>
                 <hr style="border: 1px solid #374151;">
-                
                 <h3 style="color:#10b981; margin-top:15px;">👤 Account ID: {html.escape(str(c_dict.get('username','')))}</h3>
                 <p><b>CUSTOMER NAME:</b> {html.escape(str(c_dict.get('customername','')))}</p>
-                <p><b>CONTACT NUMBER:</b> {html.escape(str(c_dict.get('phone','')))}</p>
                 <p><b>CONNECTED AREA:</b> {html.escape(str(c_dict.get('area','')))}</p>
                 <p><b>ACTIVE PACKAGE PLAN:</b> {html.escape(str(c_dict.get('package','')))}</p>
                 <p><b>MONTHLY CHARGES:</b> Rs. {c_dict.get('billamount', 0):,}</p>
                 <p style="color:#f43f5e; font-weight:bold;"><b>OUTSTANDING ARREARS:</b> Rs. {c_dict.get('balanceshift', 0):,}</p>
                 <p style="color:#10b981; font-weight:bold;"><b>LINE EXPIRY DATE:</b> {c_dict.get('expirydate')}</p>
-                
                 <hr style="border: 1px solid #374151; margin-top:20px;">
-                <p style="text-align:center; font-size:11px; color:#6b7280; margin-bottom:0;">
-                    🛠️ Systems Distribution Platform Engine. Distributed & Maintained by:<br>
-                    <span style="color:#3b82f6; font-weight:bold;">{DISTRIBUTOR_NAME}</span>
-                </p>
+                <p style="text-align:center; font-size:11px; color:#6b7280;">Maintained via systems licensing by: {DISTRIBUTOR_NAME}</p>
             </div>
             """, unsafe_allow_html=True)
 
