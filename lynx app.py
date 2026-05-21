@@ -15,7 +15,7 @@ from dateutil.relativedelta import relativedelta
 import bcrypt
 
 # ==========================================
-# REPORTLAB ENGINE (FIXED & FULLY INTEGRATED)
+# REPORTLAB ENGINE (INTEGRATED)
 # ==========================================
 from reportlab.lib.pagesizes import letter
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
@@ -46,7 +46,7 @@ GLOBAL_TARGET_ORDER = [
 ]
 
 st.set_page_config(
-    page_title="LYNX Fiber Enterprise ERP v58.0", 
+    page_title="LYNX Fiber Enterprise ERP v59.0", 
     layout="wide",
     initial_sidebar_state="expanded"
 )
@@ -159,8 +159,8 @@ def verify_password(password: str, hashed_password: str) -> bool:
     except Exception:
         return False
 
-# Master Schema Engine - Bypasses injects dynamically on purge events
-def build_database_schema(is_purge_event=False):
+# Master Schema Engine - REMOVED FIXED DEFAULT SANGHOI/SAEELA INJECTIONS
+def build_database_schema():
     with get_db_connection() as conn:
         with conn.cursor() as cursor:
             cursor.execute("""
@@ -181,7 +181,6 @@ def build_database_schema(is_purge_event=False):
                 )
             """)
             
-            # FIXED COMPOSITE PRIMARY KEY FOR AREA-WISE PACKAGE PRICES
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS packages (
                     packagename TEXT NOT NULL, 
@@ -200,28 +199,19 @@ def build_database_schema(is_purge_event=False):
                 )
             """)
             
-            if not is_purge_event:
-                cursor.execute("SELECT COUNT(*) FROM areas")
-                if cursor.fetchone()[0] == 0:
-                    cursor.execute("INSERT INTO areas VALUES ('Sanghoi System'), ('Saeela System'), ('Bagga')")
-                
-                cursor.execute("SELECT COUNT(*) FROM packages")
-                if cursor.fetchone()[0] == 0:
-                    cursor.execute("INSERT INTO packages VALUES ('15 Mbps Fiber', 'Sanghoi System', 1500), ('15 Mbps Fiber', 'Saeela System', 1700)")
-            
+            # Default Owner generation logic stays secure
             cursor.execute("SELECT COUNT(*) FROM users WHERE role = 'Owner'")
             if cursor.fetchone()[0] == 0:
                 cursor.execute("INSERT INTO users VALUES ('owner', %s, 'Owner', 'ALL')", (hash_password('lynxowner123'),))
                 
-            if not is_purge_event:
-                cursor.execute("SELECT COUNT(*) FROM users WHERE username IN ('admin', 'staff')")
-                if cursor.fetchone()[0] == 0:
-                    cursor.execute("INSERT INTO users VALUES ('admin', %s, 'Admin', 'ALL')", (hash_password('lynxadmin123'),))
-                    cursor.execute("INSERT INTO users VALUES ('staff', %s, 'Staff', 'Sanghoi System')", (hash_password('lynxstaff123'),))
+            cursor.execute("SELECT COUNT(*) FROM users WHERE username IN ('admin', 'staff')")
+            if cursor.fetchone()[0] == 0:
+                cursor.execute("INSERT INTO users VALUES ('admin', %s, 'Admin', 'ALL')", (hash_password('lynxadmin123'),))
+                cursor.execute("INSERT INTO users VALUES ('staff', %s, 'Staff', 'None')", (hash_password('lynxstaff123'),))
                     
         conn.commit()
 
-build_database_schema(is_purge_event=False)
+build_database_schema()
 
 # ==========================================
 # 3. HIGH PERFORMANCE DATA RETRIEVALS
@@ -292,7 +282,7 @@ else:
     if not st.session_state['authenticated']:
         st.markdown("<div class='front-login-box'>", unsafe_allow_html=True)
         st.markdown("<h2 style='text-align:center; color:#10b981; font-weight:900; margin-bottom:5px;'>LYNX FIBER NET</h2>", unsafe_allow_html=True)
-        st.markdown("<p style='text-align:center; color:#9ca3af; margin-bottom:30px;'>Enterprise ERP System v58.0</p>", unsafe_allow_html=True)
+        st.markdown("<p style='text-align:center; color:#9ca3af; margin-bottom:30px;'>Enterprise ERP System v59.0</p>", unsafe_allow_html=True)
         
         user_input = (st.text_input("Username Key", key="front_user") or "").strip().lower()
         pass_input = st.text_input("Security Password", type="password", key="front_pass")
@@ -363,7 +353,7 @@ if routing_node == "📊 Core Analytics Dashboard":
         cards_display_areas = [a for a in all_system_areas if any(a.lower() == s.lower() for s in st.session_state['assigned_areas'])]
     
     if not all_system_areas:
-        st.info("💡 Database clean state active. Register deployment plans inside 'Access Control'.")
+        st.info("💡 Database is empty. Configure your dynamic sectors inside System Access Control.")
     elif df_matrix.empty:
         st.warning("⚠️ Operational Database is currently empty. No subscribers registered.")
     else:
@@ -538,16 +528,14 @@ elif routing_node == "👥 Operational Billing Center":
             if not all_system_areas:
                 st.error("❌ Register an Area Sector inside System Access Controls first.")
             else:
-                # 1. Location area selected first
                 in_area = st.selectbox("Select Target Hub Location", all_system_areas)
                 
-                # 2. Dynamic database lookup for packages attached strictly to this area
                 with get_db_connection() as conn:
                     with conn.cursor() as cur:
                         cur.execute("SELECT packagename, packagerate FROM packages WHERE areaname = %s", (in_area,))
                         area_pkgs = dict(cur.fetchall())
                 
-                with st.form("add_client_form_v58"):
+                with st.form("add_client_form_v59"):
                     in_id = st.text_input("Desired Unique Username Key").strip().lower()
                     in_name = st.text_input("Customer Full Name").strip()
                     in_phone = st.text_input("Phone Number").strip()
@@ -578,7 +566,7 @@ elif routing_node == "👥 Operational Billing Center":
                                         VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, 0, 'UNPAID', %s)
                                     """, (in_id, in_name, norm_p, in_cnic, chosen_pkg, in_rate, in_area, in_address, in_sn, default_expiry))
                                 conn.commit()
-                            st.success(f"🚀 Wireless/Fiber Node Profile allocated cleanly for {in_id}!")
+                            st.success(f"🚀 Profile allocated cleanly for {in_id}!")
                             st.cache_data.clear(); st.rerun()
 
         # TAB 3: Bulk Import Excel Matrix Engine
@@ -619,7 +607,6 @@ elif routing_node == "👥 Operational Billing Center":
 # ==========================================
 elif routing_node == "📜 Lifetime Ledger History":
     st.markdown("<div class='main-title'>📜 ACCOUNT LEDGER METRICS & AUDIT TRAIL</div>", unsafe_allow_html=True)
-    all_system_areas = fetch_active_areas()
     df_ledger = pd.DataFrame()
     
     with get_db_connection() as conn:
@@ -651,11 +638,11 @@ elif routing_node == "🔐 System Access Control":
         adm_tabs = st.tabs(tabs_def)
         idx_shift = 1 if st.session_state['user_role'] == "Owner" else 0
 
-        # OWNER PRIVILEGES ENGINE: ZERO-STATE DESTRUCT PURGE PIPELINE
+        # OWNER PRIVILEGES ENGINE: TRUE CLEAR-STATE PIPELINE
         if st.session_state['user_role'] == "Owner":
             with adm_tabs[0]:
                 st.markdown("### 👑 Master Schema Dynamic Destruction Module")
-                st.warning("⚠️ Critical Alert: Wiping database drops structural relationships completely. No baseline defaults (e.g., Saeela, Sanghoi) will inject back if verified.")
+                st.warning("⚠️ Critical Alert: Wiping database drops structural relationships completely. Is ke baad koi sample systems (Sanghoi/Saeela) khud-ba-khud load nahi honge.")
                 
                 purge_password = st.text_input("Verify Master Owner Confirmation Passphrase", type="password", key="purge_pass_gate")
                 if st.button("☢️ INITIATE COMPLETE SYSTEM ZERO-DATA PURGE"):
@@ -670,8 +657,7 @@ elif routing_node == "🔐 System Access Control":
                                 cursor.execute("DROP TABLE IF EXISTS billing_history CASCADE; DROP TABLE IF EXISTS customers CASCADE; DROP TABLE IF EXISTS areas CASCADE; DROP TABLE IF EXISTS packages CASCADE; DROP TABLE IF EXISTS users CASCADE; DROP TABLE IF EXISTS app_settings CASCADE;")
                             conn.commit()
                         
-                        # Rebuild passing True bypassing all automatic sample injection constraints 
-                        build_database_schema(is_purge_event=True)
+                        build_database_schema()
                         st.success("🚀 System Hard Purge Complete. Complete structural clean state achieved!")
                         st.cache_data.clear(); st.rerun()
                     else:
@@ -681,7 +667,7 @@ elif routing_node == "🔐 System Access Control":
         with adm_tabs[1 + idx_shift]:
             st.markdown("### 📦 Structural Location Pricing Allocation Configurator")
             if not all_system_areas:
-                st.error("Configure an active Operating Area before mapping prices.")
+                st.info("💡 Empty State: Configure an active Operating Area first.")
             else:
                 with st.form("matrix_package_form"):
                     p_name = st.text_input("Tarif Identification Flag (e.g., 12 Mbps Fiber)").strip()
@@ -707,14 +693,14 @@ elif routing_node == "🔐 System Access Control":
         with adm_tabs[2 + idx_shift]:
             st.markdown("### 🗺️ Sector Node Operations")
             with st.form("add_area_sector_form"):
-                new_area_name = st.text_input("Enter New Network Location Name (e.g., Bagga, Jhelum Cantt)").strip()
+                new_area_name = st.text_input("Enter New Network Location Name (e.g., Bagga, Saeela, Sanghoi)").strip()
                 if st.form_submit_button("➕ COMMIT SECTOR DEPLOYMENT REGISTRY"):
                     if new_area_name:
                         with get_db_connection() as conn:
                             with conn.cursor() as cursor:
                                 cursor.execute("INSERT INTO areas VALUES (%s) ON CONFLICT DO NOTHING", (new_area_name,))
                             conn.commit()
-                        st.success("Location registered successfully.")
+                        st.success(f"✅ {new_area_name} registered successfully.")
                         st.cache_data.clear(); st.rerun()
 
 # ==========================================
