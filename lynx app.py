@@ -21,6 +21,7 @@ from reportlab.lib.pagesizes import letter
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
 from reportlab.lib import colors
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib.enums import TA_CENTER, TA_LEFT
 
 # ==========================================
 # 🛑 SAAS MASTER CONFIGURATION & HIDDEN REGISTRY
@@ -42,7 +43,7 @@ if 'tenant_id' not in st.session_state:
 if 'assigned_areas' not in st.session_state:
     st.session_state['assigned_areas'] = ["ALL"]
 if 'current_node' not in st.session_state:
-    st.session_state['current_node'] = "📊 Core Analytics Dashboard"
+    st.session_state['current_node'] = "📊 Lynx Dashboard"
 if 'portal_mode' not in st.session_state:
     st.session_state['portal_mode'] = False
 
@@ -64,7 +65,7 @@ GLOBAL_TARGET_ORDER = [
 try:
     DB_URL = st.secrets["DB_URL"]
 except Exception:
-    DB_URL = "postgresql://postgres.snbmurjcggthdvxyxyrd:DlLaglY98SkOzDq2@aws-1-ap-southeast-1.pooler.southeast-1.pooler.southeast-1.pooler.southeast-1.pooler.supabase.com:6543/postgres?sslmode=require"
+    DB_URL = "postgresql://postgres.snbmurjcggthdvxyxyrd:DlLaglY98SkOzDq2@aws-1-ap-southeast-1.pooler.supabase.com:6543/postgres?sslmode=require"
 
 @st.cache_resource
 def init_connection_pool():
@@ -79,11 +80,14 @@ master_pool = init_connection_pool()
 @contextmanager
 def get_db_connection():
     conn = master_pool.getconn()
-    conn.autocommit = False
+    conn.autocommit = True
     try:
         yield conn
     except Exception as e:
-        conn.rollback()
+        try:
+            conn.rollback()
+        except Exception:
+            pass
         raise e
     finally:
         master_pool.putconn(conn)
@@ -102,10 +106,17 @@ def generate_receipt_pdf(company_name, phone_ref, inv_id, c_id, c_name, area, pa
     buffer = io.BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=40, leftMargin=40, topMargin=40, bottomMargin=40)
     styles = getSampleStyleSheet()
-    title_style = ParagraphStyle('TitleStyle', parent=styles['Heading1'], fontSize=22, textColor=colors.HexColor('#10b981'), alignment=1, spaceAfter=10)
-    sub_style = ParagraphStyle('SubStyle', parent=styles['Normal'], fontSize=10, textColor=colors.gray, alignment=1, spaceAfter=20)
+    title_style = ParagraphStyle('TitleStyle', parent=styles['Heading1'], fontSize=22, textColor=colors.HexColor('#10b981'), alignment=TA_CENTER, spaceAfter=10)
+    sub_style = ParagraphStyle('SubStyle', parent=styles['Normal'], fontSize=10, textColor=colors.gray, alignment=TA_CENTER, spaceAfter=20)
     normal_style = ParagraphStyle('NormStyle', parent=styles['Normal'], fontSize=11, leading=16, textColor=colors.HexColor('#111827'))
     
+    try:
+        paid_val = int(float(str(paid)))
+        arrears_val = int(float(str(arrears)))
+    except Exception:
+        paid_val = 0
+        arrears_val = 0
+
     story = [
         Paragraph(str(company_name).upper(), title_style),
         Paragraph(f"Official Helpline: {phone_ref} | Transaction Receipt", sub_style),
@@ -116,7 +127,7 @@ def generate_receipt_pdf(company_name, phone_ref, inv_id, c_id, c_name, area, pa
         [Paragraph(f"<b>Invoice Reference:</b> {inv_id}", normal_style), Paragraph(f"<b>Date:</b> {datetime.now().strftime('%Y-%m-%d %H:%M')}", normal_style)],
         [Paragraph(f"<b>Subscriber Key:</b> {c_id}", normal_style), Paragraph(f"<b>Customer Name:</b> {c_name}", normal_style)],
         [Paragraph(f"<b>Network Hub/Area:</b> {area}", normal_style), Paragraph(f"<b>Subscribed Profile:</b> {package}", normal_style)],
-        [Paragraph(f"<b>Cash Remitted:</b> Rs. {paid:,}", normal_style), Paragraph(f"<b>Carried Arrears:</b> Rs. {arrears:,}", normal_style)],
+        [Paragraph(f"<b>Cash Remitted:</b> Rs. {paid_val:,}", normal_style), Paragraph(f"<b>Carried Arrears:</b> Rs. {arrears_val:,}", normal_style)],
         [Paragraph(f"<b>Payment Gateway:</b> {method}", normal_style), Paragraph(f"<b>Status:</b> SECURED / PROCESSED", normal_style)]
     ]
     
@@ -300,8 +311,10 @@ def build_database_schema():
                 
             cursor.execute("SELECT COUNT(*) FROM users WHERE username = 'owner' AND tenant_id = 'lynx'")
             if cursor.fetchone()[0] == 0:
-                cursor.execute("INSERT INTO users VALUES ('owner', %s, 'Owner', 'ALL', 'lynx')", (hash_password('lynxowner123'),))
-            conn.commit()
+                cursor.execute("""
+                    INSERT INTO users (username, password, role, assignedarea, tenant_id) 
+                    VALUES ('owner', %s, 'Owner', 'ALL', 'lynx')
+                """, (hash_password('lynxowner123'),))
 
 @st.cache_resource
 def initialize_application_database():
@@ -343,6 +356,9 @@ def fetch_isolated_matrix(tenant_id):
                 if rows:
                     df = pd.DataFrame(rows)
                     df.columns = [c.lower() for c in df.columns]
+                    df['area'] = df['area'].fillna('').astype(str)
+                    df['username'] = df['username'].fillna('').astype(str)
+                    df['status'] = df['status'].fillna('UNPAID').astype(str)
                     extended_cols = GLOBAL_TARGET_ORDER + [c for c in df.columns if c not in GLOBAL_TARGET_ORDER]
                     return df.reindex(columns=extended_cols)
         return pd.DataFrame(columns=GLOBAL_TARGET_ORDER + ['balanceshift', 'status', 'expirydate', 'tenant_id'])
@@ -392,8 +408,8 @@ def clean_and_validate_phone(phone_str: str) -> str:
     if cleaned.endswith('.0'):
         cleaned = cleaned[:-2]
     cleaned = re.sub(r"\D", "", cleaned)
-    if cleaned.startswith("92"):
-        cleaned = "0" + cleaned[2:]
+    if cleaned.startswith("0"):
+        return cleaned
     if len(cleaned) == 10 and cleaned.startswith("3"):
         cleaned = "0" + cleaned
     return cleaned
@@ -510,7 +526,6 @@ else:
                                             INSERT INTO users (username, password, role, assignedarea, tenant_id)
                                             VALUES (%s, %s, 'Owner', 'ALL', %s)
                                         """, (reg_owner_user, hash_password(reg_owner_pass), reg_tenant_id))
-                                        conn.commit()
                                         st.success("🎉 Registration Proposal Saved onto Supabase Ledger Engine!")
                                         alert_payload = f"🔒 LYNX SAAS LICENSE ALERT:\nNew enterprise system activation initiated.\nTenant ID: {reg_tenant_id}\nISP Company: {reg_company_name}"
                                         encoded_msg = urllib.parse.quote(alert_payload)
@@ -569,13 +584,19 @@ if routing_node in ["📊 Core Analytics Dashboard", "📊 Lynx Dashboard"]:
                     current_hub = cards_display_areas[i + j]
                     segment = df_matrix[df_matrix['area'].str.lower() == current_hub.lower()]
                     active_segment = segment[segment['status'] != 'SUSPENDED']
-                    hub_bill = active_segment['billamount'].sum()
-                    hub_arrears = segment['balanceshift'].sum()
+                    
+                    try:
+                        hub_bill = int(float(str(active_segment['billamount'].sum())))
+                        hub_arrears = int(float(str(segment['balanceshift'].sum())))
+                    except Exception:
+                        hub_bill = 0
+                        hub_arrears = 0
+
                     hub_paid_count = len(segment[segment['status'] == 'PAID'])
                     hub_partial_count = len(segment[segment['status'] == 'PARTIAL'])
                     hub_unpaid_count = len(segment[segment['status'] == 'UNPAID'])
                     hub_suspended_count = len(segment[segment['status'] == 'SUSPENDED'])
-                    hub_uids = [str(x).lower().strip() for x in segment['username'].tolist() if pd.notna(x)]
+                    hub_uids = [str(x).lower().strip() for x in segment['username'].tolist() if x]
                     hub_collected = sum(collection_map.get(uid, 0) for uid in hub_uids)
                     b_color = "#10b981" if (i+j)%2 == 0 else "#3b82f6"
                     with cols[j]:
@@ -603,7 +624,10 @@ if routing_node in ["📊 Core Analytics Dashboard", "📊 Lynx Dashboard"]:
         if not base_df.empty:
             total_active = len(base_df)
             total_paid = len(base_df[base_df['status'] == 'PAID'])
-            total_arrears = base_df['balanceshift'].sum()
+            try:
+                total_arrears = int(float(str(base_df['balanceshift'].sum())))
+            except Exception:
+                total_arrears = 0
             total_suspended = len(base_df[base_df['status'] == 'SUSPENDED'])
             
             col_b1, col_b2, col_b3, col_b4 = st.columns(4)
@@ -624,12 +648,19 @@ if routing_node in ["📊 Core Analytics Dashboard", "📊 Lynx Dashboard"]:
                 html_rows.append(f"<th>{col.replace('_', ' ').upper()}</th>")
             html_rows.append("<th>ACTIONS</th></tr>")
             
-            for row in base_df.itertuples(index=False):
-                row_dict = dict(zip(base_df.columns, row))
+            for _, row_series in base_df.iterrows():
+                row_dict = row_series.to_dict()
                 phone_num = str(row_dict.get('phone', ''))
                 pure_digits = re.sub(r"\D", "", phone_num)
-                if len(pure_digits) >= 10:
-                    wa_number = "92" + pure_digits[-10:]
+                
+                if pure_digits.startswith("00"):
+                    wa_number = pure_digits[2:]
+                elif pure_digits.startswith("0"):
+                    wa_number = "92" + pure_digits[1:]
+                else:
+                    wa_number = pure_digits
+                    
+                if len(wa_number) >= 10:
                     wa_payload = f"Dear {row_dict.get('customername','')}, {TENANT_COMPANY_NAME} Bill Update. Arrears: Rs.{row_dict.get('balanceshift',0)}. Expiry: {row_dict.get('expirydate','')}. Support: {TENANT_SUPPORT_PHONE}"
                     wa_action_html = f'<a href="https://wa.me/{wa_number}?text={urllib.parse.quote(wa_payload)}" target="_blank" class="btn-action btn-w">💬 WA</a>'
                 else:
@@ -673,10 +704,10 @@ elif routing_node == "👥 Operational Billing Center":
     
     sub_map = {}
     if not df_matrix.empty:
-        for row in df_matrix.itertuples(index=False):
-            row_dict = dict(zip(df_matrix.columns, row))
+        for _, row_series in df_matrix.iterrows():
+            row_dict = row_series.to_dict()
             uid = row_dict.get('username')
-            if pd.notna(uid):
+            if uid:
                 sub_map[f"[{uid}] - {row_dict.get('customername', '')}"] = uid
                 
     with tabs[0]:
@@ -686,13 +717,21 @@ elif routing_node == "👥 Operational Billing Center":
             target_label = st.selectbox("Select Target Subscriber", list(sub_map.keys()))
             resolved_uid = sub_map[target_label]
             node_row_dict = df_matrix[df_matrix['username'] == resolved_uid].iloc[0].to_dict()
-            st.info(f"📊 Plan Rate: Rs. {node_row_dict.get('billamount')} | Arrears: Rs. {node_row_dict.get('balanceshift')} | Expiry: {node_row_dict.get('expirydate')}")
+            
+            try:
+                base_bill = int(float(str(node_row_dict.get('billamount', 0))))
+                base_shift = int(float(str(node_row_dict.get('balanceshift', 0))))
+            except Exception:
+                base_bill = 0
+                base_shift = 0
+
+            st.info(f"📊 Plan Rate: Rs. {base_bill} | Arrears: Rs. {base_shift} | Expiry: {node_row_dict.get('expirydate')}")
             
             billing_months = st.selectbox("📅 Duration (Advance Months)", [1, 3, 6, 12], key="col_months")
             pay_method = st.selectbox("Method Profile", ["CASH", "EASYPAISA", "JAZZCASH", "BANK_TRANSFER"])
             discount = st.number_input("🎁 Discount Approved (Rs.)", min_value=0, value=0, step=50)
             
-            net_payable = (int(node_row_dict.get('billamount', 0)) * billing_months) + int(node_row_dict.get('balanceshift', 0))
+            net_payable = (base_bill * billing_months) + base_shift
             final_due = max(net_payable - discount, 0)
             st.markdown(f"### Live Total Due: <span style='color:#10b981;'>Rs. {final_due:,}</span>", unsafe_allow_html=True)
             cash_in = st.number_input("Capital Received (Rs.)", min_value=0, value=final_due)
@@ -717,7 +756,6 @@ elif routing_node == "👥 Operational Billing Center":
                             INSERT INTO billing_history (invoiceid, customerid, customername, area, phone, datetimestamp, currentpackage, amountpaid, remainingarrears, transactiontype, paymentmethod, discountgiven, tenant_id)
                             VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, 'BILL_PAYMENT', %s, %s, %s)
                         """, (invoice_uuid, resolved_uid, node_row_dict.get('customername'), node_row_dict.get('area'), node_row_dict.get('phone'), datetime.now().strftime("%Y-%m-%d %H:%M:%S"), node_row_dict.get('package'), cash_in, future_shift, pay_method, discount, st.session_state['tenant_id']))
-                        conn.commit()
                 st.success(f"🎉 Collection Recorded Cleanly! Extended Lock To: {new_expiry}")
                 pdf_bytes = generate_receipt_pdf(TENANT_COMPANY_NAME, TENANT_SUPPORT_PHONE, invoice_uuid, resolved_uid, node_row_dict.get('customername'), node_row_dict.get('area'), node_row_dict.get('package'), cash_in, future_shift, pay_method)
                 st.download_button("📥 Download PDF Receipt", data=pdf_bytes, file_name=f"Receipt_{invoice_uuid}.pdf", mime="application/pdf")
@@ -733,12 +771,22 @@ elif routing_node == "👥 Operational Billing Center":
                     with conn.cursor() as cur:
                         cur.execute("SELECT packagename, packagerate FROM packages WHERE areaname = %s AND tenant_id = %s", (in_area, st.session_state['tenant_id']))
                         area_pkgs = dict(cur.fetchall())
+                
                 in_id = st.text_input("Desired Unique Username Key").strip().lower()
                 in_name = st.text_input("Customer Full Name").strip()
                 in_phone = st.text_input("Phone Number").strip()
                 in_cnic = st.text_input("CNIC Number").strip()
-                chosen_pkg = st.selectbox(f"Valid Packages for {in_area}", list(area_pkgs.keys())) if area_pkgs else "Standard Manual Baseline"
-                suggested_rate = area_pkgs[chosen_pkg] if area_pkgs else 1500
+                
+                if area_pkgs:
+                    chosen_pkg = st.selectbox(f"Valid Packages for {in_area}", list(area_pkgs.keys()))
+                    try:
+                        suggested_rate = int(float(str(area_pkgs[chosen_pkg])))
+                    except Exception:
+                        suggested_rate = 1500
+                else:
+                    chosen_pkg = st.selectbox(f"Valid Packages for {in_area}", ["Standard Manual Baseline"])
+                    suggested_rate = 1500
+                    
                 in_rate = st.number_input("Monthly Plan Bill Amount (Rs.)", min_value=0, value=suggested_rate)
                 in_address = st.text_input("Physical Core Address").strip()
                 in_sn = st.text_input("ONU Hardware Serial ID").strip()
@@ -759,7 +807,6 @@ elif routing_node == "👥 Operational Billing Center":
                                         INSERT INTO customers (username, customername, phone, cnic, package, billamount, area, address, onuserialnumber, balanceshift, status, expirydate, tenant_id)
                                         VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, 0, 'UNPAID', %s, %s)
                                     """, (in_id, in_name, norm_p, in_cnic, chosen_pkg, in_rate, in_area, in_address, in_sn, default_expiry, st.session_state['tenant_id']))
-                                    conn.commit()
                                     st.success(f"🚀 Profile allocated! Expiry: {default_expiry}.")
                                     st.cache_data.clear(); st.rerun()
                                     
@@ -793,7 +840,10 @@ elif routing_node == "👥 Operational Billing Center":
                                     try:
                                         clean_id = str(row['username']).strip().lower()
                                         default_expiry = (datetime.now() + relativedelta(months=1)).strftime("%Y-%m-%d")
-                                        bill_amt = int(float(str(row.get('billamount', 1500))))
+                                        
+                                        raw_amt = str(row.get('billamount', '1500')).strip()
+                                        bill_amt = int(float(raw_amt)) if raw_amt else 1500
+                                        
                                         cursor.execute("""
                                             INSERT INTO customers (username, customername, phone, cnic, package, billamount, area, address, onuserialnumber, balanceshift, status, expirydate, tenant_id)
                                             VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, 0, 'UNPAID', %s, %s)
@@ -802,7 +852,6 @@ elif routing_node == "👥 Operational Billing Center":
                                         inserted_rows += 1
                                     except Exception:
                                         pass
-                                conn.commit()
                         st.success(f"🚀 Bulk Isolation processed {inserted_rows} entries cleanly!")
                         st.cache_data.clear()
                 except Exception as ex:
@@ -820,7 +869,13 @@ elif routing_node == "👥 Operational Billing Center":
                 up_phone = st.text_input("Phone Number", value=edit_row_dict.get('phone'))
                 up_address = st.text_input("Address", value=edit_row_dict.get('address'))
                 up_sn = st.text_input("ONU SN", value=edit_row_dict.get('onuserialnumber'))
-                up_rate = st.number_input("Monthly Rate (Rs.)", value=int(float(edit_row_dict.get('billamount',0))))
+                
+                try:
+                    current_rate_val = int(float(str(edit_row_dict.get('billamount', 0))))
+                except Exception:
+                    current_rate_val = 0
+
+                up_rate = st.number_input("Monthly Rate (Rs.)", value=current_rate_val)
                 up_status = st.selectbox("Line Status", ["PAID", "PARTIAL", "UNPAID", "SUSPENDED"], index=["PAID", "PARTIAL", "UNPAID", "SUSPENDED"].index(edit_row_dict.get('status','UNPAID')))
                 if st.form_submit_button("💾 COMMIT MODIFICATIONS"):
                     with get_db_connection() as conn:
@@ -829,7 +884,6 @@ elif routing_node == "👥 Operational Billing Center":
                                 UPDATE customers SET customername=%s, phone=%s, address=%s, onuserialnumber=%s, billamount=%s, status=%s 
                                 WHERE username=%s AND tenant_id=%s
                             """, (up_name, clean_and_validate_phone(up_phone), up_address, up_sn, up_rate, up_status, edit_uid, st.session_state['tenant_id']))
-                            conn.commit()
                     st.success("Profile Changes Logged within Tenant context.")
                     st.cache_data.clear(); st.rerun()
 
@@ -861,38 +915,34 @@ elif routing_node == "🔐 System Access Control":
         st.markdown("<div class='main-title'>🔐 SYSTEM ACCESS PANEL</div>", unsafe_allow_html=True)
         all_system_areas = fetch_isolated_areas(st.session_state['tenant_id'])
         adm_tabs = st.tabs([
-            "👑 SaaS Whitelabel License Manager" if st.session_state['tenant_id'] == 'lynx' else "🏢 Branding Metadata Controls",
+            "👑 SaaS Whitelabel License Manager" if (st.session_state['tenant_id'] == 'lynx' and st.session_state['username'] == 'owner') else "🏢 Branding Metadata Controls",
             "⚙️ Access Accounts Management",
             "📦 Fixed Packages Pricing Matrix",
             "🗺️ Dynamic Area Hubs Sector",
             "🛠️ Core Structural Destruct Engine"
         ])
         
-        if st.session_state['tenant_id'] == 'lynx':
+        if st.session_state['tenant_id'] == 'lynx' and st.session_state['username'] == 'owner':
             with adm_tabs[0]:
-                if st.session_state['user_role'] != 'Owner':
-                    st.warning("🔒 Administrative Lock: System Root Owner clearance needed.")
-                else:
-                    st.markdown("### 👑 LYNX MASTER CONTROL HUB")
-                    with get_db_connection() as conn:
-                        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-                            cur.execute("SELECT * FROM system_tenants ORDER BY registration_date DESC")
-                            all_tenants_rows = cur.fetchall()
-                    if all_tenants_rows:
-                        df_tenants_view = pd.DataFrame(all_tenants_rows)
-                        st.dataframe(df_tenants_view, use_container_width=True)
-                    tenant_select_list = [t['tenant_id'] for t in all_tenants_rows if t['tenant_id'] != 'lynx']
-                    if tenant_select_list:
-                        chosen_target_tenant = st.selectbox("Select Target Tenant ID to Modify Access", tenant_select_list)
-                        current_status = next(item for item in all_tenants_rows if item["tenant_id"] == chosen_target_tenant)["license_active"]
-                        new_license_toggle = st.checkbox("Grant Premium Software Activation", value=current_status)
-                        if st.button("💾 LOCK CONFIGURATION STATUS KEY"):
-                            with get_db_connection() as conn:
-                                with conn.cursor() as cursor:
-                                    cursor.execute("UPDATE system_tenants SET license_active = %s WHERE tenant_id = %s", (new_license_toggle, chosen_target_tenant))
-                                    conn.commit()
-                            st.success("Dynamic access lock state updated.")
-                            st.cache_data.clear(); st.rerun()
+                st.markdown("### 👑 LYNX MASTER CONTROL HUB")
+                with get_db_connection() as conn:
+                    with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                        cur.execute("SELECT * FROM system_tenants ORDER BY registration_date DESC")
+                        all_tenants_rows = cur.fetchall()
+                if all_tenants_rows:
+                    df_tenants_view = pd.DataFrame(all_tenants_rows)
+                    st.dataframe(df_tenants_view, use_container_width=True)
+                tenant_select_list = [t['tenant_id'] for t in all_tenants_rows if t['tenant_id'] != 'lynx']
+                if tenant_select_list:
+                    chosen_target_tenant = st.selectbox("Select Target Tenant ID to Modify Access", tenant_select_list)
+                    current_status = next(item for item in all_tenants_rows if item["tenant_id"] == chosen_target_tenant)["license_active"]
+                    new_license_toggle = st.checkbox("Grant Premium Software Activation", value=current_status)
+                    if st.button("💾 LOCK CONFIGURATION STATUS KEY"):
+                        with get_db_connection() as conn:
+                            with conn.cursor() as cursor:
+                                cursor.execute("UPDATE system_tenants SET license_active = %s WHERE tenant_id = %s", (new_license_toggle, chosen_target_tenant))
+                        st.success("Dynamic access lock state updated.")
+                        st.cache_data.clear(); st.rerun()
         else:
             with adm_tabs[0]:
                 st.markdown("### 🏢 ISP Whitelabel Branding Controls")
@@ -907,7 +957,6 @@ elif routing_node == "🔐 System Access Control":
                         with get_db_connection() as conn:
                             with conn.cursor() as cursor:
                                 cursor.execute("UPDATE system_tenants SET company_name=%s, support_phone=%s WHERE tenant_id=%s", (b_name, b_phone, st.session_state['tenant_id']))
-                                conn.commit()
                         st.success("Metadata Saved cleanly inside cluster engine.")
                         st.cache_data.clear(); st.rerun()
                         
@@ -926,7 +975,6 @@ elif routing_node == "🔐 System Access Control":
                                 current_pwd_row = cursor.fetchone()
                                 if current_pwd_row and verify_password(current_self_pass, current_pwd_row[0]):
                                     cursor.execute("UPDATE users SET password = %s WHERE username = %s AND tenant_id = %s", (hash_password(new_self_pass), st.session_state['username'], st.session_state['tenant_id']))
-                                    conn.commit()
                                     st.success("🎉 Your credentials updated successfully!")
                                 else:
                                     st.error("❌ Validation failed.")
@@ -945,7 +993,6 @@ elif routing_node == "🔐 System Access Control":
                         with get_db_connection() as conn:
                             with conn.cursor() as cursor:
                                 cursor.execute("INSERT INTO users (username, password, role, assignedarea, tenant_id) VALUES (%s, %s, %s, %s, %s) ON CONFLICT (username, tenant_id) DO UPDATE SET password=EXCLUDED.password, role=EXCLUDED.role, assignedarea=EXCLUDED.assignedarea", (new_username, hash_password(new_password), new_role, assigned_areas_str, st.session_state['tenant_id']))
-                                conn.commit()
                         st.success("User configuration posted.")
                         st.cache_data.clear(); st.rerun()
                         
@@ -962,7 +1009,6 @@ elif routing_node == "🔐 System Access Control":
                         with get_db_connection() as conn:
                             with conn.cursor() as cursor:
                                 cursor.execute("INSERT INTO packages (packagename, areaname, packagerate, tenant_id) VALUES (%s, %s, %s, %s) ON CONFLICT (packagename, areaname, tenant_id) DO UPDATE SET packagerate = EXCLUDED.packagerate", (p_name, p_area, p_rate, st.session_state['tenant_id']))
-                                conn.commit()
                         st.success("Configured matrix row entry.")
                         st.cache_data.clear(); st.rerun()
                         
@@ -975,9 +1021,30 @@ elif routing_node == "🔐 System Access Control":
                         with get_db_connection() as conn:
                             with conn.cursor() as cursor:
                                 cursor.execute("INSERT INTO areas VALUES (%s, %s) ON CONFLICT DO NOTHING", (new_area_name, st.session_state['tenant_id']))
-                                conn.commit()
                         st.success("Area logged to network.")
                         st.cache_data.clear(); st.rerun()
+            
+            st.write("---")
+            st.markdown("#### 🗑️ Safe Remove Sector Node")
+            if all_system_areas:
+                del_area = st.selectbox("Select Target Hub Node to Remove", all_system_areas, key="delete_area_select")
+                if st.button("🗑️ PURGE AREA SECTOR FROM REGISTRY", use_container_width=True):
+                    with get_db_connection() as conn:
+                        with conn.cursor() as cursor:
+                            cursor.execute("SELECT COUNT(*) FROM customers WHERE LOWER(area) = LOWER(%s) AND tenant_id = %s", (del_area, st.session_state['tenant_id']))
+                            assigned_clients = cursor.fetchone()[0]
+                            
+                            cursor.execute("SELECT COUNT(*) FROM packages WHERE LOWER(areaname) = LOWER(%s) AND tenant_id = %s", (del_area, st.session_state['tenant_id']))
+                            linked_packages = cursor.fetchone()[0]
+                            
+                            if assigned_clients > 0 or linked_packages > 0:
+                                st.error(f"❌ Deletion Aborted! '{del_area}' sector has {assigned_clients} active clients and {linked_packages} assigned packages. Clear dependencies first to prevent runtime system crash.")
+                            else:
+                                cursor.execute("DELETE FROM areas WHERE LOWER(areaname) = LOWER(%s) AND tenant_id = %s", (del_area, st.session_state['tenant_id']))
+                                st.success(f"✅ Area '{del_area}' wiped cleanly from cloud database cluster.")
+                                st.cache_data.clear(); st.rerun()
+            else:
+                st.info("No active areas recorded inside the database registry yet.")
                         
         with adm_tabs[4]:
             if str(st.session_state.get('user_role', '')).lower() != "owner":
@@ -995,7 +1062,6 @@ elif routing_node == "🔐 System Access Control":
                                 cursor.execute("DELETE FROM customers WHERE tenant_id = %s", (st.session_state['tenant_id'],))
                                 cursor.execute("DELETE FROM packages WHERE tenant_id = %s", (st.session_state['tenant_id'],))
                                 cursor.execute("DELETE FROM areas WHERE tenant_id = %s", (st.session_state['tenant_id'],))
-                                conn.commit()
                                 st.success("🚀 Your isolated tenant segment data has been cleared cleanly!")
                                 st.cache_data.clear(); st.rerun()
                             else:
@@ -1027,6 +1093,14 @@ elif routing_node == "📱 Client Portal":
             st.error("❌ No active profile found.")
         else:
             c_dict = c_rows[0]
+            
+            try:
+                bill_amt_val = int(float(str(c_dict.get('billamount', 0))))
+                balance_shift_val = int(float(str(c_dict.get('balanceshift', 0))))
+            except Exception:
+                bill_amt_val = 0
+                balance_shift_val = 0
+
             st.markdown(f"""
                 <div class="client-card" style="border: 2px solid #3b82f6;">
                     <h2 style="color:#3b82f6; text-align:center; font-weight:bold;">📄 DIGITAL BILL & QUOTATION</h2>
@@ -1036,8 +1110,8 @@ elif routing_node == "📱 Client Portal":
                     <p><b>CUSTOMER NAME:</b> {html.escape(str(c_dict.get('customername','')))}</p>
                     <p><b>CONNECTED AREA:</b> {html.escape(str(c_dict.get('area','')))}</p>
                     <p><b>ACTIVE PLAN:</b> {html.escape(str(c_dict.get('package','')))}</p>
-                    <p><b>MONTHLY CHARGES:</b> Rs. {c_dict.get('billamount', 0):,}</p>
-                    <p style="color:#f43f5e; font-weight:bold;"><b>OUTSTANDING ARREARS:</b> Rs. {c_dict.get('balanceshift', 0):,}</p>
+                    <p><b>MONTHLY CHARGES:</b> Rs. {bill_amt_val:,}</p>
+                    <p style="color:#f43f5e; font-weight:bold;"><b>OUTSTANDING ARREARS:</b> Rs. {balance_shift_val:,}</p>
                     <p style="color:#10b981; font-weight:bold;"><b>LINE EXPIRY DATE:</b> {c_dict.get('expirydate')}</p>
                 </div>
             """, unsafe_allow_html=True)
