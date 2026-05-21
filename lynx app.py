@@ -25,7 +25,7 @@ from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.enums import TA_CENTER
 
 # ==========================================
-# 🛑 SAAS MASTER CONFIGURATION & HIDDEN REGISTRY
+# 🛑 SAAS MASTER CONFIGURATION & REGISTRY
 # ==========================================
 DISTRIBUTOR_NAME = "Lynx Fiber Internet"
 MASTER_NOTIFY_NUMBERS = ["03215943786", "03118808741"]
@@ -64,15 +64,12 @@ GLOBAL_TARGET_ORDER = [
 # ==========================================
 # 2. SECURE POOLED DATABASE REGISTRY
 # ==========================================
-try:
-    DB_URL = st.secrets["DB_URL"]
-except Exception:
-    DB_URL = "postgresql://postgres.snbmurjcggthdvxyxyrd:DlLaglY98SkOzDq2@aws-1-ap-southeast-1.pooler.supabase.com:6543/postgres?sslmode=require"
+DB_URL = st.secrets.get("DB_URL", "postgresql://postgres.snbmurjcggthdvxyxyrd:DlLaglY98SkOzDq2@aws-1-ap-southeast-1.pooler.supabase.com:6543/postgres?sslmode=require")
 
 @st.cache_resource
 def init_connection_pool():
     try:
-        return SimpleConnectionPool(1, 15, dsn=DB_URL)
+        return SimpleConnectionPool(1, 20, dsn=DB_URL)
     except Exception as e:
         st.error(f"🔴 Critical Pool Init Error: {e}")
         st.stop()
@@ -82,9 +79,9 @@ master_pool = init_connection_pool()
 @contextmanager
 def get_db_connection():
     conn = master_pool.getconn()
-    conn.autocommit = True
     try:
         yield conn
+        conn.commit()
     except Exception as e:
         try:
             conn.rollback()
@@ -103,7 +100,7 @@ def verify_password(password: str, hashed_password: str) -> bool:
     except Exception:
         return False
 
-# Invoice PDF Builder Function with XML Safeguards
+# Invoice PDF Builder Function
 def generate_receipt_pdf(company_name, phone_ref, inv_id, c_id, c_name, area, package, paid, arrears, method):
     buffer = io.BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=40, leftMargin=40, topMargin=40, bottomMargin=40)
@@ -154,45 +151,10 @@ def generate_receipt_pdf(company_name, phone_ref, inv_id, c_id, c_name, area, pa
 # ==========================================
 # 3. AUTO-REPAIR MULTI-TENANT SCHEMA ENGINE
 # ==========================================
-def safe_migrate_table_constraints(cursor, table_name, columns_dict, pk_columns):
-    for col_name, col_type in columns_dict.items():
-        cursor.execute("""
-            SELECT column_name FROM information_schema.columns 
-            WHERE table_schema = 'public' AND table_name=%s AND column_name=%s
-        """, (table_name, col_name))
-        if not cursor.fetchone():
-            if "CHECK" in col_type:
-                base_type = col_type.split("CHECK")[0].strip()
-                check_condition = "CHECK" + col_type.split("CHECK")[1]
-                cursor.execute(f"ALTER TABLE {table_name} ADD COLUMN {col_name} {base_type}")
-                try:
-                    cursor.execute(f"ALTER TABLE {table_name} ADD CONSTRAINT chk_{table_name}_{col_name} {check_condition}")
-                except Exception:
-                    pass
-            else:
-                cursor.execute(f"ALTER TABLE {table_name} ADD COLUMN {col_name} {col_type}")
-            
-    cursor.execute("""
-        SELECT a.attname FROM pg_index i 
-        JOIN pg_attribute a ON a.attrelid = i.indrelid AND a.attnum = ANY(i.indkey) 
-        WHERE i.indrelid = %s::regclass AND i.indisprimary
-    """, (table_name,))
-    current_pk_cols = [r[0] for r in cursor.fetchall()]
-    if sorted(current_pk_cols) != sorted(pk_columns):
-        try:
-            cursor.execute(f"ALTER TABLE {table_name} DROP CONSTRAINT IF EXISTS {table_name}_pkey CASCADE")
-        except Exception:
-            pass
-        try:
-            cols_str = ", ".join(pk_columns)
-            cursor.execute(f"ALTER TABLE {table_name} ADD CONSTRAINT {table_name}_pkey PRIMARY KEY ({cols_str})")
-        except Exception:
-            pass
-
 def build_database_schema():
     with get_db_connection() as conn:
         with conn.cursor() as cursor:
-            # FIX: Forcefully alter table to add column if it failed due to text-default constraints earlier
+            # system_tenants Table
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS system_tenants (
                     tenant_id TEXT PRIMARY KEY,
@@ -205,16 +167,7 @@ def build_database_schema():
                 )
             """)
             
-            # Hotfix direct alteration to prevent any execution crashes
-            try:
-                cursor.execute("ALTER TABLE system_tenants ADD COLUMN IF NOT EXISTS license_expiry_date TEXT NOT NULL DEFAULT '';")
-            except Exception:
-                pass
-
-            safe_migrate_table_constraints(cursor, 'system_tenants', {
-                'license_expiry_date': "TEXT NOT NULL DEFAULT ''"
-            }, ['tenant_id'])
-            
+            # users Table
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS users (
                     username TEXT NOT NULL,
@@ -225,14 +178,8 @@ def build_database_schema():
                     PRIMARY KEY (username, tenant_id)
                 )
             """)
-            safe_migrate_table_constraints(cursor, 'users', {
-                'username': 'TEXT NOT NULL',
-                'password': 'TEXT NOT NULL',
-                'role': "TEXT NOT NULL",
-                'assignedarea': "TEXT DEFAULT 'ALL'",
-                'tenant_id': "TEXT NOT NULL DEFAULT 'lynx'"
-            }, ['username', 'tenant_id'])
 
+            # customers Table
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS customers (
                     username TEXT NOT NULL,
@@ -251,22 +198,8 @@ def build_database_schema():
                     PRIMARY KEY (username, tenant_id)
                 )
             """)
-            safe_migrate_table_constraints(cursor, 'customers', {
-                'username': 'TEXT NOT NULL',
-                'customername': 'TEXT NOT NULL',
-                'phone': 'TEXT NOT NULL',
-                'cnic': "TEXT DEFAULT ''",
-                'package': 'TEXT NOT NULL',
-                'billamount': 'INTEGER NOT NULL DEFAULT 0',
-                'area': 'TEXT NOT NULL',
-                'address': "TEXT DEFAULT ''",
-                'onuserialnumber': "TEXT DEFAULT ''",
-                'balanceshift': 'INTEGER NOT NULL DEFAULT 0',
-                'status': "TEXT NOT NULL DEFAULT 'UNPAID'",
-                'expirydate': 'TEXT NOT NULL',
-                'tenant_id': "TEXT NOT NULL DEFAULT 'lynx'"
-            }, ['username', 'tenant_id'])
 
+            # areas Table
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS areas (
                     areaname TEXT NOT NULL,
@@ -274,11 +207,8 @@ def build_database_schema():
                     PRIMARY KEY (areaname, tenant_id)
                 )
             """)
-            safe_migrate_table_constraints(cursor, 'areas', {
-                'areaname': 'TEXT NOT NULL',
-                'tenant_id': "TEXT NOT NULL DEFAULT 'lynx'"
-            }, ['areaname', 'tenant_id'])
 
+            # packages Table
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS packages (
                     packagename TEXT NOT NULL,
@@ -288,13 +218,8 @@ def build_database_schema():
                     PRIMARY KEY (packagename, areaname, tenant_id)
                 )
             """)
-            safe_migrate_table_constraints(cursor, 'packages', {
-                'packagename': 'TEXT NOT NULL',
-                'areaname': 'TEXT NOT NULL',
-                'packagerate': 'INTEGER NOT NULL DEFAULT 0',
-                'tenant_id': "TEXT NOT NULL DEFAULT 'lynx'"
-            }, ['packagename', 'areaname', 'tenant_id'])
 
+            # billing_history Table
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS billing_history (
                     invoiceid TEXT PRIMARY KEY,
@@ -312,22 +237,8 @@ def build_database_schema():
                     tenant_id TEXT NOT NULL DEFAULT 'lynx'
                 )
             """)
-            safe_migrate_table_constraints(cursor, 'billing_history', {
-                'invoiceid': 'TEXT PRIMARY KEY',
-                'customerid': 'TEXT NOT NULL',
-                'customername': 'TEXT NOT NULL',
-                'area': 'TEXT NOT NULL',
-                'phone': 'TEXT',
-                'datetimestamp': 'TEXT NOT NULL',
-                'currentpackage': 'TEXT NOT NULL',
-                'amountpaid': 'INTEGER NOT NULL DEFAULT 0',
-                'remainingarrears': 'INTEGER NOT NULL',
-                'transactiontype': 'TEXT NOT NULL',
-                'paymentmethod': 'TEXT NOT NULL',
-                'discountgiven': 'INTEGER DEFAULT 0',
-                'tenant_id': "TEXT NOT NULL DEFAULT 'lynx'"
-            }, ['invoiceid'])
 
+            # Default Data Injection
             cursor.execute("SELECT COUNT(*) FROM system_tenants WHERE tenant_id = 'lynx'")
             if cursor.fetchone()[0] == 0:
                 cursor.execute("""
