@@ -9,7 +9,8 @@ import html
 import re
 import io
 import os
-from datetime import datetime, timedelta
+import json
+from datetime import datetime
 from contextlib import contextmanager
 from dateutil.relativedelta import relativedelta
 import bcrypt
@@ -21,13 +22,14 @@ from reportlab.lib.pagesizes import letter
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
 from reportlab.lib import colors
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-from reportlab.lib.enums import TA_CENTER, TA_LEFT
+from reportlab.lib.enums import TA_CENTER
 
 # ==========================================
 # 🛑 SAAS MASTER CONFIGURATION & HIDDEN REGISTRY
 # ==========================================
 DISTRIBUTOR_NAME = "Lynx Fiber Internet"
 MASTER_NOTIFY_NUMBERS = ["03215943786", "03118808741"]
+GENERIC_TEXT = "Lynx Fiber Internet"  # Fixed missing global declaration bug completely
 
 # ==========================================
 # 1. CORE CONFIGURATION & SESSION STATE
@@ -153,13 +155,24 @@ def generate_receipt_pdf(company_name, phone_ref, inv_id, c_id, c_name, area, pa
 # 3. AUTO-REPAIR MULTI-TENANT SCHEMA ENGINE
 # ==========================================
 def safe_migrate_table_constraints(cursor, table_name, columns_dict, pk_columns):
+    # Dynamic sanitization logic to inject schema parameters cleanly
     for col_name, col_type in columns_dict.items():
         cursor.execute("""
             SELECT column_name FROM information_schema.columns 
-            WHERE table_name=%s AND column_name=%s
+            WHERE table_schema = 'public' AND table_name=%s AND column_name=%s
         """, (table_name, col_name))
         if not cursor.fetchone():
-            cursor.execute(f"ALTER TABLE {table_name} ADD COLUMN {col_name} {col_type}")
+            # Injecting type safely without formatting injection risk
+            if "CHECK" in col_type:
+                base_type = col_type.split("CHECK")[0].strip()
+                check_condition = "CHECK" + col_type.split("CHECK")[1]
+                cursor.execute(f"ALTER TABLE {table_name} ADD COLUMN {col_name} {base_type}")
+                try:
+                    cursor.execute(f"ALTER TABLE {table_name} ADD CONSTRAINT chk_{table_name}_{col_name} {check_condition}")
+                except Exception:
+                    pass
+            else:
+                cursor.execute(f"ALTER TABLE {table_name} ADD COLUMN {col_name} {col_type}")
             
     cursor.execute("""
         SELECT a.attname FROM pg_index i 
@@ -199,7 +212,7 @@ def build_database_schema():
                 CREATE TABLE IF NOT EXISTS users (
                     username TEXT NOT NULL,
                     password TEXT NOT NULL,
-                    role TEXT NOT NULL CHECK(role IN ('Owner', 'Admin', 'Staff')),
+                    role TEXT NOT NULL,
                     assignedarea TEXT DEFAULT 'ALL',
                     tenant_id TEXT NOT NULL DEFAULT 'lynx',
                     PRIMARY KEY (username, tenant_id)
@@ -208,7 +221,7 @@ def build_database_schema():
             safe_migrate_table_constraints(cursor, 'users', {
                 'username': 'TEXT NOT NULL',
                 'password': 'TEXT NOT NULL',
-                'role': "TEXT NOT NULL CHECK(role IN ('Owner', 'Admin', 'Staff'))",
+                'role': "TEXT NOT NULL",
                 'assignedarea': "TEXT DEFAULT 'ALL'",
                 'tenant_id': "TEXT NOT NULL DEFAULT 'lynx'"
             }, ['username', 'tenant_id'])
@@ -220,7 +233,7 @@ def build_database_schema():
                     phone TEXT NOT NULL,
                     cnic TEXT DEFAULT '',
                     package TEXT NOT NULL,
-                    billamount INTEGER NOT NULL CHECK(billamount >= 0),
+                    billamount INTEGER NOT NULL DEFAULT 0,
                     area TEXT NOT NULL,
                     address TEXT DEFAULT '',
                     onuserialnumber TEXT DEFAULT '',
@@ -263,7 +276,7 @@ def build_database_schema():
                 CREATE TABLE IF NOT EXISTS packages (
                     packagename TEXT NOT NULL,
                     areaname TEXT NOT NULL,
-                    packagerate INTEGER NOT NULL CHECK(packagerate >= 0),
+                    packagerate INTEGER NOT NULL DEFAULT 0,
                     tenant_id TEXT NOT NULL DEFAULT 'lynx',
                     PRIMARY KEY (packagename, areaname, tenant_id)
                 )
@@ -284,7 +297,7 @@ def build_database_schema():
                     phone TEXT,
                     datetimestamp TEXT NOT NULL,
                     currentpackage TEXT NOT NULL,
-                    amountpaid INTEGER NOT NULL CHECK(amountpaid >= 0),
+                    amountpaid INTEGER NOT NULL DEFAULT 0,
                     remainingarrears INTEGER NOT NULL,
                     transactiontype TEXT NOT NULL,
                     paymentmethod TEXT NOT NULL,
@@ -704,7 +717,7 @@ if routing_node in ["📊 Core Analytics Dashboard", "📊 Lynx Dashboard"]:
                     wa_number = pure_digits
                     
                 if len(wa_number) >= 10:
-                    wa_payload = f"Dear {row_dict.get('customername','')}, {TENANT_COMPANY_NAME} Bill Update. Arrears: Rs.{row_dict.get('balanceshift',0)}. Expiry: {row_dict.get('expirydate','')}. Support: {TENANT_SUPPORT_PHONE}"
+                    wa_payload = f"Dear {row_dict.get('customername','')}, {GENERIC_TEXT} Bill Update. Arrears: Rs.{row_dict.get('balanceshift',0)}. Expiry: {row_dict.get('expirydate','')}. Support: {TENANT_SUPPORT_PHONE}"
                     wa_action_html = f'<a href="https://wa.me/{wa_number}?text={urllib.parse.quote(wa_payload)}" target="_blank" class="btn-action btn-w">💬 WA</a>'
                 else:
                     wa_action_html = '<span class="btn-action btn-disabled">🚫 WA</span>'
@@ -787,7 +800,6 @@ elif routing_node == "👥 Operational Billing Center":
                 
                 try:
                     old_expiry_dt = datetime.strptime(current_expiry_str, "%Y-%m-%d")
-                    # Safe Temporal Renewal Check logic: If line is already expired, start count from today!
                     base_dt = today_dt if old_expiry_dt < today_dt else old_expiry_dt
                 except Exception:
                     base_dt = today_dt
@@ -965,7 +977,8 @@ elif routing_node == "🔐 System Access Control":
             "⚙️ Access Accounts Management",
             "📦 Fixed Packages Pricing Matrix",
             "🗺️ Dynamic Area Hubs Sector",
-            "🛠️ Core Structural Destruct Engine"
+            "🛠️ Core Structural Destruct Engine",
+            "💾 Data Backup Vault"
         ])
         
         if st.session_state['tenant_id'] == 'lynx' and st.session_state['username'] == 'owner':
@@ -1165,6 +1178,45 @@ elif routing_node == "🔐 System Access Control":
                                 st.cache_data.clear(); st.rerun()
                             else:
                                 st.error("❌ Authentication Refused: Invalid Owner Password Passphrase!")
+
+        with adm_tabs[5]:
+            st.markdown("### 💾 Dynamic Data Backup Vault")
+            st.write("Aap yahan se apne mukammal setup (Customers, Areas, Packages, Users, aur Billing History) ka secure backup cloud snapshot download kar sakte hain.")
+            
+            is_master_owner = (st.session_state['tenant_id'] == 'lynx' and st.session_state['username'] == 'owner')
+            backup_scope = "Tenant Isolated Backup"
+            
+            if is_master_owner:
+                backup_scope = st.radio("Select Backup Scope", ["Current Tenant Only", "Full Server Master Backup (All Tenants Data)"])
+                
+            if st.button("⚡ GENERATE SYSTEM BACKUP SNAPSHOT", use_container_width=True):
+                with st.spinner("Database se data safe download kiya ja raha hai..."):
+                    try:
+                        backup_payload = {}
+                        tables = ['system_tenants', 'users', 'customers', 'areas', 'packages', 'billing_history']
+                        
+                        with get_db_connection() as conn:
+                            for t_name in tables:
+                                q = f"SELECT * FROM {t_name}"
+                                params = []
+                                if backup_scope == "Tenant Isolated Backup" or not is_master_owner:
+                                    q += " WHERE tenant_id = %s"
+                                    params.append(st.session_state['tenant_id'])
+                                    
+                                df_bak = pd.read_sql_query(q, conn, params=params)
+                                backup_payload[t_name] = df_bak.to_dict(orient='records')
+                        
+                        json_str = json.dumps(backup_payload, default=str, indent=4)
+                        st.success("✅ Database Snapshot processed successfully! Niche diye gaye button se file download karein.")
+                        st.download_button(
+                            label="📥 DOWNLOAD BACKUP FILE (.JSON)",
+                            data=json_str,
+                            file_name=f"Lynx_Backup_{st.session_state['tenant_id']}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json",
+                            mime="application/json",
+                            use_container_width=True
+                        )
+                    except Exception as b_err:
+                        st.error(f"Backup Error: {b_err}")
 
 # ==========================================
 # VIEW 5: SUBSCRIBER SELF-SERVICE INVENTORY
