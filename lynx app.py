@@ -46,7 +46,7 @@ GLOBAL_TARGET_ORDER = [
 ]
 
 st.set_page_config(
-    page_title="LYNX Fiber Enterprise ERP v61.0", 
+    page_title="LYNX Fiber Enterprise ERP v62.0", 
     layout="wide",
     initial_sidebar_state="expanded"
 )
@@ -291,7 +291,7 @@ else:
     if not st.session_state['authenticated']:
         st.markdown("<div class='front-login-box'>", unsafe_allow_html=True)
         st.markdown("<h2 style='text-align:center; color:#10b981; font-weight:900; margin-bottom:5px;'>LYNX FIBER NET</h2>", unsafe_allow_html=True)
-        st.markdown("<p style='text-align:center; color:#9ca3af; margin-bottom:30px;'>Enterprise ERP System v61.0</p>", unsafe_allow_html=True)
+        st.markdown("<p style='text-align:center; color:#9ca3af; margin-bottom:30px;'>Enterprise ERP System v62.0</p>", unsafe_allow_html=True)
         
         user_input = (st.text_input("Username Key", key="front_user") or "").strip().lower()
         pass_input = st.text_input("Security Password", type="password", key="front_pass")
@@ -532,7 +532,7 @@ elif routing_node == "👥 Operational Billing Center":
                     st.cache_data.clear(); st.rerun()
 
     if is_management:
-        # TAB 2: FIXED CURSOR NAME MISMATCH CRASH BUG
+        # TAB 2: PROVISION NEW CLIENT WITH FIXED CURSOR
         with tabs[1]:
             if not all_system_areas:
                 st.error("❌ Register an Area Sector inside System Access Controls first.")
@@ -544,7 +544,7 @@ elif routing_node == "👥 Operational Billing Center":
                         cur.execute("SELECT packagename, packagerate FROM packages WHERE areaname = %s", (in_area,))
                         area_pkgs = dict(cur.fetchall())
                 
-                with st.form("add_client_form_v61"):
+                with st.form("add_client_form_v62"):
                     in_id = st.text_input("Desired Unique Username Key").strip().lower()
                     in_name = st.text_input("Customer Full Name").strip()
                     in_phone = st.text_input("Phone Number").strip()
@@ -578,7 +578,7 @@ elif routing_node == "👥 Operational Billing Center":
                             st.success(f"🚀 Profile allocated cleanly for {in_id}!")
                             st.cache_data.clear(); st.rerun()
 
-        # TAB 3: INTEGRATED LIVE EXCEL MATRIX ENGINE ROW INJECTION
+        # TAB 3: Bulk Import Excel Matrix Engine
         with tabs[2]:
             uploaded_file = st.file_uploader("Upload Excel Sheet", type=['xlsx', 'csv'])
             if uploaded_file:
@@ -667,7 +667,7 @@ elif routing_node == "📜 Lifetime Ledger History":
         st.dataframe(df_ledger, use_container_width=True)
 
 # ==========================================
-# VIEW 4: SYSTEM ACCESS CONFIGS
+# VIEW 4: SYSTEM ACCESS CONFIGS (FIXED TABS ROUTING)
 # ==========================================
 elif routing_node == "🔐 System Access Control":
     if st.session_state['user_role'] not in ["Owner", "Admin"]:
@@ -676,43 +676,66 @@ elif routing_node == "🔐 System Access Control":
         st.markdown("<div class='main-title'>🔐 LYNX FIBER ACCESS CONTROL PANEL</div>", unsafe_allow_html=True)
         all_system_areas = fetch_active_areas()
         
-        tabs_def = ["⚙️ Access Accounts Management", "📦 Fixed Packages Pricing Matrix", "🗺️ Dynamic Area Hubs Sector"]
-        if st.session_state['user_role'] == "Owner":
-            tabs_def.insert(0, "🛠️ Master Schema Hard Settings")
-            
-        adm_tabs = st.tabs(tabs_def)
-        idx_shift = 1 if st.session_state['user_role'] == "Owner" else 0
+        # FIXED DESIGN: Static list to avoid off-by-one array crash
+        tab_titles = [
+            "⚙️ Access Accounts Management", 
+            "📦 Fixed Packages Pricing Matrix", 
+            "🗺️ Dynamic Area Hubs Sector",
+            "🛠️ Master Schema Hard Settings"
+        ]
+        
+        adm_tabs = st.tabs(tab_titles)
 
-        # OWNER PRIVILEGES ENGINE: TRUE CLEAR-STATE PIPELINE
-        if st.session_state['user_role'] == "Owner":
-            with adm_tabs[0]:
-                st.markdown("### 👑 Master Schema Dynamic Destruction Module")
-                st.warning("⚠️ Critical Alert: Wiping database drops structural relationships completely.")
-                
-                purge_password = st.text_input("Verify Master Owner Confirmation Passphrase", type="password", key="purge_pass_gate")
-                if st.button("☢️ INITIATE COMPLETE SYSTEM ZERO-DATA PURGE"):
-                    with get_db_connection() as conn:
-                        with conn.cursor() as cursor:
-                            cursor.execute("SELECT password FROM users WHERE username = %s AND role='Owner'", (st.session_state['username'],))
-                            match_p = cursor.fetchone()
-                    
-                    if match_p and verify_password(purge_password, match_p[0]):
+        # TAB 0: ACCESS ACCOUNTS MANAGEMENT (RESTORED!)
+        with adm_tabs[0]:
+            st.markdown("### ⚙️ Access Accounts Management & Credentials")
+            
+            # Sub-Section A: Owner Password Reset (FIXED/RESTORED)
+            st.markdown("#### 🔑 Update Your Account Password")
+            with st.form("owner_self_password_form"):
+                new_self_pass = st.text_input("Enter New Password Structure", type="password")
+                if st.form_submit_button("🔒 Securely Change My Password"):
+                    if len(new_self_pass) < 4:
+                        st.error("❌ Password must be at least 4 characters long.")
+                    else:
                         with get_db_connection() as conn:
                             with conn.cursor() as cursor:
-                                cursor.execute("DROP TABLE IF EXISTS billing_history CASCADE; DROP TABLE IF EXISTS customers CASCADE; DROP TABLE IF EXISTS areas CASCADE; DROP TABLE IF EXISTS packages CASCADE; DROP TABLE IF EXISTS users CASCADE; DROP TABLE IF EXISTS app_settings CASCADE;")
+                                cursor.execute("UPDATE users SET password = %s WHERE username = %s", (hash_password(new_self_pass), st.session_state['username']))
                             conn.commit()
-                        
-                        build_database_schema()
-                        st.success("🚀 System Hard Purge Complete. Complete structural clean state achieved!")
-                        st.cache_data.clear(); st.rerun()
+                        st.success("🎉 Your password has been successfully updated cryptographically!")
+            
+            st.write("---")
+            
+            # Sub-Section B: Create Sub-Users (Admin / Staff)
+            st.markdown("#### ➕ Provision Sub-User Entity (Admin / Staff)")
+            with st.form("create_subuser_form"):
+                new_username = st.text_input("Entity Username ID").strip().lower()
+                new_password = st.text_input("Security Access Code / Password", type="password")
+                new_role = st.selectbox("System Architecture Role Level", ["Admin", "Staff"])
+                
+                # Dynamic area string allocation for staff restriction
+                st.caption("For Staff: Input comma-separated areas (e.g. Saeela, Sanghoi) or 'ALL' for absolute visibility.")
+                assigned_areas_input = st.text_input("Allocated Terminal Area Sector Clearance", value="ALL").strip()
+                
+                if st.form_submit_button("🚀 Inject User Profile Node"):
+                    if not new_username or not new_password:
+                        st.error("❌ Complete credentials parameters.")
                     else:
-                        st.error("❌ Password Cryptographic signature mismatch. Operation Aborted.")
+                        with get_db_connection() as conn:
+                            with conn.cursor() as cursor:
+                                cursor.execute("""
+                                    INSERT INTO users (username, password, role, assignedarea)
+                                    VALUES (%s, %s, %s, %s)
+                                    ON CONFLICT (username) DO UPDATE 
+                                    SET password = EXCLUDED.password, role = EXCLUDED.role, assignedarea = EXCLUDED.assignedarea
+                                """, (new_username, hash_password(new_password), new_role, assigned_areas_input))
+                            conn.commit()
+                        st.success(f"✅ User node '{new_username}' synced onto master ledger.")
 
-        # ADMIN TAB: Package Dynamic Allocation & REMOVE PACKAGE SYSTEM
-        with adm_tabs[1 + idx_shift]:
+        # TAB 1: PACKAGES PRICING MATRIX
+        with adm_tabs[1]:
             st.markdown("### 📦 Structural Location Pricing Allocation Configurator")
             
-            # --- Form 1: Add/Update Package ---
             if not all_system_areas:
                 st.info("💡 Empty State: Configure an active Operating Area first.")
             else:
@@ -739,7 +762,6 @@ elif routing_node == "🔐 System Access Control":
 
             st.write("---")
             
-            # --- Form 2: FIXED REMOVE PACKAGE ENGINE ---
             st.markdown("#### ❌ Remove Wrong/Unwanted Package Profile")
             live_packages_list = fetch_all_packages()
             
@@ -769,8 +791,8 @@ elif routing_node == "🔐 System Access Control":
                         st.success(f"💥 Package '{target_pkg_name}' for Area '{target_area_name}' has been completely removed!")
                         st.cache_data.clear(); st.rerun()
 
-        # ADMIN TAB: Hub Areas Registration 
-        with adm_tabs[2 + idx_shift]:
+        # TAB 2: DYNAMIC AREA HUBS SECTOR
+        with adm_tabs[2]:
             st.markdown("### 🗺️ Sector Node Operations")
             with st.form("add_area_sector_form"):
                 new_area_name = st.text_input("Enter New Network Location Name (e.g., Bagga, Saeela, Sanghoi)").strip()
@@ -782,6 +804,33 @@ elif routing_node == "🔐 System Access Control":
                             conn.commit()
                         st.success(f"✅ {new_area_name} registered successfully.")
                         st.cache_data.clear(); st.rerun()
+
+        # TAB 3: OWNER PRIVILEGES ENGINE (RESTRICTED TO OWNER ROLE ONLY)
+        with adm_tabs[3]:
+            if st.session_state['user_role'] != "Owner":
+                st.warning("🔒 This specific section is encrypted and locked for the Master Owner entity only.")
+            else:
+                st.markdown("### 👑 Master Schema Dynamic Destruction Module")
+                st.warning("⚠️ Critical Alert: Wiping database drops structural relationships completely.")
+                
+                purge_password = st.text_input("Verify Master Owner Confirmation Passphrase", type="password", key="purge_pass_gate")
+                if st.button("☢️ INITIATE COMPLETE SYSTEM ZERO-DATA PURGE"):
+                    with get_db_connection() as conn:
+                        with conn.cursor() as cursor:
+                            cursor.execute("SELECT password FROM users WHERE username = %s AND role='Owner'", (st.session_state['username'],))
+                            match_p = cursor.fetchone()
+                    
+                    if match_p and verify_password(purge_password, match_p[0]):
+                        with get_db_connection() as conn:
+                            with conn.cursor() as cursor:
+                                cursor.execute("DROP TABLE IF EXISTS billing_history CASCADE; DROP TABLE IF EXISTS customers CASCADE; DROP TABLE IF EXISTS areas CASCADE; DROP TABLE IF EXISTS packages CASCADE; DROP TABLE IF EXISTS users CASCADE; DROP TABLE IF EXISTS app_settings CASCADE;")
+                            conn.commit()
+                        
+                        build_database_schema()
+                        st.success("🚀 System Hard Purge Complete. Complete structural clean state achieved!")
+                        st.cache_data.clear(); st.rerun()
+                    else:
+                        st.error("❌ Password Cryptographic signature mismatch. Operation Aborted.")
 
 # ==========================================
 # VIEW 5: SUBSCRIBER SELF-SERVICE INVENTORY
