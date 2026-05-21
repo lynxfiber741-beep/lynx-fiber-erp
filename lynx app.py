@@ -52,7 +52,7 @@ GLOBAL_TARGET_ORDER = [
 # 2. CORE THEME & PREMIUM MOBILE CSS ENGINE
 # ==========================================
 st.set_page_config(
-    page_title="LYNX Fiber Enterprise ERP v56.0", 
+    page_title="LYNX Fiber Enterprise ERP v57.0", 
     layout="wide",
     initial_sidebar_state="expanded"
 )
@@ -131,7 +131,7 @@ st.markdown("""
 try:
     DB_URL = st.secrets["DB_URL"]
 except Exception:
-    DB_URL = "postgresql://postgres.snbmurjcggthdvxyxyrd:DlLaglY98SkOzDq2@aws-1-ap-southeast-1.pooler.southeast-1.pooler.supabase.com:6543/postgres?sslmode=require"
+    DB_URL = "postgresql://postgres.snbmurjcggthdvxyxyrd:DlLaglY98SkOzDq2@aws-1-ap-southeast-1.pooler.southeast-1.pooler.southeast-1.pooler.supabase.com:6543/postgres?sslmode=require"
 
 @contextmanager
 def get_db_connection():
@@ -158,11 +158,10 @@ def verify_password(password: str, hashed_password: str) -> bool:
     except Exception:
         return False
 
-def build_database_schema():
+# MODIFIED: Clean/Pure Initialization Schema Engine
+def build_database_schema(is_purge_event=False):
     with get_db_connection() as conn:
         with conn.cursor() as cursor:
-            # Upgrade constraint to allow 'Owner' along with Admin and Staff
-            cursor.execute("DROP TABLE IF EXISTS users CASCADE;")
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS users (
                     username TEXT PRIMARY KEY, 
@@ -171,7 +170,6 @@ def build_database_schema():
                     assignedarea TEXT DEFAULT 'ALL'
                 )
             """)
-            
             cursor.execute("CREATE TABLE IF NOT EXISTS areas (areaname TEXT PRIMARY KEY)")
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS customers (
@@ -191,24 +189,31 @@ def build_database_schema():
                 )
             """)
             
-            cursor.execute("SELECT COUNT(*) FROM areas")
-            if cursor.fetchone()[0] == 0:
-                cursor.execute("INSERT INTO areas VALUES ('Sanghoi System'), ('Saeela System')")
+            # CRITICAL: Agar normal initialization ho rahi hai (Not a purge event), tabhi defaults dalein
+            if not is_purge_event:
+                cursor.execute("SELECT COUNT(*) FROM areas")
+                if cursor.fetchone()[0] == 0:
+                    cursor.execute("INSERT INTO areas VALUES ('Sanghoi System'), ('Saeela System')")
+                
+                cursor.execute("SELECT COUNT(*) FROM packages")
+                if cursor.fetchone()[0] == 0:
+                    cursor.execute("INSERT INTO packages VALUES ('15 Mbps Fiber', 1500), ('25 Mbps Fiber', 2000), ('35 Mbps Fiber', 2500)")
             
+            # OWNER ACCOUNT SAFETY NET
             cursor.execute("SELECT COUNT(*) FROM users WHERE role = 'Owner'")
             if cursor.fetchone()[0] == 0:
-                # CREATING YOUR POWERFUL SYSTEM OWNER ACCOUNT
                 cursor.execute("INSERT INTO users VALUES ('owner', %s, 'Owner', 'ALL')", (hash_password('lynxowner123'),))
-                cursor.execute("INSERT INTO users VALUES ('admin', %s, 'Admin', 'ALL')", (hash_password('lynxadmin123'),))
-                cursor.execute("INSERT INTO users VALUES ('staff', %s, 'Staff', 'Sanghoi System')", (hash_password('lynxstaff123'),))
-            
-            cursor.execute("SELECT COUNT(*) FROM packages")
-            if cursor.fetchone()[0] == 0:
-                cursor.execute("INSERT INTO packages VALUES ('15 Mbps Fiber', 1500), ('25 Mbps Fiber', 2000), ('35 Mbps Fiber', 2500)")
+                
+            if not is_purge_event:
+                cursor.execute("SELECT COUNT(*) FROM users WHERE username IN ('admin', 'staff')")
+                if cursor.fetchone()[0] == 0:
+                    cursor.execute("INSERT INTO users VALUES ('admin', %s, 'Admin', 'ALL')", (hash_password('lynxadmin123'),))
+                    cursor.execute("INSERT INTO users VALUES ('staff', %s, 'Staff', 'Sanghoi System')", (hash_password('lynxstaff123'),))
+                    
         conn.commit()
 
 try:
-    build_database_schema()
+    build_database_schema(is_purge_event=False)
 except Exception as e:
     st.error(f"Schema Builder Failed: {e}")
 
@@ -235,9 +240,9 @@ def fetch_system_packages():
             with conn.cursor() as cur:
                 cur.execute("SELECT packagename, packagerate FROM packages ORDER BY packagerate ASC")
                 rows = cur.fetchall()
-        return dict(rows) if rows else {"15 Mbps Fiber": 1500}
+        return dict(rows) if rows else {}
     except Exception:
-        return {"15 Mbps Fiber": 1500}
+        return {}
 
 @st.cache_data(ttl=5)
 def fetch_active_areas():
@@ -246,9 +251,9 @@ def fetch_active_areas():
             with conn.cursor() as cur:
                 cur.execute("SELECT areaname FROM areas ORDER BY areaname ASC")
                 rows = cur.fetchall()
-        return [r[0] for r in rows] if rows else ["Sanghoi System", "Saeela System"]
+        return [r[0] for r in rows] if rows else []
     except Exception:
-        return ["Sanghoi System", "Saeela System"]
+        return []
 
 @st.cache_data(ttl=5)
 def fetch_current_month_billing_summary():
@@ -289,7 +294,7 @@ else:
     if not st.session_state['authenticated']:
         st.markdown("<div class='front-login-box'>", unsafe_allow_html=True)
         st.markdown("<h2 style='text-align:center; color:#10b981; font-weight:900; margin-bottom:5px;'>LYNX FIBER NET</h2>", unsafe_allow_html=True)
-        st.markdown("<p style='text-align:center; color:#9ca3af; margin-bottom:30px;'>Enterprise ERP System v56.0</p>", unsafe_allow_html=True)
+        st.markdown("<p style='text-align:center; color:#9ca3af; margin-bottom:30px;'>Enterprise ERP System v57.0</p>", unsafe_allow_html=True)
         
         user_input = (st.text_input("Username Key", key="front_user") or "").strip().lower()
         pass_input = st.text_input("Security Password", type="password", key="front_pass")
@@ -302,11 +307,10 @@ else:
                 
             if user_match and verify_password(pass_input, user_match[3]):
                 st.session_state['authenticated'] = True
-                st.session_state['user_role'] = user_match[0]  # Store 'Owner' / 'Admin' / 'Staff'
+                st.session_state['user_role'] = user_match[0]  
                 st.session_state['username'] = user_match[1]
                 
                 raw_areas = user_match[2] if user_match[2] else "ALL"
-                # SUPER BYPASS: Owner and Admin get automatic full bypass access 
                 if user_match[0] in ["Owner", "Admin"] or raw_areas == "ALL":
                     st.session_state['assigned_areas'] = ["ALL"]
                 else:
@@ -337,7 +341,6 @@ if st.session_state['authenticated'] and not st.session_state['portal_mode']:
         if st.button("📜 Lifetime Ledger History", use_container_width=True):
             st.session_state['current_node'] = "📜 Lifetime Ledger History"; st.rerun()
             
-        # Access control available only to absolute high profiles (Owner & Admin)
         if st.session_state['user_role'] in ["Owner", "Admin"]:
             if st.button("🔐 System Access Control", use_container_width=True):
                 st.session_state['current_node'] = "🔐 System Access Control"; st.rerun()
@@ -364,8 +367,10 @@ if routing_node == "📊 Core Analytics Dashboard":
     if not is_high_profile and "ALL" not in st.session_state['assigned_areas']:
         cards_display_areas = [a for a in all_system_areas if any(a.lower() == s.lower() for s in st.session_state['assigned_areas'])]
     
-    if df_matrix.empty:
-        st.warning("⚠️ Operational Database is currently empty.")
+    if not all_system_areas:
+        st.info("💡 Database is completely clean. Please head over to '🔐 System Access Control' to register your active Fiber Area hubs and plans.")
+    elif df_matrix.empty:
+        st.warning("⚠️ Operational Database is currently empty. No subscribers registered.")
     else:
         collection_map = fetch_current_month_billing_summary()
             
@@ -590,36 +595,39 @@ elif routing_node == "👥 Operational Billing Center":
     if is_management:
         # TAB: Provision New Client
         with tabs[1]:
-            with st.form("add_client_form_v50", clear_on_submit=True):
-                in_id = (st.text_input("Desired Username Key") or "").strip().lower()
-                in_name = (st.text_input("Customer Name") or "").strip()
-                in_phone = (st.text_input("Phone Number") or "").strip()
-                in_cnic = (st.text_input("CNIC Number") or "").strip()
-                chosen_pkg = st.selectbox("Select Package Plan Profile", list(pkg_dict.keys()))
-                in_rate = st.number_input("Bill Amount Rate (Rs.)", min_value=0, value=pkg_dict[chosen_pkg])
-                in_area = st.selectbox("Area Hub Location", all_system_areas)
-                in_address = (st.text_input("Address") or "").strip()
-                in_sn = (st.text_input("Onu SN (Serial)") or "").strip()
-                
-                if st.form_submit_button("➕ WRITE PROFILE TO DATABASE", use_container_width=True):
-                    norm_p = clean_and_validate_phone(in_phone)
-                    if not in_id or not in_name or not norm_p: st.error("❌ Required core fields missing!")
-                    else:
-                        with get_db_connection() as conn:
-                            with conn.cursor() as cursor:
-                                cursor.execute("SELECT COUNT(*) FROM customers WHERE username = %s", (in_id,))
-                                if cursor.fetchone()[0] > 0: st.error("❌ Username exists!")
-                                else:
-                                    default_expiry = (datetime.now() + timedelta(days=30)).strftime("%Y-%m-%d")
-                                    try:
-                                        cursor.execute("""
-                                            INSERT INTO customers (username, customername, phone, cnic, package, billamount, area, address, onuserialnumber, balanceshift, status, expirydate)
-                                            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, 0, 'UNPAID', %s)
-                                        """, (in_id, in_name, norm_p, in_cnic, chosen_pkg, in_rate, in_area, in_address, in_sn, default_expiry))
-                                        conn.commit()
-                                        st.success("✅ Added Profile Successfully!")
-                                        st.cache_data.clear(); st.rerun()
-                                    except psycopg2.IntegrityError: st.error("❌ Phone Number already allocated!")
+            if not all_system_areas or not pkg_dict:
+                st.error("❌ Pehle '🔐 System Access Control' mein jaa kar kam az kam ek Area aur ek Package register karein tabhi client enter ho sakega.")
+            else:
+                with st.form("add_client_form_v50", clear_on_submit=True):
+                    in_id = (st.text_input("Desired Username Key") or "").strip().lower()
+                    in_name = (st.text_input("Customer Name") or "").strip()
+                    in_phone = (st.text_input("Phone Number") or "").strip()
+                    in_cnic = (st.text_input("CNIC Number") or "").strip()
+                    chosen_pkg = st.selectbox("Select Package Plan Profile", list(pkg_dict.keys()))
+                    in_rate = st.number_input("Bill Amount Rate (Rs.)", min_value=0, value=pkg_dict[chosen_pkg])
+                    in_area = st.selectbox("Area Hub Location", all_system_areas)
+                    in_address = (st.text_input("Address") or "").strip()
+                    in_sn = (st.text_input("Onu SN (Serial)") or "").strip()
+                    
+                    if st.form_submit_button("➕ WRITE PROFILE TO DATABASE", use_container_width=True):
+                        norm_p = clean_and_validate_phone(in_phone)
+                        if not in_id or not in_name or not norm_p: st.error("❌ Required core fields missing!")
+                        else:
+                            with get_db_connection() as conn:
+                                with conn.cursor() as cursor:
+                                    cursor.execute("SELECT COUNT(*) FROM customers WHERE username = %s", (in_id,))
+                                    if cursor.fetchone()[0] > 0: st.error("❌ Username exists!")
+                                    else:
+                                        default_expiry = (datetime.now() + timedelta(days=30)).strftime("%Y-%m-%d")
+                                        try:
+                                            cursor.execute("""
+                                                INSERT INTO customers (username, customername, phone, cnic, package, billamount, area, address, onuserialnumber, balanceshift, status, expirydate)
+                                                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, 0, 'UNPAID', %s)
+                                            """, (in_id, in_name, norm_p, in_cnic, chosen_pkg, in_rate, in_area, in_address, in_sn, default_expiry))
+                                            conn.commit()
+                                            st.success("✅ Added Profile Successfully!")
+                                            st.cache_data.clear(); st.rerun()
+                                        except psycopg2.IntegrityError: st.error("❌ Phone Number already allocated!")
 
         # TAB: Bulk Import Engine
         with tabs[2]:
@@ -637,8 +645,8 @@ elif routing_node == "👥 Operational Billing Center":
                     if st.button(f"⚡ Save All {total_rows_found} Sheet Records to Live Database", use_container_width=True):
                         success_count, update_count, skip_count = 0, 0, 0
                         default_expiry = (datetime.now() + timedelta(days=30)).strftime("%Y-%m-%d")
-                        default_pkg = list(pkg_dict.keys())[0] if pkg_dict else "15 Mbps Fiber"
-                        default_area = all_system_areas[0] if all_system_areas else "Sanghoi System"
+                        default_pkg = list(pkg_dict.keys())[0] if pkg_dict else "Custom Plan"
+                        default_area = all_system_areas[0] if all_system_areas else "Main Station"
                         
                         with get_db_connection() as conn:
                             with conn.cursor() as cursor:
@@ -822,20 +830,18 @@ elif routing_node == "🔐 System Access Control":
         st.markdown("<div class='main-title'>🔐 LYNX FIBER ACCESS CONTROL PANEL</div>", unsafe_allow_html=True)
         all_system_areas = fetch_active_areas()
         
-        # Build layout tabs based on hierarchy
         tabs_def = ["⚙️ Access Accounts Management", "📦 Fixed Packages", "🗺️ Dynamic Area Hubs", "👤 Update My Profile"]
         if st.session_state['user_role'] == "Owner":
             tabs_def.insert(0, "🛠️ Master Schema Settings")
             
         adm_tabs = st.tabs(tabs_def)
-        
-        # INDEX COMPENSATOR FOR OWNER vs ADMIN
         idx_shift = 1 if st.session_state['user_role'] == "Owner" else 0
 
-        # CONDITIONAL TAB: Master Schema (OWNER ONLY)
+        # CONDITIONAL TAB: Master Schema (OWNER ONLY) - MODIFIED FOR COMPLETE ABSOLUTE ZERO PURGE
         if st.session_state['user_role'] == "Owner":
             with adm_tabs[0]:
                 st.markdown("### 👑 Master Database Schema Engineering (Owner Domain)")
+                st.warning("⚠️ Warning: Force Clean karne se dynamic routers, billing ledger, secondary keys, aur 'Saeela' ya 'Sanghoi' jese default system networks database se mukammal clean ho jayenge. Sirf aapka Owner account safe rahega.")
                 if 'purge_requested' not in st.session_state: st.session_state['purge_requested'] = False
 
                 if not st.session_state['purge_requested']:
@@ -855,14 +861,16 @@ elif routing_node == "🔐 System Access Control":
                                 try:
                                     with get_db_connection() as conn:
                                         with conn.cursor() as cursor:
+                                            # Drop Tables completely
                                             cursor.execute("DROP TABLE IF EXISTS billing_history CASCADE; DROP TABLE IF EXISTS customers CASCADE; DROP TABLE IF EXISTS areas CASCADE; DROP TABLE IF EXISTS packages CASCADE; DROP TABLE IF EXISTS users CASCADE; DROP TABLE IF EXISTS app_settings CASCADE;")
                                             conn.commit()
-                                    build_database_schema()
-                                    st.success("🚀 System reset successfully!")
+                                    
+                                    # REBUILD SYSTEM passing TRUE to avoid default data injections!
+                                    build_database_schema(is_purge_event=True)
+                                    
+                                    st.success("🚀 Pure Blank Clean State Initiated! All defaults bypassed successfully.")
                                     st.session_state['purge_requested'] = False
                                     st.cache_data.clear()
-                                    st.session_state['authenticated'] = False
-                                    st.session_state['user_role'] = None
                                     st.rerun()
                                 except Exception as schema_ex:
                                     st.error(f"❌ Reset Failed: {schema_ex}")
@@ -873,7 +881,6 @@ elif routing_node == "🔐 System Access Control":
 
         # TAB: Access Accounts Management
         with adm_tabs[0 + idx_shift]:
-            # OWNER CAN CREATE ADMINS & STAFF
             st.markdown("### 🔑 Sub-Account Provisioning Framework")
             
             with st.form("new_admin_form"):
@@ -923,7 +930,6 @@ elif routing_node == "🔐 System Access Control":
                 udf = pd.DataFrame(users_list)
                 st.dataframe(udf, use_container_width=True, hide_index=True)
                 
-                # Safeguard: Admins cannot wipe Owners
                 target_del = st.selectbox("Select Account to Remove", [u['username'] for u in users_list if u['username'] != st.session_state['username']])
                 if st.button("🗑️ Delete Selected Account", use_container_width=True):
                     with get_db_connection() as conn:
