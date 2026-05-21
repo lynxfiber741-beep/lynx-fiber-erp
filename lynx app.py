@@ -101,7 +101,7 @@ def verify_password(password: str, hashed_password: str) -> bool:
     except Exception:
         return False
 
-# Invoice PDF Builder Function
+# Invoice PDF Builder Function with XML Safeguards
 def generate_receipt_pdf(company_name, phone_ref, inv_id, c_id, c_name, area, package, paid, arrears, method):
     buffer = io.BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=40, leftMargin=40, topMargin=40, bottomMargin=40)
@@ -110,6 +110,9 @@ def generate_receipt_pdf(company_name, phone_ref, inv_id, c_id, c_name, area, pa
     sub_style = ParagraphStyle('SubStyle', parent=styles['Normal'], fontSize=10, textColor=colors.gray, alignment=TA_CENTER, spaceAfter=20)
     normal_style = ParagraphStyle('NormStyle', parent=styles['Normal'], fontSize=11, leading=16, textColor=colors.HexColor('#111827'))
     
+    def escape_xml(txt):
+        return html.escape(str(txt))
+
     try:
         paid_val = int(float(str(paid)))
         arrears_val = int(float(str(arrears)))
@@ -118,17 +121,17 @@ def generate_receipt_pdf(company_name, phone_ref, inv_id, c_id, c_name, area, pa
         arrears_val = 0
 
     story = [
-        Paragraph(str(company_name).upper(), title_style),
-        Paragraph(f"Official Helpline: {phone_ref} | Transaction Receipt", sub_style),
+        Paragraph(escape_xml(company_name).upper(), title_style),
+        Paragraph(f"Official Helpline: {escape_xml(phone_ref)} | Transaction Receipt", sub_style),
         Spacer(1, 10)
     ]
     
     data = [
-        [Paragraph(f"<b>Invoice Reference:</b> {inv_id}", normal_style), Paragraph(f"<b>Date:</b> {datetime.now().strftime('%Y-%m-%d %H:%M')}", normal_style)],
-        [Paragraph(f"<b>Subscriber Key:</b> {c_id}", normal_style), Paragraph(f"<b>Customer Name:</b> {c_name}", normal_style)],
-        [Paragraph(f"<b>Network Hub/Area:</b> {area}", normal_style), Paragraph(f"<b>Subscribed Profile:</b> {package}", normal_style)],
+        [Paragraph(f"<b>Invoice Reference:</b> {escape_xml(inv_id)}", normal_style), Paragraph(f"<b>Date:</b> {datetime.now().strftime('%Y-%m-%d %H:%M')}", normal_style)],
+        [Paragraph(f"<b>Subscriber Key:</b> {escape_xml(c_id)}", normal_style), Paragraph(f"<b>Customer Name:</b> {escape_xml(c_name)}", normal_style)],
+        [Paragraph(f"<b>Network Hub/Area:</b> {escape_xml(area)}", normal_style), Paragraph(f"<b>Subscribed Profile:</b> {escape_xml(package)}", normal_style)],
         [Paragraph(f"<b>Cash Remitted:</b> Rs. {paid_val:,}", normal_style), Paragraph(f"<b>Carried Arrears:</b> Rs. {arrears_val:,}", normal_style)],
-        [Paragraph(f"<b>Payment Gateway:</b> {method}", normal_style), Paragraph(f"<b>Status:</b> SECURED / PROCESSED", normal_style)]
+        [Paragraph(f"<b>Payment Gateway:</b> {escape_xml(method)}", normal_style), Paragraph(f"<b>Status:</b> SECURED / PROCESSED", normal_style)]
     ]
     
     table = Table(data, colWidths=[260, 260])
@@ -562,7 +565,12 @@ else:
                                         st.success("🎉 Registration Proposal Saved onto Supabase Ledger Engine!")
                                         alert_payload = f"🔒 LYNX SAAS LICENSE ALERT:\nNew enterprise system activation initiated.\nTenant ID: {reg_tenant_id}\nISP Company: {reg_company_name}"
                                         encoded_msg = urllib.parse.quote(alert_payload)
-                                        st.markdown(f'<a href="https://wa.me/92{MASTER_NOTIFY_NUMBERS[0]}?text={encoded_msg}" target="_blank" style="background:#10b981; color:white; padding:12px; border-radius:8px; display:block; text-align:center; text-decoration:none; font-weight:bold; margin-bottom:10px;">📲 Dispatch Verification Code</a>', unsafe_allow_html=True)
+                                        
+                                        master_phone = MASTER_NOTIFY_NUMBERS[0]
+                                        if master_phone.startswith("0"):
+                                            master_phone = master_phone[1:]
+                                            
+                                        st.markdown(f'<a href="https://wa.me/92{master_phone}?text={encoded_msg}" target="_blank" style="background:#10b981; color:white; padding:12px; border-radius:8px; display:block; text-align:center; text-decoration:none; font-weight:bold; margin-bottom:10px;">📲 Dispatch Verification Code</a>', unsafe_allow_html=True)
                         except Exception as ex:
                             st.error(f"Transaction Fault Error: {ex}")
         st.markdown("</div>", unsafe_allow_html=True)
@@ -772,15 +780,18 @@ elif routing_node == "👥 Operational Billing Center":
             cash_in = st.number_input("Capital Received (Rs.)", min_value=0, value=final_due)
             
             if st.button("💳 POST TRANSACTION & EXTEND LINE", use_container_width=True):
-                future_shift = final_due - cash_in
+                future_shift = int(final_due - cash_in)
                 new_state = "PARTIAL" if future_shift > 0 and cash_in > 0 else ("UNPAID" if future_shift > 0 else "PAID")
                 today_dt = datetime.now()
                 current_expiry_str = str(node_row_dict.get('expirydate', '')).strip()
+                
                 try:
                     old_expiry_dt = datetime.strptime(current_expiry_str, "%Y-%m-%d")
-                    base_dt = today_dt if old_expiry_dt < (today_dt - relativedelta(months=3)) else old_expiry_dt
+                    # Safe Temporal Renewal Check logic: If line is already expired, start count from today!
+                    base_dt = today_dt if old_expiry_dt < today_dt else old_expiry_dt
                 except Exception:
                     base_dt = today_dt
+                    
                 new_expiry = (base_dt + relativedelta(months=billing_months)).strftime("%Y-%m-%d")
                 invoice_uuid = f"INV-{uuid.uuid4().hex[:10].upper()}"
                 
@@ -790,7 +801,7 @@ elif routing_node == "👥 Operational Billing Center":
                         cursor.execute("""
                             INSERT INTO billing_history (invoiceid, customerid, customername, area, phone, datetimestamp, currentpackage, amountpaid, remainingarrears, transactiontype, paymentmethod, discountgiven, tenant_id)
                             VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, 'BILL_PAYMENT', %s, %s, %s)
-                        """, (invoice_uuid, resolved_uid, node_row_dict.get('customername'), node_row_dict.get('area'), node_row_dict.get('phone'), datetime.now().strftime("%Y-%m-%d %H:%M:%S"), node_row_dict.get('package'), cash_in, future_shift, pay_method, discount, st.session_state['tenant_id']))
+                        """, (invoice_uuid, resolved_uid, node_row_dict.get('customername'), node_row_dict.get('area'), node_row_dict.get('phone'), datetime.now().strftime("%Y-%m-%d %H:%M:%S"), node_row_dict.get('package'), int(cash_in), future_shift, pay_method, int(discount), st.session_state['tenant_id']))
                 st.success(f"🎉 Collection Recorded Cleanly! Extended Lock To: {new_expiry}")
                 pdf_bytes = generate_receipt_pdf(TENANT_COMPANY_NAME, TENANT_SUPPORT_PHONE, invoice_uuid, resolved_uid, node_row_dict.get('customername'), node_row_dict.get('area'), node_row_dict.get('package'), cash_in, future_shift, pay_method)
                 st.download_button("📥 Download PDF Receipt", data=pdf_bytes, file_name=f"Receipt_{invoice_uuid}.pdf", mime="application/pdf")
@@ -841,7 +852,7 @@ elif routing_node == "👥 Operational Billing Center":
                                     cursor.execute("""
                                         INSERT INTO customers (username, customername, phone, cnic, package, billamount, area, address, onuserialnumber, balanceshift, status, expirydate, tenant_id)
                                         VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, 0, 'UNPAID', %s, %s)
-                                    """, (in_id, in_name, norm_p, in_cnic, chosen_pkg, in_rate, in_area, in_address, in_sn, default_expiry, st.session_state['tenant_id']))
+                                    """, (in_id, in_name, norm_p, in_cnic, chosen_pkg, int(in_rate), in_area, in_address, in_sn, default_expiry, st.session_state['tenant_id']))
                                     st.success(f"🚀 Profile allocated! Expiry: {default_expiry}.")
                                     st.cache_data.clear(); st.rerun()
                                     
@@ -918,7 +929,7 @@ elif routing_node == "👥 Operational Billing Center":
                             cursor.execute("""
                                 UPDATE customers SET customername=%s, phone=%s, address=%s, onuserialnumber=%s, billamount=%s, status=%s 
                                 WHERE username=%s AND tenant_id=%s
-                            """, (up_name, clean_and_validate_phone(up_phone), up_address, up_sn, up_rate, up_status, edit_uid, st.session_state['tenant_id']))
+                            """, (up_name, clean_and_validate_phone(up_phone), up_address, up_sn, int(up_rate), up_status, edit_uid, st.session_state['tenant_id']))
                     st.success("Profile Changes Logged within Tenant context.")
                     st.cache_data.clear(); st.rerun()
 
@@ -1067,7 +1078,7 @@ elif routing_node == "🔐 System Access Control":
                     if st.form_submit_button("💾 LOCK TARIFF MATRIX ENTRY"):
                         with get_db_connection() as conn:
                             with conn.cursor() as cursor:
-                                cursor.execute("INSERT INTO packages (packagename, areaname, packagerate, tenant_id) VALUES (%s, %s, %s, %s) ON CONFLICT (packagename, areaname, tenant_id) DO UPDATE SET packagerate = EXCLUDED.packagerate", (p_name, p_area, p_rate, st.session_state['tenant_id']))
+                                cursor.execute("INSERT INTO packages (packagename, areaname, packagerate, tenant_id) VALUES (%s, %s, %s, %s) ON CONFLICT (packagename, areaname, tenant_id) DO UPDATE SET packagerate = EXCLUDED.packagerate", (p_name, p_area, int(p_rate), st.session_state['tenant_id']))
                         st.success("Configured matrix row entry.")
                         st.cache_data.clear(); st.rerun()
             
@@ -1192,7 +1203,7 @@ elif routing_node == "📱 Client Portal":
             st.markdown(f"""
                 <div class="client-card" style="border: 2px solid #3b82f6;">
                     <h2 style="color:#3b82f6; text-align:center; font-weight:bold;">📄 DIGITAL BILL & QUOTATION</h2>
-                    <p style="text-align:center; color:#9ca3af; font-size:13px;">Provider: {t_meta["name"]} | Helpline: {t_meta["phone"]}</p>
+                    <p style="text-align:center; color:#9ca3af; font-size:13px;">Provider: {html.escape(str(t_meta["name"]))} | Helpline: {html.escape(str(t_meta["phone"]))}</p>
                     <hr style="border: 1px solid #374151;">
                     <h3 style="color:#10b981; margin-top:15px;">👤 Account ID: {html.escape(str(c_dict.get('username','')))}</h3>
                     <p><b>CUSTOMER NAME:</b> {html.escape(str(c_dict.get('customername','')))}</p>
@@ -1200,7 +1211,7 @@ elif routing_node == "📱 Client Portal":
                     <p><b>ACTIVE PLAN:</b> {html.escape(str(c_dict.get('package','')))}</p>
                     <p><b>MONTHLY CHARGES:</b> Rs. {bill_amt_val:,}</p>
                     <p style="color:#f43f5e; font-weight:bold;"><b>OUTSTANDING ARREARS:</b> Rs. {balance_shift_val:,}</p>
-                    <p style="color:#10b981; font-weight:bold;"><b>LINE EXPIRY DATE:</b> {c_dict.get('expirydate')}</p>
+                    <p style="color:#10b981; font-weight:bold;"><b>LINE EXPIRY DATE:</b> {html.escape(str(c_dict.get('expirydate','')))}</p>
                 </div>
             """, unsafe_allow_html=True)
         st.markdown(f"<div class='saas-footer'>Distributed & Licensed by: <b>{DISTRIBUTOR_NAME}</b></div>", unsafe_allow_html=True)
