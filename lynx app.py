@@ -59,7 +59,7 @@ GLOBAL_TARGET_ORDER = [
 try:
     DB_URL = st.secrets["DB_URL"]
 except Exception:
-    DB_URL = "postgresql://postgres.snbmurjcggthdvxyxyrd:DlLaglY98SkOzDq2@aws-1-ap-southeast-1.pooler.southeast-1.pooler.southeast-1.pooler.southeast-1.pooler.supabase.com:6543/postgres?sslmode=require"
+    DB_URL = "postgresql://postgres.snbmurjcggthdvxyxyrd:DlLaglY98SkOzDq2@aws-1-ap-southeast-1.pooler.southeast-1.pooler.southeast-1.pooler.supabase.com:6543/postgres?sslmode=require"
 
 @st.cache_resource
 def init_connection_pool():
@@ -92,11 +92,13 @@ def verify_password(password: str, hashed_password: str) -> bool:
     except Exception:
         return False
 
-# Master Schema Engine with Multi-Tenant Security Layers
+# ==========================================
+# 🛑 AUTO-REPAIR MULTI-TENANT SCHEMA ENGINE (v67.1 FIXED)
+# ==========================================
 def build_database_schema():
     with get_db_connection() as conn:
         with conn.cursor() as cursor:
-            # 1. Tenants Master Control Table
+            # 1. Create Tenants Master Control Table safely
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS system_tenants (
                     tenant_id TEXT PRIMARY KEY,
@@ -108,7 +110,18 @@ def build_database_schema():
                 )
             """)
             
-            # 2. Core Users Table
+            # 2. Check and Alter 'users' table column safe patch
+            cursor.execute("""
+                SELECT column_name FROM information_schema.columns 
+                WHERE table_name='users' AND column_name='tenant_id'
+            """)
+            if not cursor.fetchone():
+                cursor.execute("ALTER TABLE users ADD COLUMN tenant_id TEXT DEFAULT 'lynx'")
+                try:
+                    cursor.execute("ALTER TABLE users DROP CONSTRAINT IF EXISTS users_pkey")
+                except Exception:
+                    pass
+            
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS users (
                     username TEXT NOT NULL, 
@@ -120,16 +133,18 @@ def build_database_schema():
                 )
             """)
             
-            # 3. Areas Table
+            # 3. Patching 'customers' table structures safely
             cursor.execute("""
-                CREATE TABLE IF NOT EXISTS areas (
-                    areaname TEXT NOT NULL,
-                    tenant_id TEXT NOT NULL DEFAULT 'lynx',
-                    PRIMARY KEY (areaname, tenant_id)
-                )
+                SELECT column_name FROM information_schema.columns 
+                WHERE table_name='customers' AND column_name='tenant_id'
             """)
+            if not cursor.fetchone():
+                cursor.execute("ALTER TABLE customers ADD COLUMN tenant_id TEXT DEFAULT 'lynx'")
+                try:
+                    cursor.execute("ALTER TABLE customers DROP CONSTRAINT IF EXISTS customers_pkey")
+                except Exception:
+                    pass
             
-            # 4. Customers Isolation Table
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS customers (
                     username TEXT NOT NULL, customername TEXT NOT NULL, phone TEXT NOT NULL,
@@ -141,7 +156,38 @@ def build_database_schema():
                 )
             """)
             
-            # 5. Packages Matrix Table
+            # 4. Patching 'areas' table structures safely
+            cursor.execute("""
+                SELECT column_name FROM information_schema.columns 
+                WHERE table_name='areas' AND column_name='tenant_id'
+            """)
+            if not cursor.fetchone():
+                cursor.execute("ALTER TABLE areas ADD COLUMN tenant_id TEXT DEFAULT 'lynx'")
+                try:
+                    cursor.execute("ALTER TABLE areas DROP CONSTRAINT IF EXISTS areas_pkey")
+                except Exception:
+                    pass
+
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS areas (
+                    areaname TEXT NOT NULL,
+                    tenant_id TEXT NOT NULL DEFAULT 'lynx',
+                    PRIMARY KEY (areaname, tenant_id)
+                )
+            """)
+            
+            # 5. Patching 'packages' table structures safely
+            cursor.execute("""
+                SELECT column_name FROM information_schema.columns 
+                WHERE table_name='packages' AND column_name='tenant_id'
+            """)
+            if not cursor.fetchone():
+                cursor.execute("ALTER TABLE packages ADD COLUMN tenant_id TEXT DEFAULT 'lynx'")
+                try:
+                    cursor.execute("ALTER TABLE packages DROP CONSTRAINT IF EXISTS packages_pkey")
+                except Exception:
+                    pass
+
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS packages (
                     packagename TEXT NOT NULL, areaname TEXT NOT NULL, packagerate INTEGER NOT NULL CHECK(packagerate >= 0),
@@ -150,7 +196,14 @@ def build_database_schema():
                 )
             """)
             
-            # 6. Billing History Audit Table
+            # 6. Patching 'billing_history' table structures safely
+            cursor.execute("""
+                SELECT column_name FROM information_schema.columns 
+                WHERE table_name='billing_history' AND column_name='tenant_id'
+            """)
+            if not cursor.fetchone():
+                cursor.execute("ALTER TABLE billing_history ADD COLUMN tenant_id TEXT DEFAULT 'lynx'")
+
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS billing_history (
                     invoiceid TEXT PRIMARY KEY, customerid TEXT NOT NULL, customername TEXT NOT NULL, area TEXT NOT NULL,
@@ -160,20 +213,20 @@ def build_database_schema():
                 )
             """)
             
-            # Seed Lynx Master Tenant if missing
+            # Seed Default Core Control Entities
             cursor.execute("SELECT COUNT(*) FROM system_tenants WHERE tenant_id = 'lynx'")
             if cursor.fetchone()[0] == 0:
                 cursor.execute("""
                     INSERT INTO system_tenants VALUES ('lynx', 'Lynx Fiber Pvt Ltd', '03135776263', 'owner', TRUE, %s)
                 """, (datetime.now().strftime("%Y-%m-%d"),))
                 
-            # Seed Lynx Master Owner Account if missing
             cursor.execute("SELECT COUNT(*) FROM users WHERE username = 'owner' AND tenant_id = 'lynx'")
             if cursor.fetchone()[0] == 0:
                 cursor.execute("INSERT INTO users VALUES ('owner', %s, 'Owner', 'ALL', 'lynx')", (hash_password('lynxowner123'),))
                 
         conn.commit()
 
+# Run the fixed database engine configuration
 build_database_schema()
 
 # ==========================================
@@ -362,7 +415,6 @@ else:
                         user_match = cursor.fetchone()
                     
                 if user_match and verify_password(pass_input, user_match[3]):
-                    # Validate tenant license activity state explicitly
                     t_meta = fetch_active_tenant_metadata(input_tenant)
                     if not t_meta["active"]:
                         st.error("⚠️ This system access instance is locked by the main distributor.")
@@ -397,35 +449,30 @@ else:
                 
                 if st.form_submit_button("➕ SUBMIT ACTIVATION APP PROPOSAL"):
                     if not reg_tenant_id or not reg_company_name or not reg_owner_user or not reg_owner_pass:
-                        st.error("❌ Tamam mandatory structural fields fill karna lazmi hain.")
+                        st.error("❌ Tamam mandatory fields fill karna lazmi hain.")
                     elif len(reg_tenant_id) < 3:
                         st.error("❌ Tenant Code kam se kam 3 harf ka hona chahiye.")
                     else:
                         try:
                             with get_db_connection() as conn:
                                 with conn.cursor() as cursor:
-                                    # Check collision matrix
                                     cursor.execute("SELECT COUNT(*) FROM system_tenants WHERE tenant_id = %s", (reg_tenant_id,))
                                     if cursor.fetchone()[0] > 0:
                                         st.error("❌ Yeh Tenant Code pehle se taken hai. Koi aur code chunein.")
                                     else:
-                                        # Inject pending application state into system_tenants
                                         cursor.execute("""
                                             INSERT INTO system_tenants (tenant_id, company_name, support_phone, owner_username, license_active, registration_date)
                                             VALUES (%s, %s, %s, %s, FALSE, %s)
                                         """, (reg_tenant_id, reg_company_name, reg_support_phone, reg_owner_user, datetime.now().strftime("%Y-%m-%d")))
                                         
-                                        # Inject Master User node for that tenant scope
                                         cursor.execute("""
                                             INSERT INTO users (username, password, role, assignedarea, tenant_id)
                                             VALUES (%s, %s, 'Owner', 'ALL', %s)
                                         """, (reg_owner_user, hash_password(reg_owner_pass), reg_tenant_id))
                                         
                                         conn.commit()
-                                        
                                         st.success("🎉 Registration Proposal Saved onto Supabase Ledger Engine!")
                                         
-                                        # Trigger Hidden Activation Alert Dispatches
                                         alert_payload = f"🔒 LYNX SAAS LICENSE ALERT:\nNew enterprise system activation initiated.\nTenant ID: {reg_tenant_id}\nISP Company: {reg_company_name}\nHelpline Ref: {reg_support_phone}\nStatus: Verification Needed."
                                         encoded_msg = urllib.parse.quote(alert_payload)
                                         
@@ -482,7 +529,7 @@ if routing_node == "📊 Core Analytics Dashboard":
         cards_display_areas = [a for a in all_system_areas if any(a.lower() == s.lower() for s in st.session_state['assigned_areas'])]
     
     if not all_system_areas:
-        st.info("💡 Database mapping is empty. Configure your dynamic sectors inside System Access Control.")
+        st.info("💡 Database mapping is empty. Configure your sectors inside System Access Control.")
     elif df_matrix.empty:
         st.warning("⚠️ Operational Database is currently empty. No subscribers registered.")
     else:
@@ -693,7 +740,6 @@ elif routing_node == "👥 Operational Billing Center":
                         else:
                             with get_db_connection() as conn:
                                 with conn.cursor() as cursor:
-                                    # Scope duplication checks within this specific tenant boundary
                                     cursor.execute("SELECT COUNT(*) FROM customers WHERE username = %s AND tenant_id = %s", (in_id, st.session_state['tenant_id']))
                                     if cursor.fetchone()[0] > 0:
                                         st.error("❌ Identity Key / Username duplicate inside your tenant logs.")
@@ -798,7 +844,7 @@ elif routing_node == "🔐 System Access Control":
             "🛠️ Core Structural Destruct Engine"
         ])
 
-        # TAB 0: LYNX EXCLUSIVE MASTER PROPOSAL REGISTRY AND ACTIVATION KEYS CONTROL
+        # TAB 0: LYNX EXCLUSIVE MASTER COMMAND HUB
         if st.session_state['tenant_id'] == 'lynx':
             with adm_tabs[0]:
                 st.markdown("### 👑 LYNX MASTER ENTERPRISE DISTRIBUTOR COMMAND HUB")
