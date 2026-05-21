@@ -38,8 +38,6 @@ if 'current_node' not in st.session_state:
     st.session_state['current_node'] = "📊 Core Analytics Dashboard"
 if 'dashboard_filter' not in st.session_state:
     st.session_state['dashboard_filter'] = "ALL"
-if 'dashboard_filter' not in st.session_state:
-    st.session_state['dashboard_filter'] = "ALL"
 if 'portal_mode' not in st.session_state:
     st.session_state['portal_mode'] = False
 if 'column_order' not in st.session_state:
@@ -368,8 +366,12 @@ if routing_node == "📊 Core Analytics Dashboard":
     df_matrix = fetch_live_matrix()
     all_system_areas = fetch_active_areas()
     
+    # [BUG FIX 1] If staff is logged in, restrict system node view loops to ONLY their assigned area
+    if st.session_state['assigned_area'] != "ALL":
+        all_system_areas = [a for a in all_system_areas if a.lower() == st.session_state['assigned_area'].lower()]
+    
     if df_matrix.empty:
-        st.warning("⚠️ Operational Database is currently empty. Please go to Operations Center to load fresh clients.")
+        st.warning("⚠️ Operational Database is currently empty.")
     else:
         collection_map = fetch_current_month_billing_summary()
             
@@ -511,6 +513,7 @@ elif routing_node == "👥 Operational Billing Center":
     all_system_areas = fetch_active_areas()
     is_admin = (st.session_state['user_role'] == "Admin")
     
+    # Ensure dataframe mapping aligns instantly
     if st.session_state['assigned_area'] != "ALL":
         df_matrix = df_matrix[df_matrix['area'].str.lower() == st.session_state['assigned_area'].lower()]
         
@@ -635,7 +638,6 @@ elif routing_node == "👥 Operational Billing Center":
                     
                     if st.button(f"⚡ Save All {total_rows_found} Sheet Records to Live Database", use_container_width=True):
                         success_count, update_count, skip_count = 0, 0, 0
-                        error_logs = []
                         default_expiry = (datetime.now() + timedelta(days=30)).strftime("%Y-%m-%d")
                         default_pkg = list(pkg_dict.keys())[0] if pkg_dict else "15 Mbps Fiber"
                         default_area = all_system_areas[0] if all_system_areas else "Sanghoi System"
@@ -665,7 +667,7 @@ elif routing_node == "👥 Operational Billing Center":
                                             
                                         cphone = clean_and_validate_phone(raw_phone)
                                         if not cphone:
-                                            skip_count += 1; error_logs.append(f"Row {index+2} (User: {uid}): Phone empty."); cursor.execute(f"RELEASE SAVEPOINT {savepoint_id}"); continue
+                                            skip_count += 1; cursor.execute(f"RELEASE SAVEPOINT {savepoint_id}"); continue
                                             
                                         raw_rate = get_excel_val(['billamount', 'rate', 'bill', 'amount', 'charges'])
                                         clean_rate = re.sub(r"[^\d]", "", raw_rate)
@@ -685,14 +687,14 @@ elif routing_node == "👥 Operational Billing Center":
                                         if cursor.fetchone()[0]: success_count += 1
                                         else: update_count += 1
                                         cursor.execute(f"RELEASE SAVEPOINT {savepoint_id}")
-                                    except Exception as ex:
+                                    except Exception:
                                         cursor.execute(f"ROLLBACK TO SAVEPOINT {savepoint_id}"); skip_count += 1; continue
                                 conn.commit()
                         st.success("🎉 **Excel file data kamyabi se upload aur live database mein safe ho chuka hai!**")
                         st.cache_data.clear(); st.rerun()
                 except Exception as e: st.error(f"❌ Mapping Error: {e}")
 
-    # FIXED TAB IDENTIFICATION FOR BOTH ROLES
+    # TAB: Edit Terminal Profile
     with tabs[-1]:
         if not sub_map: st.info("No active terminals.")
         else:
@@ -707,7 +709,13 @@ elif routing_node == "👥 Operational Billing Center":
                     up_cnic = st.text_input("Update CNIC Number", value=edit_row_dict.get('cnic', ''))
                     up_address = st.text_input("Update Address", value=edit_row_dict.get('address', ''))
                     up_sn = st.text_input("Update Onu SN", value=edit_row_dict.get('onuserialnumber', ''))
-                    up_area = st.selectbox("System Area Hub", all_system_areas, index=all_system_areas.index(edit_row_dict.get('area')) if edit_row_dict.get('area') in all_system_areas else 0)
+                    
+                    # [BUG FIX 2] Restrict Area Selection list for Staff User to prevent them from modifying cross-system hubs
+                    if is_admin:
+                        up_area = st.selectbox("System Area Hub", all_system_areas, index=all_system_areas.index(edit_row_dict.get('area')) if edit_row_dict.get('area') in all_system_areas else 0)
+                    else:
+                        st.text_input("System Area Hub (Locked)", value=st.session_state['assigned_area'], disabled=True)
+                        up_area = st.session_state['assigned_area']
                     
                     try:
                         parsed_bill_amt = int(float(edit_row_dict.get('billamount', 0)))
@@ -825,10 +833,10 @@ elif routing_node == "🔐 System Access Control":
                 if st.button("🚨 FORCE CLEAN & PURGE LIVE DATABASE STRUCTURE", use_container_width=True):
                     st.session_state['purge_requested'] = True; st.rerun()
             else:
-                purge_password = st.text_input("تصدیق کے لیے اپنا ایڈمن پاسورڈ درج کریں (Enter Admin Password to Confirm)", type="password")
+                purge_password = st.text_input("Enter Admin Password to Confirm", type="password")
                 col_purge1, col_purge2 = st.columns(2)
                 with col_purge1:
-                    if st.button("✅ پاسورڈ کی تصدیق کریں اور ڈیٹا اڑائیں", use_container_width=True):
+                    if st.button("✅ Verify & Wipe Data", use_container_width=True):
                         with get_db_connection() as conn:
                             with conn.cursor() as cursor:
                                 cursor.execute("SELECT password FROM users WHERE username = %s", (st.session_state['username'],))
@@ -841,7 +849,7 @@ elif routing_node == "🔐 System Access Control":
                                         cursor.execute("DROP TABLE IF EXISTS billing_history CASCADE; DROP TABLE IF EXISTS customers CASCADE; DROP TABLE IF EXISTS areas CASCADE; DROP TABLE IF EXISTS packages CASCADE; DROP TABLE IF EXISTS users CASCADE; DROP TABLE IF EXISTS app_settings CASCADE;")
                                         conn.commit()
                                 build_database_schema()
-                                st.success("🚀 System successfully completely reset ho chuka hai!")
+                                st.success("🚀 System successfully reset!")
                                 st.session_state['purge_requested'] = False
                                 st.cache_data.clear()
                                 st.session_state['authenticated'] = False
@@ -850,9 +858,9 @@ elif routing_node == "🔐 System Access Control":
                             except Exception as schema_ex:
                                 st.error(f"❌ Reset Failed: {schema_ex}")
                         else:
-                            st.error("❌ Galat Password! Sirf active Admin hi is structural wipe out ko authorize kar sakta hai.")
+                            st.error("❌ Invalid Password!")
                 with col_purge2:
-                    if st.button("❌ کینسل کریں (Cancel)", use_container_width=True): st.session_state['purge_requested'] = False; st.rerun()
+                    if st.button("❌ Cancel", use_container_width=True): st.session_state['purge_requested'] = False; st.rerun()
 
         with adm_tab2:
             with st.form("new_admin_form"):
@@ -867,7 +875,7 @@ elif routing_node == "🔐 System Access Control":
                                 try: 
                                     cursor.execute("INSERT INTO users VALUES (%s, %s, 'Admin', 'ALL')", (new_admin_user, hash_password(new_admin_pass)))
                                     conn.commit()
-                                    st.success(f"Admin account '{new_admin_user}' ban gaya hai!")
+                                    st.success(f"Admin account '{new_admin_user}' successfully created!")
                                 except Exception as u_ex: 
                                     st.error(f"Error: {u_ex}")
             with st.form("new_staff_form_v50"):
@@ -883,7 +891,7 @@ elif routing_node == "🔐 System Access Control":
                                 try: 
                                     cursor.execute("INSERT INTO users VALUES (%s, %s, 'Staff', %s)", (new_user, hash_password(new_pass), new_area_lock))
                                     conn.commit()
-                                    st.success(f"Staff account '{new_user}' Area '{new_area_lock}' k liye register ho gaya!")
+                                    st.success(f"Staff account '{new_user}' Area '{new_area_lock}' successfully registered!")
                                 except Exception as staff_ex: 
                                     st.error(f"Database Error: {staff_ex}")
 
@@ -902,18 +910,18 @@ elif routing_node == "🔐 System Access Control":
                 fresh_area_name = st.text_input("Enter New Area Name").strip()
                 if st.form_submit_button("➕ REGISTER NEW AREA NODE", use_container_width=True):
                     if not fresh_area_name:
-                        st.error("❌ Area name khali nahi ho sakta!")
+                        st.error("❌ Area name cannot be empty!")
                     else:
                         with get_db_connection() as conn:
                             with conn.cursor() as cursor:
                                 try: 
                                     cursor.execute("INSERT INTO areas VALUES (%s)", (fresh_area_name,))
                                     conn.commit()
-                                    st.success(f"✅ Area '{fresh_area_name}' system mein kamyabi se save ho gaya!")
+                                    st.success(f"✅ Area '{fresh_area_name}' saved successfully!")
                                     st.cache_data.clear()
                                     st.rerun()
                                 except Exception as area_ex: 
-                                    st.error(f"❌ Database Rejected Area Save: {area_ex}")
+                                    st.error(f"❌ Database Error: {area_ex}")
 
         with adm_tab5:
             with st.form("admin_profile_form"):
