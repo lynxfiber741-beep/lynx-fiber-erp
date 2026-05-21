@@ -131,7 +131,6 @@ st.markdown("""
 try:
     DB_URL = st.secrets["DB_URL"]
 except Exception:
-    # UPDATED: Aapki nayi database string password ke sath fix kar di gayi hai
     DB_URL = "postgresql://postgres.snbmurjcggthdvxyxyrd:DlLaglY98SkOzDq2@aws-1-ap-southeast-1.pooler.supabase.com:6543/postgres?sslmode=require"
 
 @contextmanager
@@ -162,6 +161,15 @@ def verify_password(password: str, hashed_password: str) -> bool:
 def build_database_schema():
     with get_db_connection() as conn:
         with conn.cursor() as cursor:
+            # FIX ENGINE: Purane ghalat structure wale tables ko drop kar ke fresh banata hai
+            try:
+                cursor.execute("SELECT areaname FROM areas LIMIT 1;")
+            except Exception:
+                conn.rollback()
+                cursor.execute("DROP TABLE IF EXISTS customers CASCADE;")
+                cursor.execute("DROP TABLE IF EXISTS areas CASCADE;")
+                conn.commit()
+            
             cursor.execute("CREATE TABLE IF NOT EXISTS areas (areaname TEXT PRIMARY KEY)")
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS customers (
@@ -324,7 +332,7 @@ if st.session_state['authenticated'] and not st.session_state['portal_mode']:
             st.session_state['current_node'] = "👥 Operational Billing Center"; st.rerun()
         if st.button("📜 Lifetime Ledger History", use_container_width=True):
             st.session_state['current_node'] = "📜 Lifetime Ledger History"; st.rerun()
-        if st.session_state['user_role'] == "Admin" and st.button("🔐 System Access Control", use_container_width=True):
+        if st.button("🔐 System Access Control", use_container_width=True):
             st.session_state['current_node'] = "🔐 System Access Control"; st.rerun()
             
         st.write("---")
