@@ -24,7 +24,7 @@ except ImportError:
     REPORTLAB_AVAILABLE = False
 
 # ==========================================
-# 1. PERMANENT SESSION ENGINE (WITH AREA BINDING)
+# 1. PERMANENT SESSION ENGINE (WITH MULTI-AREA BINDING)
 # ==========================================
 if 'authenticated' not in st.session_state:
     st.session_state['authenticated'] = False
@@ -32,8 +32,8 @@ if 'user_role' not in st.session_state:
     st.session_state['user_role'] = None
 if 'username' not in st.session_state:
     st.session_state['username'] = ""
-if 'assigned_area' not in st.session_state:
-    st.session_state['assigned_area'] = "ALL"
+if 'assigned_areas' not in st.session_state:
+    st.session_state['assigned_areas'] = []  # List format for multiple areas
 if 'current_node' not in st.session_state:
     st.session_state['current_node'] = "📊 Core Analytics Dashboard"
 if 'dashboard_filter' not in st.session_state:
@@ -52,7 +52,7 @@ GLOBAL_TARGET_ORDER = [
 # 2. CORE THEME & PREMIUM MOBILE CSS ENGINE
 # ==========================================
 st.set_page_config(
-    page_title="LYNX Fiber Enterprise ERP v54.3", 
+    page_title="LYNX Fiber Enterprise ERP v55.0", 
     layout="wide",
     initial_sidebar_state="expanded"
 )
@@ -126,7 +126,7 @@ st.markdown("""
     """, unsafe_allow_html=True)
 
 # ==========================================
-# 3. DIRECT DATABASE ENGINE (OPTIMIZED POOLING WITH TIMEOUTS)
+# 3. DIRECT DATABASE ENGINE
 # ==========================================
 try:
     DB_URL = st.secrets["DB_URL"]
@@ -307,7 +307,7 @@ else:
     if not st.session_state['authenticated']:
         st.markdown("<div class='front-login-box'>", unsafe_allow_html=True)
         st.markdown("<h2 style='text-align:center; color:#10b981; font-weight:900; margin-bottom:5px;'>LYNX FIBER NET</h2>", unsafe_allow_html=True)
-        st.markdown("<p style='text-align:center; color:#9ca3af; margin-bottom:30px;'>Enterprise ERP System v54.3 (Cloud Master Mode)</p>", unsafe_allow_html=True)
+        st.markdown("<p style='text-align:center; color:#9ca3af; margin-bottom:30px;'>Enterprise ERP System v55.0 (Multi-Area Mode)</p>", unsafe_allow_html=True)
         
         user_input = (st.text_input("Username Key", key="front_user") or "").strip().lower()
         pass_input = st.text_input("Security Password", type="password", key="front_pass")
@@ -322,7 +322,14 @@ else:
                 st.session_state['authenticated'] = True
                 st.session_state['user_role'] = user_match[0]
                 st.session_state['username'] = user_match[1]
-                st.session_state['assigned_area'] = user_match[2] if user_match[2] else "ALL"
+                
+                # MODIFICATION: Convert comma-separated text into a clean Python list
+                raw_areas = user_match[2] if user_match[2] else "ALL"
+                if raw_areas == "ALL":
+                    st.session_state['assigned_areas'] = ["ALL"]
+                else:
+                    st.session_state['assigned_areas'] = [a.strip() for a in raw_areas.split(",") if a.strip()]
+                    
                 st.session_state['current_node'] = "📊 Core Analytics Dashboard"
                 st.cache_data.clear()
                 st.rerun()
@@ -351,10 +358,10 @@ if st.session_state['authenticated'] and not st.session_state['portal_mode']:
             st.session_state['current_node'] = "🔐 System Access Control"; st.rerun()
             
         st.write("---")
-        area_display = "All Systems" if st.session_state['assigned_area'] == "ALL" else st.session_state['assigned_area']
-        st.markdown(f"<p style='text-align:center; color:#9ca3af;'>👤 Active: <b>{st.session_state['username'].upper()}</b><br>📍 Area: {area_display}</p>", unsafe_allow_html=True)
+        area_display = "All Systems" if "ALL" in st.session_state['assigned_areas'] else ", ".join(st.session_state['assigned_areas'])
+        st.markdown(f"<p style='text-align:center; color:#9ca3af;'>👤 Active: <b>{st.session_state['username'].upper()}</b><br>📍 Assigned Areas:<br><span style='color:#60a5fa; font-size:12px;'><b>{area_display}</b></span></p>", unsafe_allow_html=True)
         if st.button("🔒 Logout System", use_container_width=True):
-            st.session_state['authenticated'] = False; st.session_state['user_role'] = None; st.session_state['assigned_area'] = "ALL"
+            st.session_state['authenticated'] = False; st.session_state['user_role'] = None; st.session_state['assigned_areas'] = []
             st.session_state['current_node'] = "📊 Core Analytics Dashboard"; st.rerun()
 
 # ==========================================
@@ -366,9 +373,9 @@ if routing_node == "📊 Core Analytics Dashboard":
     df_matrix = fetch_live_matrix()
     all_system_areas = fetch_active_areas()
     
-    # [BUG FIX 1] If staff is logged in, restrict system node view loops to ONLY their assigned area
-    if st.session_state['assigned_area'] != "ALL":
-        all_system_areas = [a for a in all_system_areas if a.lower() == st.session_state['assigned_area'].lower()]
+    # MODIFICATION: Dynamic multi-area mapping filter for Dashboard loop
+    if "ALL" not in st.session_state['assigned_areas']:
+        all_system_areas = [a for a in all_system_areas if any(a.lower() == s.lower() for s in st.session_state['assigned_areas'])]
     
     if df_matrix.empty:
         st.warning("⚠️ Operational Database is currently empty.")
@@ -411,9 +418,16 @@ if routing_node == "📊 Core Analytics Dashboard":
                         
         st.write("---")
         base_df = df_matrix.copy()
-        if st.session_state['assigned_area'] != "ALL":
-            base_df = base_df[base_df['area'].str.lower() == st.session_state['assigned_area'].lower()]
-            st.info(f"🔒 Secure Mode: Only showing data for **{st.session_state['assigned_area']}**")
+        
+        # MODIFICATION: Strictly filter table results for multiple assigned areas
+        if "ALL" not in st.session_state['assigned_areas']:
+            base_df = base_df[base_df['area'].str.lower().isin([s.lower() for s in st.session_state['assigned_areas']])]
+            st.info(f"🔒 Secure Mode: Only showing your assigned systems: **{', '.join(st.session_state['assigned_areas'])}**")
+            
+            filter_options = ["ALL ASSIGNED SYSTEMS"] + all_system_areas
+            system_filter = st.selectbox("🌐 Operational Area System Filter", filter_options)
+            if system_filter != "ALL ASSIGNED SYSTEMS":
+                base_df = base_df[base_df['area'].str.lower() == system_filter.lower()]
         else:
             filter_options = ["ALL SYSTEMS"] + all_system_areas
             system_filter = st.selectbox("🌐 Operational Area System Filter", filter_options)
@@ -513,9 +527,9 @@ elif routing_node == "👥 Operational Billing Center":
     all_system_areas = fetch_active_areas()
     is_admin = (st.session_state['user_role'] == "Admin")
     
-    # Ensure dataframe mapping aligns instantly
-    if st.session_state['assigned_area'] != "ALL":
-        df_matrix = df_matrix[df_matrix['area'].str.lower() == st.session_state['assigned_area'].lower()]
+    # MODIFICATION: Multi-area mapping data lock for transactional sheets
+    if "ALL" not in st.session_state['assigned_areas']:
+        df_matrix = df_matrix[df_matrix['area'].str.lower().isin([s.lower() for s in st.session_state['assigned_areas']])]
         
     tabs_list = ["💳 Capital Collection Hub", "🛠️ Edit Terminal Profile"]
     if is_admin:
@@ -535,7 +549,7 @@ elif routing_node == "👥 Operational Billing Center":
     # TAB: Capital Collection Hub
     with tabs[0]:
         if not sub_map: 
-            st.info("No active subscriber nodes found for your system area.")
+            st.info("No active subscriber nodes found for your assigned area system.")
         else:
             target_label = st.selectbox("Select Target Subscriber Username", list(sub_map.keys()))
             resolved_uid = sub_map[target_label]
@@ -690,13 +704,13 @@ elif routing_node == "👥 Operational Billing Center":
                                     except Exception:
                                         cursor.execute(f"ROLLBACK TO SAVEPOINT {savepoint_id}"); skip_count += 1; continue
                                 conn.commit()
-                        st.success("🎉 **Excel file data kamyabi se upload aur live database mein safe ho chuka hai!**")
+                        st.success("🎉 **Excel file data upload completed.**")
                         st.cache_data.clear(); st.rerun()
                 except Exception as e: st.error(f"❌ Mapping Error: {e}")
 
     # TAB: Edit Terminal Profile
     with tabs[-1]:
-        if not sub_map: st.info("No active terminals.")
+        if not sub_map: st.info("No active terminals inside your authorized node scope.")
         else:
             edit_target = st.selectbox("Select Target Username to Modify", list(sub_map.keys()), key="edit_tgt_box")
             edit_matched = df_matrix[df_matrix['username'] == sub_map[edit_target]]
@@ -710,12 +724,12 @@ elif routing_node == "👥 Operational Billing Center":
                     up_address = st.text_input("Update Address", value=edit_row_dict.get('address', ''))
                     up_sn = st.text_input("Update Onu SN", value=edit_row_dict.get('onuserialnumber', ''))
                     
-                    # [BUG FIX 2] Restrict Area Selection list for Staff User to prevent them from modifying cross-system hubs
+                    # MODIFICATION: Dropdown filters dynamically depending on multi-assigned staff profile
                     if is_admin:
                         up_area = st.selectbox("System Area Hub", all_system_areas, index=all_system_areas.index(edit_row_dict.get('area')) if edit_row_dict.get('area') in all_system_areas else 0)
                     else:
-                        st.text_input("System Area Hub (Locked)", value=st.session_state['assigned_area'], disabled=True)
-                        up_area = st.session_state['assigned_area']
+                        staff_allowed_options = [a for a in all_system_areas if any(a.lower() == s.lower() for s in st.session_state['assigned_areas'])]
+                        up_area = st.selectbox("System Area Hub", staff_allowed_options, index=staff_allowed_options.index(edit_row_dict.get('area')) if edit_row_dict.get('area') in staff_allowed_options else 0)
                     
                     try:
                         parsed_bill_amt = int(float(edit_row_dict.get('billamount', 0)))
@@ -776,14 +790,15 @@ elif routing_node == "📜 Lifetime Ledger History":
         df_ledger['Month'] = df_ledger['datetime'].dt.strftime('%Y-%m')
         df_ledger['Year'] = df_ledger['datetime'].dt.strftime('%Y')
         
-        if st.session_state['assigned_area'] != "ALL":
-            df_ledger = df_ledger[df_ledger['area'].str.lower() == st.session_state['assigned_area'].lower()]
-            sel_area = st.session_state['assigned_area']
+        # MODIFICATION: Multi-area string lookup inside ledger database filter
+        if "ALL" not in st.session_state['assigned_areas']:
+            df_ledger = df_ledger[df_ledger['area'].str.lower().isin([s.lower() for s in st.session_state['assigned_areas']])]
+            sel_area = "ALL ASSIGNED AREAS"
         else:
             sel_area = st.selectbox("🌐 Choose Target Area Filter", ["ALL AREAS"] + all_system_areas)
             
         filtered_ledger = df_ledger.copy()
-        if sel_area != "ALL AREAS" and st.session_state['assigned_area'] == "ALL":
+        if sel_area != "ALL AREAS" and sel_area != "ALL ASSIGNED AREAS" and "ALL" in st.session_state['assigned_areas']:
             filtered_ledger = filtered_ledger[filtered_ledger['area'].str.lower() == sel_area.lower()]
             
         st.markdown("### 📊 Enterprise Financial Graphs Overview")
@@ -849,7 +864,7 @@ elif routing_node == "🔐 System Access Control":
                                         cursor.execute("DROP TABLE IF EXISTS billing_history CASCADE; DROP TABLE IF EXISTS customers CASCADE; DROP TABLE IF EXISTS areas CASCADE; DROP TABLE IF EXISTS packages CASCADE; DROP TABLE IF EXISTS users CASCADE; DROP TABLE IF EXISTS app_settings CASCADE;")
                                         conn.commit()
                                 build_database_schema()
-                                st.success("🚀 System successfully reset!")
+                                st.success("🚀 System reset successfully!")
                                 st.session_state['purge_requested'] = False
                                 st.cache_data.clear()
                                 st.session_state['authenticated'] = False
@@ -878,20 +893,24 @@ elif routing_node == "🔐 System Access Control":
                                     st.success(f"Admin account '{new_admin_user}' successfully created!")
                                 except Exception as u_ex: 
                                     st.error(f"Error: {u_ex}")
+                                    
+            # MODIFICATION: Changed Single-Select to st.multiselect to allow multiple area allocation for staff
             with st.form("new_staff_form_v50"):
                 new_user = st.text_input("New Staff Username").strip().lower()
                 new_pass = st.text_input("New Staff Password", type="password").strip()
-                new_area_lock = st.selectbox("Assign & Lock System Area", all_system_areas)
-                if st.form_submit_button("🚀 Add Staff Account & Lock Area", use_container_width=True):
-                    if not new_user or not new_pass:
-                        st.error("Fields cannot be empty!")
+                new_areas_lock = st.multiselect("Assign & Lock System Areas (Select Multiples)", all_system_areas)
+                
+                if st.form_submit_button("🚀 Add Staff Account & Lock Selected Areas", use_container_width=True):
+                    if not new_user or not new_pass or not new_areas_lock:
+                        st.error("❌ Form fields or Area selections cannot be left empty!")
                     else:
+                        comma_separated_areas = ", ".join(new_areas_lock)
                         with get_db_connection() as conn:
                             with conn.cursor() as cursor:
                                 try: 
-                                    cursor.execute("INSERT INTO users VALUES (%s, %s, 'Staff', %s)", (new_user, hash_password(new_pass), new_area_lock))
+                                    cursor.execute("INSERT INTO users VALUES (%s, %s, 'Staff', %s)", (new_user, hash_password(new_pass), comma_separated_areas))
                                     conn.commit()
-                                    st.success(f"Staff account '{new_user}' Area '{new_area_lock}' successfully registered!")
+                                    st.success(f"Staff account '{new_user}' registered successfully for areas: {comma_separated_areas}")
                                 except Exception as staff_ex: 
                                     st.error(f"Database Error: {staff_ex}")
 
