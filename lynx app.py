@@ -29,7 +29,7 @@ from reportlab.lib.enums import TA_CENTER
 # ==========================================
 DISTRIBUTOR_NAME = "Lynx Fiber Internet"
 MASTER_NOTIFY_NUMBERS = ["03215943786", "03118808741"]
-GENERIC_TEXT = "Lynx Fiber Internet"  # Fixed missing global declaration bug completely
+GENERIC_TEXT = "Lynx Fiber Internet"  
 
 # ==========================================
 # 1. CORE CONFIGURATION & SESSION STATE
@@ -155,14 +155,12 @@ def generate_receipt_pdf(company_name, phone_ref, inv_id, c_id, c_name, area, pa
 # 3. AUTO-REPAIR MULTI-TENANT SCHEMA ENGINE
 # ==========================================
 def safe_migrate_table_constraints(cursor, table_name, columns_dict, pk_columns):
-    # Dynamic sanitization logic to inject schema parameters cleanly
     for col_name, col_type in columns_dict.items():
         cursor.execute("""
             SELECT column_name FROM information_schema.columns 
             WHERE table_schema = 'public' AND table_name=%s AND column_name=%s
         """, (table_name, col_name))
         if not cursor.fetchone():
-            # Injecting type safely without formatting injection risk
             if "CHECK" in col_type:
                 base_type = col_type.split("CHECK")[0].strip()
                 check_condition = "CHECK" + col_type.split("CHECK")[1]
@@ -194,6 +192,7 @@ def safe_migrate_table_constraints(cursor, table_name, columns_dict, pk_columns)
 def build_database_schema():
     with get_db_connection() as conn:
         with conn.cursor() as cursor:
+            # Table definitions directly containing license_expiry_date to avoid transactional race-conditions
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS system_tenants (
                     tenant_id TEXT PRIMARY KEY,
@@ -201,7 +200,8 @@ def build_database_schema():
                     support_phone TEXT NOT NULL,
                     owner_username TEXT NOT NULL,
                     license_active BOOLEAN DEFAULT FALSE,
-                    registration_date TEXT NOT NULL
+                    registration_date TEXT NOT NULL,
+                    license_expiry_date TEXT NOT NULL DEFAULT ''
                 )
             """)
             safe_migrate_table_constraints(cursor, 'system_tenants', {
