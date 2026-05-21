@@ -46,7 +46,7 @@ GLOBAL_TARGET_ORDER = [
 ]
 
 st.set_page_config(
-    page_title="LYNX Fiber Enterprise ERP v63.0", 
+    page_title="LYNX Fiber Enterprise ERP v64.0", 
     layout="wide",
     initial_sidebar_state="expanded"
 )
@@ -291,7 +291,7 @@ else:
     if not st.session_state['authenticated']:
         st.markdown("<div class='front-login-box'>", unsafe_allow_html=True)
         st.markdown("<h2 style='text-align:center; color:#10b981; font-weight:900; margin-bottom:5px;'>LYNX FIBER NET</h2>", unsafe_allow_html=True)
-        st.markdown("<p style='text-align:center; color:#9ca3af; margin-bottom:30px;'>Enterprise ERP System v63.0</p>", unsafe_allow_html=True)
+        st.markdown("<p style='text-align:center; color:#9ca3af; margin-bottom:30px;'>Enterprise ERP System v64.0</p>", unsafe_allow_html=True)
         
         user_input = (st.text_input("Username Key", key="front_user") or "").strip().lower()
         pass_input = st.text_input("Security Password", type="password", key="front_pass")
@@ -495,7 +495,7 @@ elif routing_node == "👥 Operational Billing Center":
             uid = row_dict.get('username')
             if pd.notna(uid): sub_map[f"[{uid}] - {row_dict.get('customername', '')}"] = uid
 
-    # TAB 1: Collection Cash Postings
+    # TAB 1: Collection Cash Postings (WITH ADVANCE & LATE AUTOMATIC DATE ALGORITHM)
     with tabs[0]:
         if not sub_map: st.info("No subscribers found.")
         else:
@@ -503,7 +503,7 @@ elif routing_node == "👥 Operational Billing Center":
             resolved_uid = sub_map[target_label]
             node_row_dict = df_matrix[df_matrix['username'] == resolved_uid].iloc[0].to_dict()
             
-            st.info(f"📊 Rate: Rs. {node_row_dict.get('billamount')} | Arrears: Rs. {node_row_dict.get('balanceshift')}")
+            st.info(f"📊 Rate: Rs. {node_row_dict.get('billamount')} | Arrears: Rs. {node_row_dict.get('balanceshift')} | Current Expiry: {node_row_dict.get('expirydate')}")
             billing_months = st.selectbox("📅 Duration (Advance Months)", [1, 3, 6, 12])
             net_payable = (int(node_row_dict.get('billamount', 0)) * billing_months) + int(node_row_dict.get('balanceshift', 0))
             
@@ -517,7 +517,25 @@ elif routing_node == "👥 Operational Billing Center":
                 if st.form_submit_button("💳 POST TRANSACTION & EXTEND LINE"):
                     future_shift = final_due - cash_in
                     new_state = "PARTIAL" if future_shift > 0 and cash_in > 0 else ("UNPAID" if future_shift > 0 else "PAID")
-                    new_expiry = (datetime.now() + relativedelta(months=billing_months)).strftime("%Y-%m-%d")
+                    
+                    # --- SMART SYSTEM DATE LOCK TIMELINE ENGINE ---
+                    today_dt = datetime.now()
+                    current_expiry_str = str(node_row_dict.get('expirydate', '')).strip()
+                    
+                    try:
+                        old_expiry_dt = datetime.strptime(current_expiry_str, "%Y-%m-%d")
+                        # 3 Months Max Buffer validation to prevent runaway old chains
+                        if old_expiry_dt < (today_dt - relativedelta(months=3)):
+                            base_dt = today_dt
+                        else:
+                            base_dt = old_expiry_dt
+                    except Exception:
+                        base_dt = today_dt
+                    
+                    computed_new_expiry = base_dt + relativedelta(months=billing_months)
+                    new_expiry = computed_new_expiry.strftime("%Y-%m-%d")
+                    # ---------------------------------------------
+                    
                     invoice_uuid = f"INV-{uuid.uuid4().hex[:10].upper()}"
                     
                     with get_db_connection() as conn:
@@ -528,11 +546,11 @@ elif routing_node == "👥 Operational Billing Center":
                                 VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, 'BILL_PAYMENT', %s, %s)
                             """, (invoice_uuid, resolved_uid, node_row_dict.get('customername'), node_row_dict.get('area'), node_row_dict.get('phone'), datetime.now().strftime("%Y-%m-%d %H:%M:%S"), node_row_dict.get('package'), cash_in, future_shift, pay_method, discount))
                         conn.commit()
-                    st.success("🎉 Collection Recorded Cleanly!")
+                    st.success(f"🎉 Collection Recorded Cleanly! Extended Target Lock To: {new_expiry}")
                     st.cache_data.clear(); st.rerun()
 
     if is_management:
-        # TAB 2: PROVISION NEW CLIENT WITH FIXED CURSOR
+        # TAB 2: PROVISION NEW CLIENT WITH EXACT MONTHLY DATE-TO-DATE INTERVAL LOCK
         with tabs[1]:
             if not all_system_areas:
                 st.error("❌ Register an Area Sector inside System Access Controls first.")
@@ -544,7 +562,7 @@ elif routing_node == "👥 Operational Billing Center":
                         cur.execute("SELECT packagename, packagerate FROM packages WHERE areaname = %s", (in_area,))
                         area_pkgs = dict(cur.fetchall())
                 
-                with st.form("add_client_form_v63"):
+                with st.form("add_client_form_v64"):
                     in_id = st.text_input("Desired Unique Username Key").strip().lower()
                     in_name = st.text_input("Customer Full Name").strip()
                     in_phone = st.text_input("Phone Number").strip()
@@ -569,13 +587,14 @@ elif routing_node == "👥 Operational Billing Center":
                         else:
                             with get_db_connection() as conn:
                                 with conn.cursor() as cursor:
-                                    default_expiry = (datetime.now() + timedelta(days=30)).strftime("%Y-%m-%d")
+                                    # Exact date-to-date monthly structural setup rule
+                                    default_expiry = (datetime.now() + relativedelta(months=1)).strftime("%Y-%m-%d")
                                     cursor.execute("""
                                         INSERT INTO customers (username, customername, phone, cnic, package, billamount, area, address, onuserialnumber, balanceshift, status, expirydate)
                                         VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, 0, 'UNPAID', %s)
                                     """, (in_id, in_name, norm_p, in_cnic, chosen_pkg, in_rate, in_area, in_address, in_sn, default_expiry))
                                 conn.commit()
-                            st.success(f"🚀 Profile allocated cleanly for {in_id}!")
+                            st.success(f"🚀 Profile allocated cleanly for {in_id}! Initial Lock Expiry set to {default_expiry}.")
                             st.cache_data.clear(); st.rerun()
 
         # TAB 3: Bulk Import Excel Matrix Engine
@@ -606,7 +625,7 @@ elif routing_node == "👥 Operational Billing Center":
                                         clean_id = str(row['username']).strip().lower()
                                         clean_p = clean_and_validate_phone(str(row['phone']))
                                         clean_rate = int(float(str(row.get('billamount', 1500))))
-                                        default_expiry = (datetime.now() + timedelta(days=30)).strftime("%Y-%m-%d")
+                                        default_expiry = (datetime.now() + relativedelta(months=1)).strftime("%Y-%m-%d")
                                         
                                         cursor.execute("""
                                             INSERT INTO customers (username, customername, phone, cnic, package, billamount, area, address, onuserialnumber, balanceshift, status, expirydate)
@@ -667,7 +686,7 @@ elif routing_node == "📜 Lifetime Ledger History":
         st.dataframe(df_ledger, use_container_width=True)
 
 # ==========================================
-# VIEW 4: SYSTEM ACCESS CONFIGS (WITH REMOVE AREA FEATURE)
+# VIEW 4: SYSTEM ACCESS CONFIGS
 # ==========================================
 elif routing_node == "🔐 System Access Control":
     if st.session_state['user_role'] not in ["Owner", "Admin"]:
@@ -787,11 +806,10 @@ elif routing_node == "🔐 System Access Control":
                         st.success(f"💥 Package '{target_pkg_name}' for Area '{target_area_name}' has been completely removed!")
                         st.cache_data.clear(); st.rerun()
 
-        # TAB 2: DYNAMIC AREA HUBS SECTOR (WITH ADD & NEW DELETE AREA NODE ENGINE)
+        # TAB 2: DYNAMIC AREA HUBS SECTOR (WITH INTEGRATED REMOVE AREA ENGINE)
         with adm_tabs[2]:
             st.markdown("### 🗺️ Sector Node Operations")
             
-            # Form A: Add Area
             with st.form("add_area_sector_form"):
                 st.markdown("#### ➕ Register New Network Hub Location")
                 new_area_name = st.text_input("Enter New Network Location Name (e.g., Bagga, Saeela, Sanghoi)").strip()
@@ -806,7 +824,6 @@ elif routing_node == "🔐 System Access Control":
             
             st.write("---")
             
-            # Form B: INTEGRATED REMOVE AREA ENGINE (FIXED FEATURE)
             st.markdown("#### ❌ Remove Operating Area Hub Node")
             if not all_system_areas:
                 st.info("No active areas registered on the database system to remove.")
@@ -817,7 +834,6 @@ elif routing_node == "🔐 System Access Control":
                     st.warning(f"⚠️ Critical Alert: Removing '{chosen_delete_area}' will wipe out its packages configuration too. Ensure NO users are currently mapped under this area.")
                     
                     if st.form_submit_button("🗑️ PERMANENTLY REMOVE AREA HUB FROM LEDGER"):
-                        # Safety Validation: Check if customers exist in this area
                         with get_db_connection() as conn:
                             with conn.cursor() as cursor:
                                 cursor.execute("SELECT COUNT(*) FROM customers WHERE LOWER(area) = LOWER(%s)", (chosen_delete_area,))
@@ -828,9 +844,7 @@ elif routing_node == "🔐 System Access Control":
                         else:
                             with get_db_connection() as conn:
                                 with conn.cursor() as cursor:
-                                    # 1. Clear out tariff links first to prevent foreign table orphans
                                     cursor.execute("DELETE FROM packages WHERE LOWER(areaname) = LOWER(%s)", (chosen_delete_area,))
-                                    # 2. Drop the core row node
                                     cursor.execute("DELETE FROM areas WHERE LOWER(areaname) = LOWER(%s)", (chosen_delete_area,))
                                 conn.commit()
                             
