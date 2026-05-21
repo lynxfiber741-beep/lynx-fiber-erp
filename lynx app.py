@@ -8,8 +8,8 @@ import uuid
 import html
 import re
 import io
+import os
 import json
-from decimal import Decimal, ROUND_HALF_UP
 from datetime import datetime
 from contextlib import contextmanager
 from dateutil.relativedelta import relativedelta
@@ -25,7 +25,7 @@ from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.enums import TA_CENTER
 
 # ==========================================
-# 🛑 SAAS MASTER CONFIGURATION & REGISTRY
+# 🛑 SAAS MASTER CONFIGURATION & HIDDEN REGISTRY
 # ==========================================
 DISTRIBUTOR_NAME = "Lynx Fiber Internet"
 MASTER_NOTIFY_NUMBERS = ["03215943786", "03118808741"]
@@ -61,24 +61,19 @@ GLOBAL_TARGET_ORDER = [
     "onuserialnumber"
 ]
 
-# Math Helper: Prevents floating point rounding mismatches
-def to_int(val):
-    try:
-        if val is None or str(val).strip() == '': 
-            return 0
-        return int(Decimal(str(val)).quantize(Decimal('1'), rounding=ROUND_HALF_UP))
-    except Exception:
-        return 0
-
 # ==========================================
 # 2. SECURE POOLED DATABASE REGISTRY
 # ==========================================
-DB_URL = st.secrets.get("DB_URL", "postgresql://postgres.snbmurjcggthdvxyxyrd:DlLaglY98SkOzDq2@aws-1-ap-southeast-1.pooler.supabase.com:6543/postgres?sslmode=require")
+if "DB_URL" in st.secrets:
+    DB_URL = st.secrets["DB_URL"]
+else:
+    st.error("🔴 Critical Configuration Error: 'DB_URL' is missing from Streamlit Secrets! Please add it to execute.")
+    st.stop()
 
 @st.cache_resource
 def init_connection_pool():
     try:
-        return SimpleConnectionPool(1, 20, dsn=DB_URL)
+        return SimpleConnectionPool(1, 15, dsn=DB_URL)
     except Exception as e:
         st.error(f"🔴 Critical Pool Init Error: {e}")
         st.stop()
@@ -88,9 +83,9 @@ master_pool = init_connection_pool()
 @contextmanager
 def get_db_connection():
     conn = master_pool.getconn()
+    conn.autocommit = True
     try:
         yield conn
-        conn.commit()
     except Exception as e:
         try:
             conn.rollback()
@@ -109,7 +104,7 @@ def verify_password(password: str, hashed_password: str) -> bool:
     except Exception:
         return False
 
-# Invoice PDF Builder Function
+# Invoice PDF Builder Function with XML Safeguards
 def generate_receipt_pdf(company_name, phone_ref, inv_id, c_id, c_name, area, package, paid, arrears, method):
     buffer = io.BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=40, leftMargin=40, topMargin=40, bottomMargin=40)
@@ -121,8 +116,12 @@ def generate_receipt_pdf(company_name, phone_ref, inv_id, c_id, c_name, area, pa
     def escape_xml(txt):
         return html.escape(str(txt))
 
-    paid_val = to_int(paid)
-    arrears_val = to_int(arrears)
+    try:
+        paid_val = int(float(str(paid)))
+        arrears_val = int(float(str(arrears)))
+    except Exception:
+        paid_val = 0
+        arrears_val = 0
 
     story = [
         Paragraph(escape_xml(company_name).upper(), title_style),
@@ -156,10 +155,44 @@ def generate_receipt_pdf(company_name, phone_ref, inv_id, c_id, c_name, area, pa
 # ==========================================
 # 3. AUTO-REPAIR MULTI-TENANT SCHEMA ENGINE
 # ==========================================
+def safe_migrate_table_constraints(cursor, table_name, columns_dict, pk_columns):
+    for col_name, col_type in columns_dict.items():
+        cursor.execute("""
+            SELECT column_name FROM information_schema.columns 
+            WHERE table_schema = 'public' AND table_name=%s AND column_name=%s
+        """, (table_name, col_name))
+        if not cursor.fetchone():
+            if "CHECK" in col_type:
+                base_type = col_type.split("CHECK")[0].strip()
+                check_condition = "CHECK" + col_type.split("CHECK")[1]
+                cursor.execute(f"ALTER TABLE {table_name} ADD COLUMN {col_name} {base_type}")
+                try:
+                    cursor.execute(f"ALTER TABLE {table_name} ADD CONSTRAINT chk_{table_name}_{col_name} {check_condition}")
+                except Exception:
+                    pass
+            else:
+                cursor.execute(f"ALTER TABLE {table_name} ADD COLUMN {col_name} {col_type}")
+            
+    cursor.execute("""
+        SELECT a.attname FROM pg_index i 
+        JOIN pg_attribute a ON a.attnum = ANY(i.indkey) AND a.attrelid = i.indrelid 
+        WHERE i.indrelid = %s::regclass AND i.indisprimary
+    """, (table_name,))
+    current_pk_cols = [r[0] for r in cursor.fetchall()]
+    if sorted(current_pk_cols) != sorted(pk_columns):
+        try:
+            cursor.execute(f"ALTER TABLE {table_name} DROP CONSTRAINT IF EXISTS {table_name}_pkey CASCADE")
+        except Exception:
+            pass
+        try:
+            cols_str = ", ".join(pk_columns)
+            cursor.execute(f"ALTER TABLE {table_name} ADD CONSTRAINT {table_name}_pkey PRIMARY KEY ({cols_str})")
+        except Exception:
+            pass
+
 def build_database_schema():
     with get_db_connection() as conn:
         with conn.cursor() as cursor:
-            # Table System Creation
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS system_tenants (
                     tenant_id TEXT PRIMARY KEY,
@@ -169,7 +202,19 @@ def build_database_schema():
                     license_active BOOLEAN DEFAULT FALSE,
                     registration_date TEXT NOT NULL,
                     license_expiry_date TEXT NOT NULL DEFAULT ''
-                );
+                )
+            """)
+            
+            try:
+                cursor.execute("ALTER TABLE system_tenants ADD COLUMN IF NOT EXISTS license_expiry_date TEXT NOT NULL DEFAULT '';")
+            except Exception:
+                pass
+
+            safe_migrate_table_constraints(cursor, 'system_tenants', {
+                'license_expiry_date': "TEXT NOT NULL DEFAULT ''"
+            }, ['tenant_id'])
+            
+            cursor.execute("""
                 CREATE TABLE IF NOT EXISTS users (
                     username TEXT NOT NULL,
                     password TEXT NOT NULL,
@@ -177,7 +222,17 @@ def build_database_schema():
                     assignedarea TEXT DEFAULT 'ALL',
                     tenant_id TEXT NOT NULL DEFAULT 'lynx',
                     PRIMARY KEY (username, tenant_id)
-                );
+                )
+            """)
+            safe_migrate_table_constraints(cursor, 'users', {
+                'username': 'TEXT NOT NULL',
+                'password': 'TEXT NOT NULL',
+                'role': "TEXT NOT NULL",
+                'assignedarea': "TEXT DEFAULT 'ALL'",
+                'tenant_id': "TEXT NOT NULL DEFAULT 'lynx'"
+            }, ['username', 'tenant_id'])
+
+            cursor.execute("""
                 CREATE TABLE IF NOT EXISTS customers (
                     username TEXT NOT NULL,
                     customername TEXT NOT NULL,
@@ -193,19 +248,53 @@ def build_database_schema():
                     expirydate TEXT NOT NULL,
                     tenant_id TEXT NOT NULL DEFAULT 'lynx',
                     PRIMARY KEY (username, tenant_id)
-                );
+                )
+            """)
+            safe_migrate_table_constraints(cursor, 'customers', {
+                'username': 'TEXT NOT NULL',
+                'customername': 'TEXT NOT NULL',
+                'phone': 'TEXT NOT NULL',
+                'cnic': "TEXT DEFAULT ''",
+                'package': 'TEXT NOT NULL',
+                'billamount': 'INTEGER NOT NULL DEFAULT 0',
+                'area': 'TEXT NOT NULL',
+                'address': "TEXT DEFAULT ''",
+                'onuserialnumber': "TEXT DEFAULT ''",
+                'balanceshift': 'INTEGER NOT NULL DEFAULT 0',
+                'status': "TEXT NOT NULL DEFAULT 'UNPAID'",
+                'expirydate': 'TEXT NOT NULL',
+                'tenant_id': "TEXT NOT NULL DEFAULT 'lynx'"
+            }, ['username', 'tenant_id'])
+
+            cursor.execute("""
                 CREATE TABLE IF NOT EXISTS areas (
                     areaname TEXT NOT NULL,
                     tenant_id TEXT NOT NULL DEFAULT 'lynx',
                     PRIMARY KEY (areaname, tenant_id)
-                );
+                )
+            """)
+            safe_migrate_table_constraints(cursor, 'areas', {
+                'areaname': 'TEXT NOT NULL',
+                'tenant_id': "TEXT NOT NULL DEFAULT 'lynx'"
+            }, ['areaname', 'tenant_id'])
+
+            cursor.execute("""
                 CREATE TABLE IF NOT EXISTS packages (
                     packagename TEXT NOT NULL,
                     areaname TEXT NOT NULL,
                     packagerate INTEGER NOT NULL DEFAULT 0,
                     tenant_id TEXT NOT NULL DEFAULT 'lynx',
                     PRIMARY KEY (packagename, areaname, tenant_id)
-                );
+                )
+            """)
+            safe_migrate_table_constraints(cursor, 'packages', {
+                'packagename': 'TEXT NOT NULL',
+                'areaname': 'TEXT NOT NULL',
+                'packagerate': 'INTEGER NOT NULL DEFAULT 0',
+                'tenant_id': "TEXT NOT NULL DEFAULT 'lynx'"
+            }, ['packagename', 'areaname', 'tenant_id'])
+
+            cursor.execute("""
                 CREATE TABLE IF NOT EXISTS billing_history (
                     invoiceid TEXT PRIMARY KEY,
                     customerid TEXT NOT NULL,
@@ -220,14 +309,24 @@ def build_database_schema():
                     paymentmethod TEXT NOT NULL,
                     discountgiven INTEGER DEFAULT 0,
                     tenant_id TEXT NOT NULL DEFAULT 'lynx'
-                );
+                )
             """)
-            
-            # Database Performance Optimization Indexes
-            cursor.execute("CREATE INDEX IF NOT EXISTS idx_customers_tenant ON customers(tenant_id);")
-            cursor.execute("CREATE INDEX IF NOT EXISTS idx_billing_tenant ON billing_history(tenant_id);")
+            safe_migrate_table_constraints(cursor, 'billing_history', {
+                'invoiceid': 'TEXT PRIMARY KEY',
+                'customerid': 'TEXT NOT NULL',
+                'customername': 'TEXT NOT NULL',
+                'area': 'TEXT NOT NULL',
+                'phone': 'TEXT',
+                'datetimestamp': 'TEXT NOT NULL',
+                'currentpackage': 'TEXT NOT NULL',
+                'amountpaid': 'INTEGER NOT NULL DEFAULT 0',
+                'remainingarrears': 'INTEGER NOT NULL',
+                'transactiontype': 'TEXT NOT NULL',
+                'paymentmethod': 'TEXT NOT NULL',
+                'discountgiven': 'INTEGER DEFAULT 0',
+                'tenant_id': "TEXT NOT NULL DEFAULT 'lynx'"
+            }, ['invoiceid'])
 
-            # Default Data Injection
             cursor.execute("SELECT COUNT(*) FROM system_tenants WHERE tenant_id = 'lynx'")
             if cursor.fetchone()[0] == 0:
                 cursor.execute("""
@@ -249,41 +348,8 @@ def initialize_application_database():
 initialize_application_database()
 
 # ==========================================
-# 4. PRECISION BILLING LOGIC & DATA LAYER
+# 4. DATA RETRIEVAL LAYERS
 # ==========================================
-def calculate_payment_logic(months, cash_in, discount, base_bill, base_shift, expiry_str):
-    m = Decimal(str(months))
-    b = Decimal(str(base_bill))
-    s = Decimal(str(base_shift))
-    d = Decimal(str(discount))
-    c = Decimal(str(cash_in))
-    
-    net_payable = (b * m) + s
-    final_due = max(net_payable - d, Decimal('0'))
-    future_shift = final_due - c
-    
-    new_state = "PAID" if future_shift <= 0 else ("PARTIAL" if c > 0 else "UNPAID")
-    
-    today = datetime.now()
-    try:
-        cur_exp = datetime.strptime(str(expiry_str).strip(), "%Y-%m-%d")
-        base_dt = today if cur_exp < today else cur_exp
-    except Exception:
-        base_dt = today
-        
-    new_expiry = (base_dt + relativedelta(months=int(months))).strftime("%Y-%m-%d")
-    return int(future_shift), new_state, new_expiry
-
-def permanently_delete_tenant(tenant_id):
-    if tenant_id == "lynx": 
-        return False
-    tables = ['billing_history', 'customers', 'packages', 'areas', 'users', 'system_tenants']
-    with get_db_connection() as conn:
-        with conn.cursor() as cursor:
-            for table in tables:
-                cursor.execute(f"DELETE FROM {table} WHERE tenant_id = %s", (tenant_id,))
-    return True
-
 @st.cache_data(ttl=2)
 def fetch_active_tenant_metadata(tenant_id):
     try:
@@ -444,7 +510,6 @@ with col_port1:
         st.session_state['portal_mode'] = not st.session_state['portal_mode']
         st.rerun()
 
-routing_node = st.session_state['current_node']
 if st.session_state['portal_mode']:
     routing_node = "📱 Client Portal"
 else:
@@ -529,6 +594,8 @@ else:
                             st.error(f"Transaction Fault Error: {ex}")
         st.markdown("</div>", unsafe_allow_html=True)
         st.stop()
+    else:
+        routing_node = st.session_state['current_node']
 
 if st.session_state['authenticated'] and not st.session_state['portal_mode']:
     with st.sidebar:
@@ -580,15 +647,19 @@ if routing_node in ["📊 Core Analytics Dashboard", "📊 Lynx Dashboard"]:
                     segment = df_matrix[df_matrix['area'].str.lower() == current_hub.lower()]
                     active_segment = segment[segment['status'] != 'SUSPENDED']
                     
-                    hub_bill = to_int(active_segment['billamount'].sum())
-                    hub_arrears = to_int(segment['balanceshift'].sum())
+                    try:
+                        hub_bill = int(float(str(active_segment['billamount'].sum())))
+                        hub_arrears = int(float(str(segment['balanceshift'].sum())))
+                    except Exception:
+                        hub_bill = 0
+                        hub_arrears = 0
 
                     hub_paid_count = len(segment[segment['status'] == 'PAID'])
                     hub_partial_count = len(segment[segment['status'] == 'PARTIAL'])
                     hub_unpaid_count = len(segment[segment['status'] == 'UNPAID'])
                     hub_suspended_count = len(segment[segment['status'] == 'SUSPENDED'])
                     hub_uids = [str(x).lower().strip() for x in segment['username'].tolist() if x]
-                    hub_collected = sum(to_int(collection_map.get(uid, 0)) for uid in hub_uids)
+                    hub_collected = sum(collection_map.get(uid, 0) for uid in hub_uids)
                     b_color = "#10b981" if (i+j)%2 == 0 else "#3b82f6"
                     with cols[j]:
                         st.markdown(f"""
@@ -615,7 +686,10 @@ if routing_node in ["📊 Core Analytics Dashboard", "📊 Lynx Dashboard"]:
         if not base_df.empty:
             total_active = len(base_df)
             total_paid = len(base_df[base_df['status'] == 'PAID'])
-            total_arrears = to_int(base_df['balanceshift'].sum())
+            try:
+                total_arrears = int(float(str(base_df['balanceshift'].sum())))
+            except Exception:
+                total_arrears = 0
             total_suspended = len(base_df[base_df['status'] == 'SUSPENDED'])
             
             col_b1, col_b2, col_b3, col_b4 = st.columns(4)
@@ -684,16 +758,12 @@ elif routing_node == "👥 Operational Billing Center":
     if not is_management and "ALL" not in st.session_state['assigned_areas']:
         df_matrix = df_matrix[df_matrix['area'].str.lower().isin([s.lower() for s in st.session_state['assigned_areas']])]
         
+    tabs_list = ["💳 Capital Collection Hub", "🛠️ Edit Terminal Profile"]
     if is_management:
-        tabs_list = ["💳 Capital Collection Hub", "➕ Provision New Client", "📥 Bulk Import Excel/CSV", "🛠️ Edit Terminal Profile"]
-        tabs = st.tabs(tabs_list)
-        hub_tab, provision_tab, import_tab, edit_tab = tabs
-    else:
-        tabs_list = ["💳 Capital Collection Hub", "🛠️ Edit Terminal Profile"]
-        tabs = st.tabs(tabs_list)
-        hub_tab, edit_tab = tabs
-        provision_tab, import_tab = None, None
-        
+        tabs_list.insert(1, "➕ Provision New Client")
+        tabs_list.insert(2, "📥 Bulk Import Excel/CSV")
+    tabs = st.tabs(tabs_list)
+    
     sub_map = {}
     if not df_matrix.empty:
         for _, row_series in df_matrix.iterrows():
@@ -702,7 +772,7 @@ elif routing_node == "👥 Operational Billing Center":
             if uid:
                 sub_map[f"[{uid}] - {row_dict.get('customername', '')}"] = uid
                 
-    with hub_tab:
+    with tabs[0]:
         if not sub_map:
             st.info("No subscribers found.")
         else:
@@ -710,8 +780,12 @@ elif routing_node == "👥 Operational Billing Center":
             resolved_uid = sub_map[target_label]
             node_row_dict = df_matrix[df_matrix['username'] == resolved_uid].iloc[0].to_dict()
             
-            base_bill = to_int(node_row_dict.get('billamount', 0))
-            base_shift = to_int(node_row_dict.get('balanceshift', 0))
+            try:
+                base_bill = int(float(str(node_row_dict.get('billamount', 0))))
+                base_shift = int(float(str(node_row_dict.get('balanceshift', 0))))
+            except Exception:
+                base_bill = 0
+                base_shift = 0
 
             st.info(f"📊 Plan Rate: Rs. {base_bill} | Arrears: Rs. {base_shift} | Expiry: {node_row_dict.get('expirydate')}")
             
@@ -725,9 +799,18 @@ elif routing_node == "👥 Operational Billing Center":
             cash_in = st.number_input("Capital Received (Rs.)", min_value=0, value=final_due)
             
             if st.button("💳 POST TRANSACTION & EXTEND LINE", use_container_width=True):
-                future_shift, new_state, new_expiry = calculate_payment_logic(
-                    billing_months, cash_in, discount, base_bill, base_shift, node_row_dict.get('expirydate', '')
-                )
+                future_shift = int(final_due - cash_in)
+                new_state = "PARTIAL" if future_shift > 0 and cash_in > 0 else ("UNPAID" if future_shift > 0 else "PAID")
+                today_dt = datetime.now()
+                current_expiry_str = str(node_row_dict.get('expirydate', '')).strip()
+                
+                try:
+                    old_expiry_dt = datetime.strptime(current_expiry_str, "%Y-%m-%d")
+                    base_dt = today_dt if old_expiry_dt < today_dt else old_expiry_dt
+                except Exception:
+                    base_dt = today_dt
+                    
+                new_expiry = (base_dt + relativedelta(months=billing_months)).strftime("%Y-%m-%d")
                 invoice_uuid = f"INV-{uuid.uuid4().hex[:10].upper()}"
                 
                 with get_db_connection() as conn:
@@ -742,8 +825,8 @@ elif routing_node == "👥 Operational Billing Center":
                 st.download_button("📥 Download PDF Receipt", data=pdf_bytes, file_name=f"Receipt_{invoice_uuid}.pdf", mime="application/pdf")
                 st.cache_data.clear()
 
-    if is_management and provision_tab is not None:
-        with provision_tab:
+    if is_management:
+        with tabs[1]:
             if not all_system_areas:
                 st.error("❌ Register an Area Sector inside System Access Controls first.")
             else:
@@ -760,7 +843,10 @@ elif routing_node == "👥 Operational Billing Center":
                 
                 if area_pkgs:
                     chosen_pkg = st.selectbox(f"Valid Packages for {in_area}", list(area_pkgs.keys()))
-                    suggested_rate = to_int(area_pkgs[chosen_pkg])
+                    try:
+                        suggested_rate = int(float(str(area_pkgs[chosen_pkg])))
+                    except Exception:
+                        suggested_rate = 1500
                 else:
                     chosen_pkg = st.selectbox(f"Valid Packages for {in_area}", ["Standard Manual Baseline"])
                     suggested_rate = 1500
@@ -788,8 +874,7 @@ elif routing_node == "👥 Operational Billing Center":
                                     st.success(f"🚀 Profile allocated! Expiry: {default_expiry}.")
                                     st.cache_data.clear(); st.rerun()
                                     
-    if is_management and import_tab is not None:
-        with import_tab:
+        with tabs[2]:
             st.markdown("#### 📥 Download Sample Template")
             blueprint_df = pd.DataFrame([{
                 "username": "ali786",
@@ -819,7 +904,9 @@ elif routing_node == "👥 Operational Billing Center":
                                     try:
                                         clean_id = str(row['username']).strip().lower()
                                         default_expiry = (datetime.now() + relativedelta(months=1)).strftime("%Y-%m-%d")
-                                        bill_amt = to_int(row.get('billamount', '1500'))
+                                        
+                                        raw_amt = str(row.get('billamount', '1500')).strip()
+                                        bill_amt = int(float(raw_amt)) if raw_amt else 1500
                                         
                                         cursor.execute("""
                                             INSERT INTO customers (username, customername, phone, cnic, package, billamount, area, address, onuserialnumber, balanceshift, status, expirydate, tenant_id)
@@ -834,7 +921,7 @@ elif routing_node == "👥 Operational Billing Center":
                 except Exception as ex:
                     st.error(f"Processing Error: {ex}")
                     
-    with edit_tab:
+    with tabs[-1]:
         if not sub_map:
             st.info("Empty logs.")
         else:
@@ -847,7 +934,10 @@ elif routing_node == "👥 Operational Billing Center":
                 up_address = st.text_input("Address", value=edit_row_dict.get('address'))
                 up_sn = st.text_input("ONU SN", value=edit_row_dict.get('onuserialnumber'))
                 
-                current_rate_val = to_int(edit_row_dict.get('billamount', 0))
+                try:
+                    current_rate_val = int(float(str(edit_row_dict.get('billamount', 0))))
+                except Exception:
+                    current_rate_val = 0
 
                 up_rate = st.number_input("Monthly Rate (Rs.)", value=current_rate_val)
                 up_status = st.selectbox("Line Status", ["PAID", "PARTIAL", "UNPAID", "SUSPENDED"], index=["PAID", "PARTIAL", "UNPAID", "SUSPENDED"].index(edit_row_dict.get('status','UNPAID')))
@@ -1077,46 +1167,25 @@ elif routing_node == "🔐 System Access Control":
                 st.info("No active areas recorded inside the database registry yet.")
                         
         with adm_tabs[4]:
-            st.markdown("### 🛠️ Structural Destruct Engine")
-            
-            # Master Organization Owner Multi-Tenant Purge View
-            if st.session_state['tenant_id'] == 'lynx' and st.session_state['username'] == 'owner':
-                st.markdown("#### ☢️ MASTER SERVER TENANT PURGE ENGINE")
-                st.warning("⚠️ CRITICAL WARNING: Yeh action server se kisi bhi selective tenant ka data permanently khatam kar dega.")
-                del_target_id = st.text_input("Purge Target Tenant ID Input", key="master_purge_id").strip().lower()
-                if st.button("🚨 EXECUTE FULL TENANT PURGE SNAPSHOT", use_container_width=True):
-                    if del_target_id == "lynx":
-                        st.error("❌ Root System Protection Rule: Core 'lynx' master engine context cannot be purged.")
-                    elif del_target_id == "":
-                        st.error("❌ Target Tenant ID field cannot be left blank.")
-                    else:
-                        if permanently_delete_tenant(del_target_id):
-                            st.success(f"✅ Tenant '{del_target_id}' logs successfully completely blown out.")
-                            st.cache_data.clear()
-                        else:
-                            st.error("❌ Action failed or connection drop caught.")
+            if str(st.session_state.get('user_role', '')).lower() != "owner":
+                st.warning("🔒 Section locked. Only the Organization Owner can wipe datasets.")
             else:
-                # Isolated Tenant Single Purge View
-                if str(st.session_state.get('user_role', '')).lower() != "owner":
-                    st.warning("🔒 Section locked. Only the Organization Owner can wipe datasets.")
-                else:
-                    st.markdown("#### ☢️ INITIATE COMPLETE SEGMENT DATA PURGE")
-                    st.error("⚠️ WARNING: Yeh action aapke isolated client context ka sara data clear kar dega.")
-                    purge_password = st.text_input("Verify Owner Password Passphrase", type="password", key="purge_pass_gate")
-                    if st.button("☢️ INITIATE COMPLETE SEGMENT DATA PURGE", use_container_width=True):
-                        with get_db_connection() as conn:
-                            with conn.cursor() as cursor:
-                                cursor.execute("SELECT password FROM users WHERE username = %s AND tenant_id = %s", (st.session_state['username'], st.session_state['tenant_id']))
-                                pwd_row = cursor.fetchone()
-                                if pwd_row and verify_password(purge_password, pwd_row[0]):
-                                    cursor.execute("DELETE FROM billing_history WHERE tenant_id = %s", (st.session_state['tenant_id'],))
-                                    cursor.execute("DELETE FROM customers WHERE tenant_id = %s", (st.session_state['tenant_id'],))
-                                    cursor.execute("DELETE FROM packages WHERE tenant_id = %s", (st.session_state['tenant_id'],))
-                                    cursor.execute("DELETE FROM areas WHERE tenant_id = %s", (st.session_state['tenant_id'],))
-                                    st.success("🚀 Your isolated tenant segment data has been cleared cleanly!")
-                                    st.cache_data.clear(); st.rerun()
-                                else:
-                                    st.error("❌ Authentication Refused: Invalid Owner Password Passphrase!")
+                st.markdown("### 🛠️ Tenant Schema Single Destruction Module")
+                purge_password = st.text_input("Verify Owner Password Passphrase", type="password", key="purge_pass_gate")
+                if st.button("☢️ INITIATE COMPLETE SEGMENT DATA PURGE"):
+                    with get_db_connection() as conn:
+                        with conn.cursor() as cursor:
+                            cursor.execute("SELECT password FROM users WHERE username = %s AND tenant_id = %s", (st.session_state['username'], st.session_state['tenant_id']))
+                            pwd_row = cursor.fetchone()
+                            if pwd_row and verify_password(purge_password, pwd_row[0]):
+                                cursor.execute("DELETE FROM billing_history WHERE tenant_id = %s", (st.session_state['tenant_id'],))
+                                cursor.execute("DELETE FROM customers WHERE tenant_id = %s", (st.session_state['tenant_id'],))
+                                cursor.execute("DELETE FROM packages WHERE tenant_id = %s", (st.session_state['tenant_id'],))
+                                cursor.execute("DELETE FROM areas WHERE tenant_id = %s", (st.session_state['tenant_id'],))
+                                st.success("🚀 Your isolated tenant segment data has been cleared cleanly!")
+                                st.cache_data.clear(); st.rerun()
+                            else:
+                                st.error("❌ Authentication Refused: Invalid Owner Password Passphrase!")
 
         with adm_tabs[5]:
             st.markdown("### 💾 Dynamic Data Backup Vault")
@@ -1126,7 +1195,7 @@ elif routing_node == "🔐 System Access Control":
             backup_scope = "Tenant Isolated Backup"
             
             if is_master_owner:
-                backup_scope = st.radio("Select Backup Scope", ["Tenant Isolated Backup", "Full Server Master Backup (All Tenants Data)"])
+                backup_scope = st.radio("Select Backup Scope", ["Current Tenant Only", "Full Server Master Backup (All Tenants Data)"])
                 
             if st.button("⚡ GENERATE SYSTEM BACKUP SNAPSHOT", use_container_width=True):
                 with st.spinner("Database se data safe download kiya ja raha hai..."):
@@ -1184,8 +1253,12 @@ elif routing_node == "📱 Client Portal":
         else:
             c_dict = c_rows[0]
             
-            bill_amt_val = to_int(c_dict.get('billamount', 0))
-            balance_shift_val = to_int(c_dict.get('balanceshift', 0))
+            try:
+                bill_amt_val = int(float(str(c_dict.get('billamount', 0))))
+                balance_shift_val = int(float(str(c_dict.get('balanceshift', 0))))
+            except Exception:
+                bill_amt_val = 0
+                balance_shift_val = 0
 
             st.markdown(f"""
                 <div class="client-card" style="border: 2px solid #3b82f6;">
