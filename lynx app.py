@@ -137,7 +137,6 @@ except Exception:
 def get_db_connection():
     conn = None
     try:
-        # Added dynamic statement timeouts to prevent connection pool jamming
         conn = psycopg2.connect(DB_URL, connect_timeout=5, options="-c statement_timeout=5000")
         conn.autocommit = False
         yield conn
@@ -231,8 +230,7 @@ try:
 except Exception as e:
     st.error(f"Schema Builder Failed: {e}")
 
-# High efficiency caching strategy
-@st.cache_data(ttl=5) # Reduced cache duration for rapid dynamic feedback loop troubleshooting
+@st.cache_data(ttl=5)
 def fetch_live_matrix():
     try:
         with get_db_connection() as conn:
@@ -821,25 +819,34 @@ elif routing_node == "🔐 System Access Control":
                 if st.button("🚨 FORCE CLEAN & PURGE LIVE DATABASE STRUCTURE", use_container_width=True):
                     st.session_state['purge_requested'] = True; st.rerun()
             else:
-                purge_password = st.text_input("سیکیورٹی پاسورڈ درج کریں (Security Password)", type="password")
+                purge_password = st.text_input("تصدیق کے لیے اپنا ایڈمن پاسورڈ درج کریں (Enter Admin Password to Confirm)", type="password")
                 col_purge1, col_purge2 = st.columns(2)
                 with col_purge1:
                     if st.button("✅ پاسورڈ کی تصدیق کریں اور ڈیٹا اڑائیں", use_container_width=True):
-                        if purge_password == "lynx@secure786":
+                        # Secure Check: Current active admin's real password matched directly
+                        with get_db_connection() as conn:
+                            with conn.cursor() as cursor:
+                                cursor.execute("SELECT password FROM users WHERE username = %s", (st.session_state['username'],))
+                                user_match = cursor.fetchone()
+                        
+                        if user_match and verify_password(purge_password, user_match[0]):
                             try:
                                 with get_db_connection() as conn:
                                     with conn.cursor() as cursor:
-                                        cursor.execute("DROP TABLE IF EXISTS billing_history CASCADE; DROP TABLE IF EXISTS customers CASCADE; DROP TABLE IF EXISTS areas CASCADE; DROP TABLE IF EXISTS packages CASCADE; DROP TABLE IF EXISTS users CASCADE;")
+                                        cursor.execute("DROP TABLE IF EXISTS billing_history CASCADE; DROP TABLE IF EXISTS customers CASCADE; DROP TABLE IF EXISTS areas CASCADE; DROP TABLE IF EXISTS packages CASCADE; DROP TABLE IF EXISTS users CASCADE; DROP TABLE IF EXISTS app_settings CASCADE;")
                                         conn.commit()
                                 build_database_schema()
                                 st.success("🚀 System successfully completely reset ho chuka hai!")
                                 st.session_state['purge_requested'] = False
                                 st.cache_data.clear()
+                                # Security wipe session state to enforce clean registration redirection
+                                st.session_state['authenticated'] = False
+                                st.session_state['user_role'] = None
                                 st.rerun()
                             except Exception as schema_ex:
                                 st.error(f"❌ Reset Failed: {schema_ex}")
                         else:
-                            st.error("❌ Galat Password!")
+                            st.error("❌ Galat Password! Sirf active Admin hi is structural wipe out ko authorize kar sakta hai.")
                 with col_purge2:
                     if st.button("❌ کینسل کریں (Cancel)", use_container_width=True): st.session_state['purge_requested'] = False; st.rerun()
 
