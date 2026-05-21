@@ -192,7 +192,7 @@ def safe_migrate_table_constraints(cursor, table_name, columns_dict, pk_columns)
 def build_database_schema():
     with get_db_connection() as conn:
         with conn.cursor() as cursor:
-            # Table definitions directly containing license_expiry_date to avoid transactional race-conditions
+            # FIX: Forcefully alter table to add column if it failed due to text-default constraints earlier
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS system_tenants (
                     tenant_id TEXT PRIMARY KEY,
@@ -204,6 +204,13 @@ def build_database_schema():
                     license_expiry_date TEXT NOT NULL DEFAULT ''
                 )
             """)
+            
+            # Hotfix direct alteration to prevent any execution crashes
+            try:
+                cursor.execute("ALTER TABLE system_tenants ADD COLUMN IF NOT EXISTS license_expiry_date TEXT NOT NULL DEFAULT '';")
+            except Exception:
+                pass
+
             safe_migrate_table_constraints(cursor, 'system_tenants', {
                 'license_expiry_date': "TEXT NOT NULL DEFAULT ''"
             }, ['tenant_id'])
@@ -1113,13 +1120,15 @@ elif routing_node == "🔐 System Access Control":
                             active_deps = cursor.fetchone()[0]
                             
                             if active_deps > 0:
-                                st.error(f"❌ Purge Refused! '{target_del_pkg['packagename']}' target profile possesses {active_deps} active customer terminals. Re-assign them to clean dependencies.")
+                                d_pkg = target_del_pkg['packagename']
+                                st.error(f"❌ Purge Refused! '{d_pkg}' target profile possesses {active_deps} active customer terminals. Re-assign them to clean dependencies.")
                             else:
                                 cursor.execute("""
                                     DELETE FROM packages 
                                     WHERE LOWER(packagename) = LOWER(%s) AND LOWER(areaname) = LOWER(%s) AND tenant_id = %s
                                 """, (target_del_pkg['packagename'], target_del_pkg['areaname'], st.session_state['tenant_id']))
-                                st.success(f"✅ Tariff '{target_del_pkg['packagename']}' removed successfully!")
+                                d_pkg = target_del_pkg['packagename']
+                                st.success(f"✅ Tariff '{d_pkg}' removed successfully!")
                                 st.cache_data.clear(); st.rerun()
             else:
                 st.info("No active billing packages stored inside database registry context.")
