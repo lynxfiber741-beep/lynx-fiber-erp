@@ -207,6 +207,7 @@ def safe_migrate_table_constraints(cursor, table_name, columns_dict, pk_columns)
 def build_database_schema():
     with get_db_connection() as conn:
         with conn.cursor() as cursor:
+            # 1. System Tenants
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS system_tenants (
                     tenant_id TEXT PRIMARY KEY,
@@ -218,16 +219,8 @@ def build_database_schema():
                     license_expiry_date TEXT NOT NULL DEFAULT ''
                 )
             """)
-            
-            try:
-                cursor.execute("ALTER TABLE system_tenants ADD COLUMN IF NOT EXISTS license_expiry_date TEXT NOT NULL DEFAULT '';")
-            except Exception:
-                pass
 
-            safe_migrate_table_constraints(cursor, 'system_tenants', {
-                'license_expiry_date': "TEXT NOT NULL DEFAULT ''"
-            }, ['tenant_id'])
-            
+            # 2. Users Table
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS users (
                     username TEXT NOT NULL,
@@ -238,14 +231,8 @@ def build_database_schema():
                     PRIMARY KEY (username, tenant_id)
                 )
             """)
-            safe_migrate_table_constraints(cursor, 'users', {
-                'username': 'TEXT NOT NULL',
-                'password': 'TEXT NOT NULL',
-                'role': "TEXT NOT NULL",
-                'assignedarea': "TEXT DEFAULT 'ALL'",
-                'tenant_id': "TEXT NOT NULL DEFAULT 'lynx'"
-            }, ['username', 'tenant_id'])
 
+            # 3. Customers Table
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS customers (
                     username TEXT NOT NULL,
@@ -264,22 +251,8 @@ def build_database_schema():
                     PRIMARY KEY (username, tenant_id)
                 )
             """)
-            safe_migrate_table_constraints(cursor, 'customers', {
-                'username': 'TEXT NOT NULL',
-                'customername': 'TEXT NOT NULL',
-                'phone': 'TEXT NOT NULL',
-                'cnic': "TEXT DEFAULT ''",
-                'package': 'TEXT NOT NULL',
-                'billamount': 'INTEGER NOT NULL DEFAULT 0',
-                'area': 'TEXT NOT NULL',
-                'address': "TEXT DEFAULT ''",
-                'onuserialnumber': "TEXT DEFAULT ''",
-                'balanceshift': 'INTEGER NOT NULL DEFAULT 0',
-                'status': "TEXT NOT NULL DEFAULT 'UNPAID'",
-                'expirydate': 'TEXT NOT NULL',
-                'tenant_id': "TEXT NOT NULL DEFAULT 'lynx'"
-            }, ['username', 'tenant_id'])
 
+            # 4. Areas Table
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS areas (
                     areaname TEXT NOT NULL,
@@ -287,11 +260,8 @@ def build_database_schema():
                     PRIMARY KEY (areaname, tenant_id)
                 )
             """)
-            safe_migrate_table_constraints(cursor, 'areas', {
-                'areaname': 'TEXT NOT NULL',
-                'tenant_id': "TEXT NOT NULL DEFAULT 'lynx'"
-            }, ['areaname', 'tenant_id'])
 
+            # 5. Packages Table
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS packages (
                     packagename TEXT NOT NULL,
@@ -301,13 +271,8 @@ def build_database_schema():
                     PRIMARY KEY (packagename, areaname, tenant_id)
                 )
             """)
-            safe_migrate_table_constraints(cursor, 'packages', {
-                'packagename': 'TEXT NOT NULL',
-                'areaname': 'TEXT NOT NULL',
-                'packagerate': 'INTEGER NOT NULL DEFAULT 0',
-                'tenant_id': "TEXT NOT NULL DEFAULT 'lynx'"
-            }, ['packagename', 'areaname', 'tenant_id'])
 
+            # 6. Billing History
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS billing_history (
                     invoiceid TEXT PRIMARY KEY,
@@ -325,33 +290,37 @@ def build_database_schema():
                     tenant_id TEXT NOT NULL DEFAULT 'lynx'
                 )
             """)
-            safe_migrate_table_constraints(cursor, 'billing_history', {
-                'invoiceid': 'TEXT PRIMARY KEY',
-                'customerid': 'TEXT NOT NULL',
-                'customername': 'TEXT NOT NULL',
-                'area': 'TEXT NOT NULL',
-                'phone': 'TEXT',
-                'datetimestamp': 'TEXT NOT NULL',
-                'currentpackage': 'TEXT NOT NULL',
-                'amountpaid': 'INTEGER NOT NULL DEFAULT 0',
-                'remainingarrears': 'INTEGER NOT NULL',
-                'transactiontype': 'TEXT NOT NULL',
-                'paymentmethod': 'TEXT NOT NULL',
-                'discountgiven': 'INTEGER DEFAULT 0',
-                'tenant_id': "TEXT NOT NULL DEFAULT 'lynx'"
-            }, ['invoiceid'])
 
-            # Live Addition of Activity Audit Logs Ledger Database Schema 
+            # 7. FIX: Activity Logs (Ye part aapke error ko solve karega)
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS activity_logs (
                     log_id TEXT PRIMARY KEY,
                     tenant_id TEXT NOT NULL,
                     username TEXT NOT NULL,
                     action_type TEXT NOT NULL,
-                    description TEXT NOT NULL,
-                    timestamp TEXT NOT NULL DEFAULT ''
+                    description TEXT NOT NULL
                 )
             """)
+            # Timestamp column add karna agar missing ho
+            try:
+                cursor.execute("ALTER TABLE activity_logs ADD COLUMN IF NOT EXISTS timestamp TEXT DEFAULT '';")
+            except:
+                pass
+
+            # Initial Data Setup
+            cursor.execute("SELECT COUNT(*) FROM system_tenants WHERE tenant_id = 'lynx'")
+            if cursor.fetchone()[0] == 0:
+                cursor.execute("""
+                    INSERT INTO system_tenants (tenant_id, company_name, support_phone, owner_username, license_active, registration_date, license_expiry_date)
+                    VALUES ('lynx', 'Lynx Fiber Pvt Ltd', '03135776263', 'owner', TRUE, %s, '')
+                """, (datetime.now().strftime("%Y-%m-%d"),))
+                
+            cursor.execute("SELECT COUNT(*) FROM users WHERE username = 'owner' AND tenant_id = 'lynx'")
+            if cursor.fetchone()[0] == 0:
+                cursor.execute("""
+                    INSERT INTO users (username, password, role, assignedarea, tenant_id) 
+                    VALUES ('owner', %s, 'Owner', 'ALL', 'lynx')
+                """, (hash_password('lynxowner123'),))
             
             # Auto Migration Repair Force-Injection for timestamp column constraint alignment
             try:
