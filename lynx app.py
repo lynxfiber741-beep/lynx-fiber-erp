@@ -253,11 +253,13 @@ def build_database_schema():
             """)
 
             # 4. Areas Table
-            # System Activity Logs Query (Ise copy karein)
-if st.session_state['tenant_id'] == 'lynx' and st.session_state['username'] == 'owner':
-    cur.execute("SELECT timestamp, tenant_id, username, action_type, description FROM activity_logs ORDER BY timestamp DESC LIMIT 500")
-else:
-    cur.execute("SELECT timestamp, username, action_type, description FROM activity_logs WHERE tenant_id = %s ORDER BY timestamp DESC LIMIT 300", (st.session_state['tenant_id'],))
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS areas (
+                    areaname TEXT NOT NULL,
+                    tenant_id TEXT NOT NULL DEFAULT 'lynx',
+                    PRIMARY KEY (areaname, tenant_id)
+                )
+            """)
 
             # 5. Packages Table
             cursor.execute("""
