@@ -291,23 +291,19 @@ def build_database_schema():
                 )
             """)
 
-            # 7. FIX: Activity Logs (Ye part aapke error ko solve karega)
+            # 7. FIXED Activity Logs Table
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS activity_logs (
                     log_id TEXT PRIMARY KEY,
                     tenant_id TEXT NOT NULL,
                     username TEXT NOT NULL,
                     action_type TEXT NOT NULL,
-                    description TEXT NOT NULL
+                    description TEXT NOT NULL,
+                    timestamp TEXT NOT NULL DEFAULT ''
                 )
             """)
-            # Timestamp column add karna agar missing ho
-            try:
-                cursor.execute("ALTER TABLE activity_logs ADD COLUMN IF NOT EXISTS timestamp TEXT DEFAULT '';")
-            except:
-                pass
 
-            # Initial Data Setup
+            # Initial Data Setup (Sirf ek baar)
             cursor.execute("SELECT COUNT(*) FROM system_tenants WHERE tenant_id = 'lynx'")
             if cursor.fetchone()[0] == 0:
                 cursor.execute("""
