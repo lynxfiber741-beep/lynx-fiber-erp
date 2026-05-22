@@ -29,7 +29,7 @@ from reportlab.lib.enums import TA_CENTER
 # ==========================================
 DISTRIBUTOR_NAME = "Lynx Fiber Internet"
 MASTER_NOTIFY_NUMBERS = ["03215943786", "03118808741"]
-GENERIC_TEXT = "Lynx Fiber Internet"  
+GENERIC_TEXT = "Lynx Fiber Internet"
 
 # ==========================================
 # 1. CORE CONFIGURATION & SESSION STATE
@@ -50,15 +50,8 @@ if 'portal_mode' not in st.session_state:
     st.session_state['portal_mode'] = False
 
 GLOBAL_TARGET_ORDER = [
-    "username",
-    "customername",
-    "phone",
-    "cnic",
-    "package",
-    "billamount",
-    "area",
-    "address",
-    "onuserialnumber"
+    "username", "customername", "phone", "cnic", "package", 
+    "billamount", "area", "address", "onuserialnumber"
 ]
 
 # ==========================================
@@ -129,14 +122,14 @@ def generate_receipt_pdf(company_name, phone_ref, inv_id, c_id, c_name, area, pa
     
     def escape_xml(txt):
         return html.escape(str(txt))
-
+        
     try:
         paid_val = int(float(str(paid)))
         arrears_val = int(float(str(arrears)))
     except Exception:
         paid_val = 0
         arrears_val = 0
-
+        
     story = [
         Paragraph(escape_xml(company_name).upper(), title_style),
         Paragraph(f"Official Helpline: {escape_xml(phone_ref)} | Transaction Receipt", sub_style),
@@ -186,7 +179,7 @@ def safe_migrate_table_constraints(cursor, table_name, columns_dict, pk_columns)
                     pass
             else:
                 cursor.execute(f"ALTER TABLE {table_name} ADD COLUMN {col_name} {col_type}")
-            
+                
     cursor.execute("""
         SELECT a.attname FROM pg_index i 
         JOIN pg_attribute a ON a.attnum = ANY(i.indkey) AND a.attrelid = i.indrelid 
@@ -219,7 +212,7 @@ def build_database_schema():
                     license_expiry_date TEXT NOT NULL DEFAULT ''
                 )
             """)
-
+            
             # 2. Users Table
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS users (
@@ -231,7 +224,7 @@ def build_database_schema():
                     PRIMARY KEY (username, tenant_id)
                 )
             """)
-
+            
             # 3. Customers Table
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS customers (
@@ -251,7 +244,7 @@ def build_database_schema():
                     PRIMARY KEY (username, tenant_id)
                 )
             """)
-
+            
             # 4. Areas Table
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS areas (
@@ -260,7 +253,7 @@ def build_database_schema():
                     PRIMARY KEY (areaname, tenant_id)
                 )
             """)
-
+            
             # 5. Packages Table
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS packages (
@@ -271,7 +264,7 @@ def build_database_schema():
                     PRIMARY KEY (packagename, areaname, tenant_id)
                 )
             """)
-
+            
             # 6. Billing History
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS billing_history (
@@ -290,7 +283,7 @@ def build_database_schema():
                     tenant_id TEXT NOT NULL DEFAULT 'lynx'
                 )
             """)
-
+            
             # 7. FIXED Activity Logs Table
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS activity_logs (
@@ -302,6 +295,18 @@ def build_database_schema():
                     timestamp TEXT NOT NULL DEFAULT ''
                 )
             """)
+            
+            # Auto Migration Repair Force-Injection for column alignment
+            try:
+                cursor.execute("ALTER TABLE activity_logs ADD COLUMN IF NOT EXISTS timestamp TEXT NOT NULL DEFAULT '';")
+            except Exception:
+                pass
+                
+            # 🔥 CRITICAL FIX: Force-inject 'description' column if it's missing in existing database table
+            try:
+                cursor.execute("ALTER TABLE activity_logs ADD COLUMN IF NOT EXISTS description TEXT NOT NULL DEFAULT '';")
+            except Exception:
+                pass
 
             # Initial Data Setup (Sirf ek baar)
             cursor.execute("SELECT COUNT(*) FROM system_tenants WHERE tenant_id = 'lynx'")
@@ -314,27 +319,7 @@ def build_database_schema():
             cursor.execute("SELECT COUNT(*) FROM users WHERE username = 'owner' AND tenant_id = 'lynx'")
             if cursor.fetchone()[0] == 0:
                 cursor.execute("""
-                    INSERT INTO users (username, password, role, assignedarea, tenant_id) 
-                    VALUES ('owner', %s, 'Owner', 'ALL', 'lynx')
-                """, (hash_password('lynxowner123'),))
-            
-            # Auto Migration Repair Force-Injection for timestamp column constraint alignment
-            try:
-                cursor.execute("ALTER TABLE activity_logs ADD COLUMN IF NOT EXISTS timestamp TEXT NOT NULL DEFAULT '';")
-            except Exception:
-                pass
-
-            cursor.execute("SELECT COUNT(*) FROM system_tenants WHERE tenant_id = 'lynx'")
-            if cursor.fetchone()[0] == 0:
-                cursor.execute("""
-                    INSERT INTO system_tenants (tenant_id, company_name, support_phone, owner_username, license_active, registration_date, license_expiry_date)
-                    VALUES ('lynx', 'Lynx Fiber Pvt Ltd', '03135776263', 'owner', TRUE, %s, '')
-                """, (datetime.now().strftime("%Y-%m-%d"),))
-                
-            cursor.execute("SELECT COUNT(*) FROM users WHERE username = 'owner' AND tenant_id = 'lynx'")
-            if cursor.fetchone()[0] == 0:
-                cursor.execute("""
-                    INSERT INTO users (username, password, role, assignedarea, tenant_id) 
+                    INSERT INTO users (username, password, role, assignedarea, tenant_id)
                     VALUES ('owner', %s, 'Owner', 'ALL', 'lynx')
                 """, (hash_password('lynxowner123'),))
 
@@ -356,12 +341,12 @@ def fetch_active_tenant_metadata(tenant_id):
                 res = cur.fetchone()
                 if res:
                     return {
-                        "name": res["company_name"], 
-                        "phone": res["support_phone"], 
+                        "name": res["company_name"],
+                        "phone": res["support_phone"],
                         "active": res["license_active"],
                         "expiry_date": res.get("license_expiry_date", "")
                     }
-        return {"name": "Lynx Fiber Pvt Ltd", "phone": "03135776263", "active": True, "expiry_date": ""}
+                return {"name": "Lynx Fiber Pvt Ltd", "phone": "03135776263", "active": True, "expiry_date": ""}
     except Exception:
         return {"name": "Lynx Fiber Pvt Ltd", "phone": "03135776263", "active": True, "expiry_date": ""}
 
@@ -373,10 +358,8 @@ def calculate_license_days(expiry_str):
         expiry_end = expiry_dt.replace(hour=23, minute=59, second=59)
         today_dt = datetime.now()
         time_diff = expiry_end - today_dt
-        
         if time_diff.total_seconds() <= 0:
             return "Expired", False
-        
         days = time_diff.days
         if days >= 1:
             return f"{days} Days Remaining", True
@@ -390,7 +373,6 @@ def calculate_license_days(expiry_str):
 tenant_meta = fetch_active_tenant_metadata(st.session_state['tenant_id'])
 TENANT_COMPANY_NAME = tenant_meta["name"]
 TENANT_SUPPORT_PHONE = tenant_meta["phone"]
-
 license_status_text, is_license_valid = calculate_license_days(tenant_meta.get("expiry_date", ""))
 
 if not tenant_meta["active"] or not is_license_valid:
@@ -412,7 +394,7 @@ def fetch_isolated_matrix(tenant_id):
                     df['status'] = df['status'].fillna('UNPAID').astype(str)
                     extended_cols = GLOBAL_TARGET_ORDER + [c for c in df.columns if c not in GLOBAL_TARGET_ORDER]
                     return df.reindex(columns=extended_cols)
-        return pd.DataFrame(columns=GLOBAL_TARGET_ORDER + ['balanceshift', 'status', 'expirydate', 'tenant_id'])
+                return pd.DataFrame(columns=GLOBAL_TARGET_ORDER + ['balanceshift', 'status', 'expirydate', 'tenant_id'])
     except Exception:
         return pd.DataFrame()
 
@@ -470,31 +452,31 @@ st.set_page_config(page_title=f"Enterprise ERP Panel — Powered by {DISTRIBUTOR
 # UI Styles CSS Engine
 st.markdown(f"""
 <style>
-.stApp [data-testid="stHeader"] {{ background: transparent !important; height: 50px !important; }}
-.stApp .block-container {{ padding-top: 0.5rem !important; padding-bottom: 1rem !important; max-width: 100% !important; }}
-.stApp {{ background-color: #0b0f19; color: #f1f5f9; font-family: sans-serif; }}
-[data-testid="stSidebar"] {{ background-color: #111827; border-right: 1px solid #1f2937; }}
-div[data-testid="stTextInput"] input, div[data-testid="stNumberInput"] input, div[data-testid="stTextArea"] textarea {{ color: #000000 !important; background-color: #ffffff !important; font-weight: bold !important; font-size: 16px !important; border: 2px solid #3b82f6 !important; border-radius: 8px !important; }}
-div[data-baseweb="select"] > div {{ background-color: #ffffff !important; color: #000000 !important; font-weight: bold !important; font-size: 16px !important; border: 2px solid #3b82f6 !important; border-radius: 8px !important; }}
-div[data-baseweb="select"] span, div[data-baseweb="select"] div {{ color: #000000 !important; }}
-ul[role="listbox"] li {{ color: #000000 !important; background-color: #ffffff !important; font-weight: 600 !important; }}
-label, p, .stMarkdown div {{ color: #e5e7eb !important; font-weight: 500; }}
-div.stButton > button, div.stFormSubmitButton > button {{ background: linear-gradient(135deg, #1e293b 0%, #111827 100%) !important; color: #3b82f6 !important; border: 2px solid #3b82f6 !important; border-radius: 12px !important; padding: 15px !important; font-weight: bold !important; font-size: 15px !important; transition: all 0.3s ease; box-shadow: 0 4px 10px rgba(0,0,0,0.3) !important; width: 100% !important; display: flex !important; align-items: center !important; justify-content: center !important; }}
-div.stButton > button:hover, div.stFormSubmitButton > button:hover {{ background: #3b82f6 !important; color: #ffffff !important; border: 2px solid #60a5fa !important; box-shadow: 0 0 15px rgba(59, 130, 246, 0.5) !important; }}
-.table-wrapper {{ overflow-x: auto; width: 100%; -webkit-overflow-scrolling: touch; margin-top: 15px; }}
-.premium-table {{ width: 100%; border-collapse: collapse; border-radius: 12px; overflow: hidden; background: #111827; }}
-.premium-table th {{ background: #1f2937; color: #10b981; padding: 14px; text-align: left; font-size: 13px; border-bottom: 2px solid #374151; white-space: nowrap; text-transform: uppercase;}}
-.premium-table td {{ padding: 14px; border-bottom: 1px solid #1f2937; font-size: 13px; color: #e5e7eb; white-space: nowrap; }}
-.btn-action {{ padding: 6px 12px; border-radius: 6px; font-weight: bold; text-decoration: none; font-size: 12px; display: inline-block; margin-right: 4px; }}
-.btn-c {{ background-color: #2563eb; color: white !important; }}
-.btn-w {{ background-color: #16a34a; color: white !important; }}
-.client-card {{ background: #1f2937; padding: 20px; border-radius: 12px; border: 1px solid #374151; margin-bottom: 15px; }}
-.main-title {{ color: #10b981; font-size: 28px; font-weight: 800; text-align: center; margin-bottom: 25px; }}
-.front-login-box {{ max-width: 450px; margin: 40px auto; background: #111827; padding: 40px; border-radius: 16px; border: 1px solid #10b981; box-shadow: 0 15px 35px rgba(16, 185, 129, 0.2); }}
-.system-card {{ background: #1e293b; border: 1px solid #475569; border-radius: 10px; padding: 15px; margin-bottom: 15px; text-align: center; }}
-.system-card h4 {{ margin: 0 0 10px 0; color: #3b82f6; font-size: 16px; font-weight: bold;}}
-.saas-footer {{ text-align: center; font-size: 12px; color: #6b7280; margin-top: 50px; padding: 15px; border-top: 1px solid #1f2937; }}
-.saas-footer b {{ color: #3b82f6; }}
+    .stApp [data-testid="stHeader"] {{ background: transparent !important; height: 50px !important; }}
+    .stApp .block-container {{ padding-top: 0.5rem !important; padding-bottom: 1rem !important; max-width: 100% !important; }}
+    .stApp {{ background-color: #0b0f19; color: #f1f5f9; font-family: sans-serif; }}
+    [data-testid="stSidebar"] {{ background-color: #111827; border-right: 1px solid #1f2937; }}
+    div[data-testid="stTextInput"] input, div[data-testid="stNumberInput"] input, div[data-testid="stTextArea"] textarea {{ color: #000000 !important; background-color: #ffffff !important; font-weight: bold !important; font-size: 16px !important; border: 2px solid #3b82f6 !important; border-radius: 8px !important; }}
+    div[data-baseweb="select"] > div {{ background-color: #ffffff !important; color: #000000 !important; font-weight: bold !important; font-size: 16px !important; border: 2px solid #3b82f6 !important; border-radius: 8px !important; }}
+    div[data-baseweb="select"] span, div[data-baseweb="select"] div {{ color: #000000 !important; }}
+    ul[role="listbox"] li {{ color: #000000 !important; background-color: #ffffff !important; font-weight: 600 !important; }}
+    label, p, .stMarkdown div {{ color: #e5e7eb !important; font-weight: 500; }}
+    div.stButton > button, div.stFormSubmitButton > button {{ background: linear-gradient(135deg, #1e293b 0%, #111827 100%) !important; color: #3b82f6 !important; border: 2px solid #3b82f6 !important; border-radius: 12px !important; padding: 15px !important; font-weight: bold !important; font-size: 15px !important; transition: all 0.3s ease; box-shadow: 0 4px 10px rgba(0,0,0,0.3) !important; width: 100% !important; display: flex !important; align-items: center !important; justify-content: center !important; }}
+    div.stButton > button:hover, div.stFormSubmitButton > button:hover {{ background: #3b82f6 !important; color: #ffffff !important; border: 2px solid #60a5fa !important; box-shadow: 0 0 15px rgba(59, 130, 246, 0.5) !important; }}
+    .table-wrapper {{ overflow-x: auto; width: 100%; -webkit-overflow-scrolling: touch; margin-top: 15px; }}
+    .premium-table {{ width: 100%; border-collapse: collapse; border-radius: 12px; overflow: hidden; background: #111827; }}
+    .premium-table th {{ background: #1f2937; color: #10b981; padding: 14px; text-align: left; font-size: 13px; border-bottom: 2px solid #374151; white-space: nowrap; text-transform: uppercase;}}
+    .premium-table td {{ padding: 14px; border-bottom: 1px solid #1f2937; font-size: 13px; color: #e5e7eb; white-space: nowrap; }}
+    .btn-action {{ padding: 6px 12px; border-radius: 6px; font-weight: bold; text-decoration: none; font-size: 12px; display: inline-block; margin-right: 4px; }}
+    .btn-c {{ background-color: #2563eb; color: white !important; }}
+    .btn-w {{ background-color: #16a34a; color: white !important; }}
+    .client-card {{ background: #1f2937; padding: 20px; border-radius: 12px; border: 1px solid #374151; margin-bottom: 15px; }}
+    .main-title {{ color: #10b981; font-size: 28px; font-weight: 800; text-align: center; margin-bottom: 25px; }}
+    .front-login-box {{ max-width: 450px; margin: 40px auto; background: #111827; padding: 40px; border-radius: 16px; border: 1px solid #10b981; box-shadow: 0 15px 35px rgba(16, 185, 129, 0.2); }}
+    .system-card {{ background: #1e293b; border: 1px solid #475569; border-radius: 10px; padding: 15px; margin-bottom: 15px; text-align: center; }}
+    .system-card h4 {{ margin: 0 0 10px 0; color: #3b82f6; font-size: 16px; font-weight: bold;}}
+    .saas-footer {{ text-align: center; font-size: 12px; color: #6b7280; margin-top: 50px; padding: 15px; border-top: 1px solid #1f2937; }}
+    .saas-footer b {{ color: #3b82f6; }}
 </style>
 """, unsafe_allow_html=True)
 
@@ -542,9 +524,7 @@ else:
                                     st.session_state['assigned_areas'] = [a.strip() for a in raw_areas.split(",") if a.strip()]
                                 st.session_state['current_node'] = "📊 Lynx Dashboard"
                                 
-                                # Log Login Action
                                 insert_activity_log(input_tenant, st.session_state['username'], "LOGIN", "System initialized successfully via secure portal node.")
-                                
                                 st.cache_data.clear()
                                 st.rerun()
                         else:
@@ -578,22 +558,20 @@ else:
                                             INSERT INTO system_tenants (tenant_id, company_name, support_phone, owner_username, license_active, registration_date, license_expiry_date)
                                             VALUES (%s, %s, %s, %s, FALSE, %s, '')
                                         """, (reg_tenant_id, reg_company_name, reg_support_phone, reg_owner_user, datetime.now().strftime("%Y-%m-%d")))
+                                        
                                         cursor.execute("""
                                             INSERT INTO users (username, password, role, assignedarea, tenant_id)
                                             VALUES (%s, %s, 'Owner', 'ALL', %s)
                                         """, (reg_owner_user, hash_password(reg_owner_pass), reg_tenant_id))
                                         
-                                        # Log Onboarding Event
                                         insert_activity_log(reg_tenant_id, reg_owner_user, "REGISTRATION", f"New tenant application generated for {reg_company_name}")
-                                        
                                         st.success("🎉 Registration Proposal Saved onto Supabase Ledger Engine!")
+                                        
                                         alert_payload = f"🔒 LYNX SAAS LICENSE ALERT:\nNew enterprise system activation initiated.\nTenant ID: {reg_tenant_id}\nISP Company: {reg_company_name}"
                                         encoded_msg = urllib.parse.quote(alert_payload)
-                                        
                                         master_phone = MASTER_NOTIFY_NUMBERS[0]
                                         if master_phone.startswith("0"):
                                             master_phone = master_phone[1:]
-                                            
                                         st.markdown(f'<a href="https://wa.me/92{master_phone}?text={encoded_msg}" target="_blank" style="background:#10b981; color:white; padding:12px; border-radius:8px; display:block; text-align:center; text-decoration:none; font-weight:bold; margin-bottom:10px;">📲 Dispatch Verification Code</a>', unsafe_allow_html=True)
                         except Exception as ex:
                             st.error(f"Transaction Fault Error: {ex}")
@@ -609,21 +587,29 @@ if st.session_state['authenticated'] and not st.session_state['portal_mode']:
         st.markdown(f"<p style='text-align:center; font-size:12px; color:#f59e0b;'>⏳ Account Life: <br><b>{license_status_text}</b></p>", unsafe_allow_html=True)
         
         if st.button("📊 Lynx Dashboard", use_container_width=True):
-            st.session_state['current_node'] = "📊 Lynx Dashboard"; st.rerun()
+            st.session_state['current_node'] = "📊 Lynx Dashboard"
+            st.rerun()
         if st.button("👥 Operational Billing Center", use_container_width=True):
-            st.session_state['current_node'] = "👥 Operational Billing Center"; st.rerun()
+            st.session_state['current_node'] = "👥 Operational Billing Center"
+            st.rerun()
         if st.button("📜 Lifetime Ledger History", use_container_width=True):
-            st.session_state['current_node'] = "📜 Lifetime Ledger History"; st.rerun()
+            st.session_state['current_node'] = "📜 Lifetime Ledger History"
+            st.rerun()
+            
         if str(st.session_state.get('user_role', '')).lower() in ["owner", "admin"]:
             if st.button("🔐 System Access Control", use_container_width=True):
-                st.session_state['current_node'] = "🔐 System Access Control"; st.rerun()
+                st.session_state['current_node'] = "🔐 System Access Control"
+                st.rerun()
+                
         st.write("---")
         username_display = str(st.session_state.get('username', 'UNKNOWN')).upper()
         role_display = str(st.session_state.get('user_role', 'STAFF')).upper()
         st.markdown(f"<p style='text-align:center;'>👤 Active: <b>{username_display}</b><br>📍 Role: <b style='color:#10b981;'>{role_display}</b></p>", unsafe_allow_html=True)
+        
         if st.button("🔒 Logout System", use_container_width=True):
             insert_activity_log(st.session_state['tenant_id'], st.session_state['username'], "LOGOUT", "User terminated application session manually.")
-            st.session_state['authenticated'] = False; st.rerun()
+            st.session_state['authenticated'] = False
+            st.rerun()
 
 # ==========================================
 # VIEW 1: LYNX DASHBOARD
@@ -645,6 +631,7 @@ if routing_node in ["📊 Core Analytics Dashboard", "📊 Lynx Dashboard"]:
     else:
         collection_map = fetch_isolated_billing_summary(st.session_state['tenant_id'])
         st.markdown("### 🌐 Active System Node Overview")
+        
         for i in range(0, len(cards_display_areas), 2):
             cols = st.columns(2)
             for j in range(2):
@@ -659,26 +646,29 @@ if routing_node in ["📊 Core Analytics Dashboard", "📊 Lynx Dashboard"]:
                     except Exception:
                         hub_bill = 0
                         hub_arrears = 0
-
+                        
                     hub_paid_count = len(segment[segment['status'] == 'PAID'])
                     hub_partial_count = len(segment[segment['status'] == 'PARTIAL'])
                     hub_unpaid_count = len(segment[segment['status'] == 'UNPAID'])
                     hub_suspended_count = len(segment[segment['status'] == 'SUSPENDED'])
+                    
                     hub_uids = [str(x).lower().strip() for x in segment['username'].tolist() if x]
                     hub_collected = sum(collection_map.get(uid, 0) for uid in hub_uids)
+                    
                     b_color = "#10b981" if (i+j)%2 == 0 else "#3b82f6"
                     with cols[j]:
                         st.markdown(f"""
-                            <div class="system-card" style="border-left: 5px solid {b_color};">
-                                <h4>🌐 {current_hub} Overview</h4>
-                                <p><b>Total Customers:</b> {len(segment)}</p>
-                                <p><b>Expected Revenue:</b> Rs. {hub_bill:,}</p>
-                                <p style="color:#10b981; font-weight:bold;"><b>✅ Paid Users:</b> {hub_paid_count} (Recv: Rs. {hub_collected:,})</p>
-                                <p style="color:#f59e0b; font-weight:bold;"><b>🟡 Partial Accounts:</b> {hub_partial_count}</p>
-                                <p style="color:#f43f5e; font-weight:bold;"><b>❌ Unpaid / Suspended:</b> {hub_unpaid_count} / {hub_suspended_count}</p>
-                                <p style="color:#f43f5e; font-weight:500;"><b>⚠️ Outstanding Arrears:</b> Rs. {hub_arrears:,}</p>
-                            </div>
+                        <div class="system-card" style="border-left: 5px solid {b_color};">
+                            <h4>🌐 {current_hub} Overview</h4>
+                            <p><b>Total Customers:</b> {len(segment)}</p>
+                            <p><b>Expected Revenue:</b> Rs. {hub_bill:,}</p>
+                            <p style="color:#10b981; font-weight:bold;"><b>✅ Paid Users:</b> {hub_paid_count} (Recv: Rs. {hub_collected:,})</p>
+                            <p style="color:#f59e0b; font-weight:bold;"><b>🟡 Partial Accounts:</b> {hub_partial_count}</p>
+                            <p style="color:#f43f5e; font-weight:bold;"><b>❌ Unpaid / Suspended:</b> {hub_unpaid_count} / {hub_suspended_count}</p>
+                            <p style="color:#f43f5e; font-weight:500;"><b>⚠️ Outstanding Arrears:</b> Rs. {hub_arrears:,}</p>
+                        </div>
                         """, unsafe_allow_html=True)
+                        
         st.write("---")
         base_df = df_matrix.copy()
         if not is_high_profile and "ALL" not in st.session_state['assigned_areas']:
@@ -792,9 +782,8 @@ elif routing_node == "👥 Operational Billing Center":
             except Exception:
                 base_bill = 0
                 base_shift = 0
-
+                
             st.info(f"📊 Plan Rate: Rs. {base_bill} | Arrears: Rs. {base_shift} | Expiry: {node_row_dict.get('expirydate')}")
-            
             billing_months = st.selectbox("📅 Duration (Advance Months)", [1, 3, 6, 12], key="col_months")
             pay_method = st.selectbox("Method Profile", ["CASH", "EASYPAISA", "JAZZCASH", "BANK_TRANSFER"])
             discount = st.number_input("🎁 Discount Approved (Rs.)", min_value=0, value=0, step=50)
@@ -826,15 +815,14 @@ elif routing_node == "👥 Operational Billing Center":
                             INSERT INTO billing_history (invoiceid, customerid, customername, area, phone, datetimestamp, currentpackage, amountpaid, remainingarrears, transactiontype, paymentmethod, discountgiven, tenant_id)
                             VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, 'BILL_PAYMENT', %s, %s, %s)
                         """, (invoice_uuid, resolved_uid, node_row_dict.get('customername'), node_row_dict.get('area'), node_row_dict.get('phone'), datetime.now().strftime("%Y-%m-%d %H:%M:%S"), node_row_dict.get('package'), int(cash_in), future_shift, pay_method, int(discount), st.session_state['tenant_id']))
-                
-                # Log Transaction Operation 
+                        
                 insert_activity_log(st.session_state['tenant_id'], st.session_state['username'], "BILL_PAYMENT", f"Posted Rs. {cash_in} for {resolved_uid}. Arrears set to Rs. {future_shift}, Expiry extended to {new_expiry}.")
-                
                 st.success(f"🎉 Collection Recorded Cleanly! Extended Lock To: {new_expiry}")
+                
                 pdf_bytes = generate_receipt_pdf(TENANT_COMPANY_NAME, TENANT_SUPPORT_PHONE, invoice_uuid, resolved_uid, node_row_dict.get('customername'), node_row_dict.get('area'), node_row_dict.get('package'), cash_in, future_shift, pay_method)
                 st.download_button("📥 Download PDF Receipt", data=pdf_bytes, file_name=f"Receipt_{invoice_uuid}.pdf", mime="application/pdf")
                 st.cache_data.clear()
-
+                
     if is_management:
         with tabs[1]:
             if not all_system_areas:
@@ -845,7 +833,7 @@ elif routing_node == "👥 Operational Billing Center":
                     with conn.cursor() as cur:
                         cur.execute("SELECT packagename, packagerate FROM packages WHERE areaname = %s AND tenant_id = %s", (in_area, st.session_state['tenant_id']))
                         area_pkgs = dict(cur.fetchall())
-                
+                        
                 in_id = st.text_input("Desired Unique Username Key").strip().lower()
                 in_name = st.text_input("Customer Full Name").strip()
                 in_phone = st.text_input("Phone Number").strip()
@@ -882,29 +870,23 @@ elif routing_node == "👥 Operational Billing Center":
                                         VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, 0, 'UNPAID', %s, %s)
                                     """, (in_id, in_name, norm_p, in_cnic, chosen_pkg, int(in_rate), in_area, in_address, in_sn, default_expiry, st.session_state['tenant_id']))
                                     
-                                    # Log Customer Creation
                                     insert_activity_log(st.session_state['tenant_id'], st.session_state['username'], "CREATE_CUSTOMER", f"Allocated new customer terminal profile for {in_id} ({in_name}) inside {in_area}.")
-                                    
                                     st.success(f"🚀 Profile allocated! Expiry: {default_expiry}.")
-                                    st.cache_data.clear(); st.rerun()
+                                    st.cache_data.clear()
+                                    st.rerun()
                                     
         with tabs[2]:
             st.markdown("#### 📥 Download Sample Template")
             blueprint_df = pd.DataFrame([{
-                "username": "ali786",
-                "customername": "Muhammad Ali",
-                "phone": "03001234567",
-                "cnic": "35201-1234567-1",
-                "package": "10 Mbps",
-                "billamount": 1200,
-                "area": "Model Town",
-                "address": "House 45-B, Street 3",
-                "onuserialnumber": "ONU-HW-9988X"
+                "username": "ali786", "customername": "Muhammad Ali", "phone": "03001234567",
+                "cnic": "35201-1234567-1", "package": "10 Mbps", "billamount": 1200,
+                "area": "Model Town", "address": "House 45-B, Street 3", "onuserialnumber": "ONU-HW-9988X"
             }])
             csv_buffer = io.StringIO()
             blueprint_df.to_csv(csv_buffer, index=False)
             st.download_button(label="📥 DOWNLOAD TEMPLATE FILE", data=csv_buffer.getvalue().encode('utf-8'), file_name="subscriber_template.csv", mime="text/csv", use_container_width=True)
             st.write("---")
+            
             uploaded_file = st.file_uploader("Upload Excel Sheet Matrix Log", type=['xlsx', 'csv'])
             if uploaded_file:
                 try:
@@ -918,7 +900,6 @@ elif routing_node == "👥 Operational Billing Center":
                                     try:
                                         clean_id = str(row['username']).strip().lower()
                                         default_expiry = (datetime.now() + relativedelta(months=1)).strftime("%Y-%m-%d")
-                                        
                                         raw_amt = str(row.get('billamount', '1500')).strip()
                                         bill_amt = int(float(raw_amt)) if raw_amt else 1500
                                         
@@ -930,10 +911,8 @@ elif routing_node == "👥 Operational Billing Center":
                                         inserted_rows += 1
                                     except Exception:
                                         pass
-                        
-                        # Log Bulk Batch Insertion
+                                        
                         insert_activity_log(st.session_state['tenant_id'], st.session_state['username'], "BULK_IMPORT", f"Executed bulk system upload matrix processing {inserted_rows} clean entries.")
-                        
                         st.success(f"🚀 Bulk Isolation processed {inserted_rows} entries cleanly!")
                         st.cache_data.clear()
                 except Exception as ex:
@@ -946,6 +925,7 @@ elif routing_node == "👥 Operational Billing Center":
             edit_target = st.selectbox("Modify Identity Key Node", list(sub_map.keys()), key="edit_box")
             edit_uid = sub_map[edit_target]
             edit_row_dict = df_matrix[df_matrix['username'] == edit_uid].iloc[0].to_dict()
+            
             with st.form("edit_terminal_form"):
                 up_name = st.text_input("Customer Name", value=edit_row_dict.get('customername'))
                 up_phone = st.text_input("Phone Number", value=edit_row_dict.get('phone'))
@@ -956,9 +936,10 @@ elif routing_node == "👥 Operational Billing Center":
                     current_rate_val = int(float(str(edit_row_dict.get('billamount', 0))))
                 except Exception:
                     current_rate_val = 0
-
+                    
                 up_rate = st.number_input("Monthly Rate (Rs.)", value=current_rate_val)
                 up_status = st.selectbox("Line Status", ["PAID", "PARTIAL", "UNPAID", "SUSPENDED"], index=["PAID", "PARTIAL", "UNPAID", "SUSPENDED"].index(edit_row_dict.get('status','UNPAID')))
+                
                 if st.form_submit_button("💾 COMMIT MODIFICATIONS"):
                     with get_db_connection() as conn:
                         with conn.cursor() as cursor:
@@ -966,12 +947,11 @@ elif routing_node == "👥 Operational Billing Center":
                                 UPDATE customers SET customername=%s, phone=%s, address=%s, onuserialnumber=%s, billamount=%s, status=%s 
                                 WHERE username=%s AND tenant_id=%s
                             """, (up_name, clean_and_validate_phone(up_phone), up_address, up_sn, int(up_rate), up_status, edit_uid, st.session_state['tenant_id']))
-                    
-                    # Log Customer Modifications 
+                            
                     insert_activity_log(st.session_state['tenant_id'], st.session_state['username'], "UPDATE_CUSTOMER", f"Modified data parameters for customer {edit_uid}. Status updated to {up_status}, rate set to Rs. {up_rate}.")
-                    
                     st.success("Profile Changes Logged within Tenant context.")
-                    st.cache_data.clear(); st.rerun()
+                    st.cache_data.clear()
+                    st.rerun()
 
 # ==========================================
 # VIEW 3: LIFETIME AUDIT LEDGER HISTORY
@@ -985,6 +965,7 @@ elif routing_node == "📜 Lifetime Ledger History":
             l_rows = cur.fetchall()
             if l_rows:
                 df_ledger = pd.DataFrame(l_rows)
+                
     if df_ledger.empty:
         st.info("No transactional logs found inside your tenant node registry.")
     else:
@@ -1000,6 +981,7 @@ elif routing_node == "🔐 System Access Control":
     else:
         st.markdown("<div class='main-title'>🔐 SYSTEM ACCESS PANEL</div>", unsafe_allow_html=True)
         all_system_areas = fetch_isolated_areas(st.session_state['tenant_id'])
+        
         adm_tabs = st.tabs([
             "👑 SaaS Whitelabel License Manager" if (st.session_state['tenant_id'] == 'lynx' and st.session_state['username'] == 'owner') else "🏢 Branding Metadata Controls",
             "⚙️ Access Accounts Management",
@@ -1017,47 +999,46 @@ elif routing_node == "🔐 System Access Control":
                     with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
                         cur.execute("SELECT * FROM system_tenants ORDER BY registration_date DESC")
                         all_tenants_rows = cur.fetchall()
-                if all_tenants_rows:
-                    df_tenants_view = pd.DataFrame(all_tenants_rows)
-                    st.dataframe(df_tenants_view, use_container_width=True)
-                tenant_select_list = [t['tenant_id'] for t in all_tenants_rows if t['tenant_id'] != 'lynx']
-                if tenant_select_list:
-                    chosen_target_tenant = st.selectbox("Select Target Tenant ID to Modify Access", tenant_select_list)
-                    tenant_record = next(item for item in all_tenants_rows if item["tenant_id"] == chosen_target_tenant)
-                    current_status = tenant_record["license_active"]
-                    current_expiry_val = tenant_record.get("license_expiry_date", "")
-                    
-                    st.write("---")
-                    st.markdown(f"#### ⚙️ Edit Authorization System: `{chosen_target_tenant}`")
-                    new_license_toggle = st.checkbox("Grant Premium Software Activation Status", value=current_status)
-                    new_expiry_input = st.text_input("Set License Expiry Date (YYYY-MM-DD) [Blank = Lifetime]", value=current_expiry_val)
-                    
-                    st.markdown("##### 🔑 Master Password Override Tool")
-                    new_tenant_pass_force = st.text_input("Force Reset Tenant Admin Password", type="password", help="Leave empty to maintain existing pass")
-                    
-                    if st.button("💾 LOCK CONFIGURATION STATUS KEY"):
-                        with get_db_connection() as conn:
-                            with conn.cursor() as cursor:
-                                cursor.execute("""
-                                    UPDATE system_tenants 
-                                    SET license_active = %s, license_expiry_date = %s 
-                                    WHERE tenant_id = %s
-                                """, (new_license_toggle, new_expiry_input.strip(), chosen_target_tenant))
-                                
-                                if new_tenant_pass_force.strip():
-                                    t_owner = tenant_record["owner_username"]
-                                    hashed_f = hash_password(new_tenant_pass_force.strip())
-                                    cursor.execute("""
-                                        UPDATE users SET password = %s 
-                                        WHERE username = %s AND tenant_id = %s
-                                    """, (hashed_f, t_owner, chosen_target_tenant))
-                                    st.success(f"🔑 Successfully overrode password for master root key: `{t_owner}`")
-                                    
-                        # Master log injection
-                        insert_activity_log("lynx", "owner", "MASTER_OVERRIDE", f"Modified access structure parameters for tenant instance `{chosen_target_tenant}`.")
-                        
-                        st.success("Dynamic access lock state and subscription loop updated.")
-                        st.cache_data.clear(); st.rerun()
+                        if all_tenants_rows:
+                            df_tenants_view = pd.DataFrame(all_tenants_rows)
+                            st.dataframe(df_tenants_view, use_container_width=True)
+                            
+                        tenant_select_list = [t['tenant_id'] for t in all_tenants_rows if t['tenant_id'] != 'lynx']
+                        if tenant_select_list:
+                            chosen_target_tenant = st.selectbox("Select Target Tenant ID to Modify Access", tenant_select_list)
+                            tenant_record = next(item for item in all_tenants_rows if item["tenant_id"] == chosen_target_tenant)
+                            current_status = tenant_record["license_active"]
+                            current_expiry_val = tenant_record.get("license_expiry_date", "")
+                            
+                            st.write("---")
+                            st.markdown(f"#### ⚙️ Edit Authorization System: `{chosen_target_tenant}`")
+                            new_license_toggle = st.checkbox("Grant Premium Software Activation Status", value=current_status)
+                            new_expiry_input = st.text_input("Set License Expiry Date (YYYY-MM-DD) [Blank = Lifetime]", value=current_expiry_val)
+                            
+                            st.markdown("##### 🔑 Master Password Override Tool")
+                            new_tenant_pass_force = st.text_input("Force Reset Tenant Admin Password", type="password")
+                            
+                            if st.button("💾 LOCK CONFIGURATION STATUS KEY"):
+                                with get_db_connection() as conn:
+                                    with conn.cursor() as cursor:
+                                        cursor.execute("""
+                                            UPDATE system_tenants SET license_active = %s, license_expiry_date = %s 
+                                            WHERE tenant_id = %s
+                                        """, (new_license_toggle, new_expiry_input.strip(), chosen_target_tenant))
+                                        
+                                        if new_tenant_pass_force.strip():
+                                            t_owner = tenant_record["owner_username"]
+                                            hashed_f = hash_password(new_tenant_pass_force.strip())
+                                            cursor.execute("""
+                                                UPDATE users SET password = %s 
+                                                WHERE username = %s AND tenant_id = %s
+                                            """, (hashed_f, t_owner, chosen_target_tenant))
+                                            st.success(f"🔑 Successfully overrode password for master root key: `{t_owner}`")
+                                            
+                                insert_activity_log("lynx", "owner", "MASTER_OVERRIDE", f"Modified access structure parameters for tenant instance `{chosen_target_tenant}`.")
+                                st.success("Dynamic access lock state and subscription loop updated.")
+                                st.cache_data.clear()
+                                st.rerun()
         else:
             with adm_tabs[0]:
                 st.markdown("### 🏢 ISP Whitelabel Branding Controls")
@@ -1065,25 +1046,26 @@ elif routing_node == "🔐 System Access Control":
                     with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
                         cur.execute("SELECT company_name, support_phone FROM system_tenants WHERE tenant_id = %s", (st.session_state['tenant_id'],))
                         meta_row = cur.fetchone()
+                        
                 with st.form("tenant_custom_branding_form"):
                     b_name = st.text_input("Company Brand Name Display", value=meta_row["company_name"] if meta_row else TENANT_COMPANY_NAME)
                     b_phone = st.text_input("Official Helpline Reference Phone", value=meta_row["support_phone"] if meta_row else TENANT_SUPPORT_PHONE)
+                    
                     if st.form_submit_button("💾 SAVE BRANDING LOGS"):
                         with get_db_connection() as conn:
                             with conn.cursor() as cursor:
                                 cursor.execute("UPDATE system_tenants SET company_name=%s, support_phone=%s WHERE tenant_id=%s", (b_name, b_phone, st.session_state['tenant_id']))
-                        
-                        # Log Branding Change
                         insert_activity_log(st.session_state['tenant_id'], st.session_state['username'], "UPDATE_BRANDING", f"Modified company metadata profile. Name: {b_name}, Hotline: {b_phone}")
-                        
                         st.success("Metadata Saved cleanly inside cluster engine.")
-                        st.cache_data.clear(); st.rerun()
+                        st.cache_data.clear()
+                        st.rerun()
                         
         with adm_tabs[1]:
             st.markdown("### ⚙️ Access Accounts Management & Credentials")
             with st.form("owner_self_password_form"):
                 current_self_pass = st.text_input("Enter Current Password Verification", type="password")
                 new_self_pass = st.text_input("Enter New Secure Password", type="password")
+                
                 if st.form_submit_button("🔒 Securely Change My Password"):
                     if len(new_self_pass) < 6:
                         st.error("Password string too short. Minimum 6 characters required.")
@@ -1094,13 +1076,11 @@ elif routing_node == "🔐 System Access Control":
                                 current_pwd_row = cursor.fetchone()
                                 if current_pwd_row and verify_password(current_self_pass, current_pwd_row[0]):
                                     cursor.execute("UPDATE users SET password = %s WHERE username = %s AND tenant_id = %s", (hash_password(new_self_pass), st.session_state['username'], st.session_state['tenant_id']))
-                                    
-                                    # Log Password Modification
                                     insert_activity_log(st.session_state['tenant_id'], st.session_state['username'], "CHANGE_PASSWORD", "System password updated for safety compliance.")
-                                    
                                     st.success("🎉 Your credentials updated successfully!")
                                 else:
                                     st.error("❌ Validation failed.")
+                                    
             st.write("---")
             st.markdown("#### ➕ Provision Sub-User Entity")
             with st.form("create_subuser_form"):
@@ -1108,6 +1088,7 @@ elif routing_node == "🔐 System Access Control":
                 new_password = st.text_input("Security Access Code / Password", type="password")
                 new_role = st.selectbox("System Architecture Role Level", ["Admin", "Staff"])
                 selected_clearance = st.multiselect("Allocated Sector Clearance", options=["ALL"] + all_system_areas, default=["ALL"])
+                
                 if st.form_submit_button("🚀 Create User Profile"):
                     if not new_username or not new_password:
                         st.error("Complete mandatory fields.")
@@ -1116,12 +1097,10 @@ elif routing_node == "🔐 System Access Control":
                         with get_db_connection() as conn:
                             with conn.cursor() as cursor:
                                 cursor.execute("INSERT INTO users (username, password, role, assignedarea, tenant_id) VALUES (%s, %s, %s, %s, %s) ON CONFLICT (username, tenant_id) DO UPDATE SET password=EXCLUDED.password, role=EXCLUDED.role, assignedarea=EXCLUDED.assignedarea", (new_username, hash_password(new_password), new_role, assigned_areas_str, st.session_state['tenant_id']))
-                        
-                        # Log User Creation
                         insert_activity_log(st.session_state['tenant_id'], st.session_state['username'], "CREATE_SUB_USER", f"Provisioned sub-user identity {new_username} assigned with role {new_role}.")
-                        
                         st.success("User configuration posted.")
-                        st.cache_data.clear(); st.rerun()
+                        st.cache_data.clear()
+                        st.rerun()
                         
         with adm_tabs[2]:
             st.markdown("### 📦 Location Pricing Configurator")
@@ -1132,17 +1111,16 @@ elif routing_node == "🔐 System Access Control":
                     p_name = st.text_input("Tarif ID Flag (e.g., 12 Mbps)").strip()
                     p_area = st.selectbox("Target Core Distribution Area Node", all_system_areas)
                     p_rate = st.number_input("Monthly Price Config (Rs.)", min_value=0, value=1500)
+                    
                     if st.form_submit_button("💾 LOCK TARIFF MATRIX ENTRY"):
                         with get_db_connection() as conn:
                             with conn.cursor() as cursor:
                                 cursor.execute("INSERT INTO packages (packagename, areaname, packagerate, tenant_id) VALUES (%s, %s, %s, %s) ON CONFLICT (packagename, areaname, tenant_id) DO UPDATE SET packagerate = EXCLUDED.packagerate", (p_name, p_area, int(p_rate), st.session_state['tenant_id']))
-                        
-                        # Log Package Configuration
                         insert_activity_log(st.session_state['tenant_id'], st.session_state['username'], "CREATE_PACKAGE", f"Configured tariff item `{p_name}` for area node `{p_area}` at Rs. {p_rate}")
-                        
                         st.success("Configured matrix row entry.")
-                        st.cache_data.clear(); st.rerun()
-            
+                        st.cache_data.clear()
+                        st.rerun()
+                        
             st.write("---")
             st.markdown("#### 🗑️ Remove Package from Matrix")
             all_pkgs_list = fetch_isolated_packages(st.session_state['tenant_id'])
@@ -1159,25 +1137,21 @@ elif routing_node == "🔐 System Access Control":
                                 WHERE LOWER(package) = LOWER(%s) AND LOWER(area) = LOWER(%s) AND tenant_id = %s
                             """, (target_del_pkg['packagename'], target_del_pkg['areaname'], st.session_state['tenant_id']))
                             active_deps = cursor.fetchone()[0]
-                            
                             if active_deps > 0:
                                 d_pkg = target_del_pkg['packagename']
                                 st.error(f"❌ Purge Refused! '{d_pkg}' target profile possesses {active_deps} active customer terminals. Re-assign them to clean dependencies.")
                             else:
                                 cursor.execute("""
-                                    DELETE FROM packages 
-                                    WHERE LOWER(packagename) = LOWER(%s) AND LOWER(areaname) = LOWER(%s) AND tenant_id = %s
+                                    DELETE FROM packages WHERE LOWER(packagename) = LOWER(%s) AND LOWER(areaname) = LOWER(%s) AND tenant_id = %s
                                 """, (target_del_pkg['packagename'], target_del_pkg['areaname'], st.session_state['tenant_id']))
                                 d_pkg = target_del_pkg['packagename']
-                                
-                                # Log Package Deletion
                                 insert_activity_log(st.session_state['tenant_id'], st.session_state['username'], "DELETE_PACKAGE", f"Purged tariff allocation '{d_pkg}' from area cluster '{target_del_pkg['areaname']}'.")
-                                
                                 st.success(f"✅ Tariff '{d_pkg}' removed successfully!")
-                                st.cache_data.clear(); st.rerun()
+                                st.cache_data.clear()
+                                st.rerun()
             else:
                 st.info("No active billing packages stored inside database registry context.")
-                        
+                
         with adm_tabs[3]:
             st.markdown("### 🗺️ Sector Node Operations")
             with st.form("add_area_sector_form"):
@@ -1187,13 +1161,11 @@ elif routing_node == "🔐 System Access Control":
                         with get_db_connection() as conn:
                             with conn.cursor() as cursor:
                                 cursor.execute("INSERT INTO areas VALUES (%s, %s) ON CONFLICT DO NOTHING", (new_area_name, st.session_state['tenant_id']))
-                        
-                        # Log Area Deployment
                         insert_activity_log(st.session_state['tenant_id'], st.session_state['username'], "CREATE_AREA", f"Deployed new network service area location sector: `{new_area_name}`")
-                        
                         st.success("Area logged to network.")
-                        st.cache_data.clear(); st.rerun()
-            
+                        st.cache_data.clear()
+                        st.rerun()
+                        
             st.write("---")
             st.markdown("#### 🗑️ Safe Remove Sector Node")
             if all_system_areas:
@@ -1203,7 +1175,6 @@ elif routing_node == "🔐 System Access Control":
                         with conn.cursor() as cursor:
                             cursor.execute("SELECT COUNT(*) FROM customers WHERE LOWER(area) = LOWER(%s) AND tenant_id = %s", (del_area, st.session_state['tenant_id']))
                             assigned_clients = cursor.fetchone()[0]
-                            
                             cursor.execute("SELECT COUNT(*) FROM packages WHERE LOWER(areaname) = LOWER(%s) AND tenant_id = %s", (del_area, st.session_state['tenant_id']))
                             linked_packages = cursor.fetchone()[0]
                             
@@ -1211,15 +1182,13 @@ elif routing_node == "🔐 System Access Control":
                                 st.error(f"❌ Deletion Aborted! '{del_area}' sector has {assigned_clients} active clients and {linked_packages} assigned packages. Clear dependencies first to prevent runtime system crash.")
                             else:
                                 cursor.execute("DELETE FROM areas WHERE LOWER(areaname) = LOWER(%s) AND tenant_id = %s", (del_area, st.session_state['tenant_id']))
-                                
-                                # Log Area Deletion
                                 insert_activity_log(st.session_state['tenant_id'], st.session_state['username'], "DELETE_AREA", f"Purged sector network hub node area location reference: `{del_area}`")
-                                
                                 st.success(f"✅ Area '{del_area}' wiped cleanly from cloud database cluster.")
-                                st.cache_data.clear(); st.rerun()
+                                st.cache_data.clear()
+                                st.rerun()
             else:
                 st.info("No active areas recorded inside the database registry yet.")
-                        
+                
         with adm_tabs[4]:
             if str(st.session_state.get('user_role', '')).lower() != "owner":
                 st.warning("🔒 Section locked. Only the Organization Owner can wipe datasets.")
@@ -1236,15 +1205,13 @@ elif routing_node == "🔐 System Access Control":
                                 cursor.execute("DELETE FROM customers WHERE tenant_id = %s", (st.session_state['tenant_id'],))
                                 cursor.execute("DELETE FROM packages WHERE tenant_id = %s", (st.session_state['tenant_id'],))
                                 cursor.execute("DELETE FROM areas WHERE tenant_id = %s", (st.session_state['tenant_id'],))
-                                
-                                # Log Destruction Module Execution 
                                 insert_activity_log(st.session_state['tenant_id'], st.session_state['username'], "DATA_PURGE", "Wiped absolute application instance records completely via structural destruct option.")
-                                
                                 st.success("🚀 Your isolated tenant segment data has been cleared cleanly!")
-                                st.cache_data.clear(); st.rerun()
+                                st.cache_data.clear()
+                                st.rerun()
                             else:
                                 st.error("❌ Authentication Refused: Invalid Owner Password Passphrase!")
-
+                                
         with adm_tabs[5]:
             st.markdown("### 📋 System Activity & User Login Logs")
             st.write("Yahan aap live dekh sakte hain kab kis operating user ne system login kiya aur database mein kya tabdeeli (changes) perform keen.")
@@ -1256,21 +1223,19 @@ elif routing_node == "🔐 System Access Control":
                         else:
                             cur.execute("SELECT timestamp, username, action_type, description FROM activity_logs WHERE tenant_id = %s ORDER BY timestamp DESC LIMIT 300", (st.session_state['tenant_id'],))
                         log_rows = cur.fetchall()
-                if log_rows:
-                    df_logs = pd.DataFrame(log_rows)
-                    st.dataframe(df_logs, use_container_width=True)
-                else:
-                    st.info("Abhi tak is tenant server node par koi logs jama nahi huay.")
+                        if log_rows:
+                            df_logs = pd.DataFrame(log_rows)
+                            st.dataframe(df_logs, use_container_width=True)
+                        else:
+                            st.info("Abhi tak is tenant server node par koi logs jama nahi huay.")
             except Exception as log_err:
                 st.error(f"Logs pull karne mein masla aya: {log_err}")
-
+                
         with adm_tabs[-1]:
             st.markdown("### 💾 Dynamic Data Backup Vault")
             st.write("Aap yahan se apne mukammal setup (Customers, Areas, Packages, Users, aur Billing History) ka secure backup cloud snapshot download kar sakte hain.")
-            
             is_master_owner = (st.session_state['tenant_id'] == 'lynx' and st.session_state['username'] == 'owner')
             backup_scope = "Tenant Isolated Backup"
-            
             if is_master_owner:
                 backup_scope = st.radio("Select Backup Scope", ["Current Tenant Only", "Full Server Master Backup (All Tenants Data)"])
                 
@@ -1279,7 +1244,6 @@ elif routing_node == "🔐 System Access Control":
                     try:
                         backup_payload = {}
                         tables = ['system_tenants', 'users', 'customers', 'areas', 'packages', 'billing_history', 'activity_logs']
-                        
                         with get_db_connection() as conn:
                             for t_name in tables:
                                 q = f"SELECT * FROM {t_name}"
@@ -1287,15 +1251,10 @@ elif routing_node == "🔐 System Access Control":
                                 if backup_scope == "Tenant Isolated Backup" or not is_master_owner:
                                     q += " WHERE tenant_id = %s"
                                     params.append(st.session_state['tenant_id'])
-                                    
                                 df_bak = pd.read_sql_query(q, conn, params=params)
                                 backup_payload[t_name] = df_bak.to_dict(orient='records')
-                        
                         json_str = json.dumps(backup_payload, default=str, indent=4)
-                        
-                        # Log Backup Request
                         insert_activity_log(st.session_state['tenant_id'], st.session_state['username'], "GENERATE_BACKUP", f"Exported state backup ledger snapshot. Scope profile type: {backup_scope}")
-                        
                         st.success("✅ Database Snapshot processed successfully! Niche diye gaye button se file download karein.")
                         st.download_button(
                             label="📥 DOWNLOAD BACKUP FILE (.JSON)",
@@ -1333,26 +1292,25 @@ elif routing_node == "📱 Client Portal":
             st.error("❌ No active profile found.")
         else:
             c_dict = c_rows[0]
-            
             try:
                 bill_amt_val = int(float(str(c_dict.get('billamount', 0))))
                 balance_shift_val = int(float(str(c_dict.get('balanceshift', 0))))
             except Exception:
                 bill_amt_val = 0
                 balance_shift_val = 0
-
+                
             st.markdown(f"""
-                <div class="client-card" style="border: 2px solid #3b82f6;">
-                    <h2 style="color:#3b82f6; text-align:center; font-weight:bold;">📄 DIGITAL BILL & QUOTATION</h2>
-                    <p style="text-align:center; color:#9ca3af; font-size:13px;">Provider: {html.escape(str(t_meta["name"]))} | Helpline: {html.escape(str(t_meta["phone"]))}</p>
-                    <hr style="border: 1px solid #374151;">
-                    <h3 style="color:#10b981; margin-top:15px;">👤 Account ID: {html.escape(str(c_dict.get('username','')))}</h3>
-                    <p><b>CUSTOMER NAME:</b> {html.escape(str(c_dict.get('customername','')))}</p>
-                    <p><b>CONNECTED AREA:</b> {html.escape(str(c_dict.get('area','')))}</p>
-                    <p><b>ACTIVE PLAN:</b> {html.escape(str(c_dict.get('package','')))}</p>
-                    <p><b>MONTHLY CHARGES:</b> Rs. {bill_amt_val:,}</p>
-                    <p style="color:#f43f5e; font-weight:bold;"><b>OUTSTANDING ARREARS:</b> Rs. {balance_shift_val:,}</p>
-                    <p style="color:#10b981; font-weight:bold;"><b>LINE EXPIRY DATE:</b> {html.escape(str(c_dict.get('expirydate','')))}</p>
-                </div>
+            <div class="client-card" style="border: 2px solid #3b82f6;">
+                <h2 style="color:#3b82f6; text-align:center; font-weight:bold;">📄 DIGITAL BILL & QUOTATION</h2>
+                <p style="text-align:center; color:#9ca3af; font-size:13px;">Provider: {html.escape(str(t_meta["name"]))} | Helpline: {html.escape(str(t_meta["phone"]))}</p>
+                <hr style="border: 1px solid #374151;">
+                <h3 style="color:#10b981; margin-top:15px;">👤 Account ID: {html.escape(str(c_dict.get('username','')))}</h3>
+                <p><b>CUSTOMER NAME:</b> {html.escape(str(c_dict.get('customername','')))}</p>
+                <p><b>CONNECTED AREA:</b> {html.escape(str(c_dict.get('area','')))}</p>
+                <p><b>ACTIVE PLAN:</b> {html.escape(str(c_dict.get('package','')))}</p>
+                <p><b>MONTHLY CHARGES:</b> Rs. {bill_amt_val:,}</p>
+                <p style="color:#f43f5e; font-weight:bold;"><b>OUTSTANDING ARREARS:</b> Rs. {balance_shift_val:,}</p>
+                <p style="color:#10b981; font-weight:bold;"><b>LINE EXPIRY DATE:</b> {html.escape(str(c_dict.get('expirydate','')))}</p>
+            </div>
             """, unsafe_allow_html=True)
-        st.markdown(f"<div class='saas-footer'>Distributed & Licensed by: <b>{DISTRIBUTOR_NAME}</b></div>", unsafe_allow_html=True)
+    st.markdown(f"<div class='saas-footer'>Distributed & Licensed by: <b>{DISTRIBUTOR_NAME}</b></div>", unsafe_allow_html=True)
