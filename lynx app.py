@@ -31,6 +31,13 @@ DEFAULT_STAFF_PERMS = {
     "status": False
 }
 
+DEFAULT_WA_TEMPLATES = {
+    "new_connection": "Dear {name}, Welcome to our network! Your new internet profile '{package}' has been successfully activated. Monthly Rate: Rs. {bill}, Expiry Date: {expiry}. Support: {helpline}",
+    "bill_paid": "Dear {name},\nThank you for your payment of Rs. {paid} via {method}.\nYour internet package has been renewed.\nNew Expiry Date: {expiry}\nRemaining Arrears: Rs. {arrears}",
+    "bill_reminder": "Dear {name}, your {package} internet bill is due. Arrears: Rs. {arrears}. Expiry Date: {expiry}. Please pay promptly to avoid disconnection. Support: {helpline}",
+    "expired_warning": "Dear {name}, your internet access has been suspended due to non-payment of Rs. {arrears}. Please clear dues to restore connection immediately. Support: {helpline}"
+}
+
 # ==========================================
 # 0. CORE PAGE CONFIGURATION (MUST BE FIRST)
 # ==========================================
@@ -132,7 +139,13 @@ def insert_activity_log(tenant_id, username, action_type, description):
     except Exception:
         pass
 
-def send_tenant_whatsapp(tenant_metadata, phone_number, message_text):
+def parse_wa_template(template_str, data_dict):
+    out = template_str
+    for key, val in data_dict.items():
+        out = out.replace(f"{{{key}}}", str(val))
+    return out
+
+def send_tenant_whatsapp(tenant_metadata, phone_number, template_key, context_data):
     if not tenant_metadata.get("wa_enabled"):
         return False
         
@@ -142,16 +155,31 @@ def send_tenant_whatsapp(tenant_metadata, phone_number, message_text):
     if not instance_id or not api_token:
         return False
 
+    # Get templates dictionary
+    templates = DEFAULT_WA_TEMPLATES.copy()
+    if tenant_metadata.get("wa_templates"):
+        try:
+            templates.update(json.loads(tenant_metadata["wa_templates"]))
+        except Exception:
+            pass
+
+    raw_message = templates.get(template_key, DEFAULT_WA_TEMPLATES.get(template_key, ""))
+    if not raw_message:
+        return False
+
+    # Inject core global data if missing
+    context_data.setdefault("helpline", tenant_metadata.get("phone", ""))
+    
+    formatted_message = parse_wa_template(raw_message, context_data)
+    
     clean_phone = phone_number.replace("-", "").strip()
     if clean_phone.startswith("0"):
         clean_phone = "92" + clean_phone[1:]
 
-    full_message = f"{message_text}\n\nRegards:\n{tenant_metadata.get('name')}"
     url = f"https://api.green-api.com/waInstance{instance_id}/sendMessage/{api_token}"
-    
     payload = {
         "chatId": f"{clean_phone}@c.us",
-        "message": full_message
+        "message": formatted_message
     }
 
     try:
@@ -226,7 +254,8 @@ def build_database_schema():
                     staff_permissions TEXT DEFAULT '',
                     whatsapp_instance_id TEXT DEFAULT '',
                     whatsapp_token TEXT DEFAULT '',
-                    whatsapp_enabled BOOLEAN DEFAULT FALSE
+                    whatsapp_enabled BOOLEAN DEFAULT FALSE,
+                    whatsapp_templates TEXT DEFAULT ''
                 )
             """)
             cursor.execute("""
@@ -305,8 +334,8 @@ def build_database_schema():
             if cursor.fetchone()[0] == 0:
                 cursor.execute("""
                     INSERT INTO system_tenants 
-                    (tenant_id, company_name, support_phone, owner_username, license_active, registration_date, license_expiry_date, staff_permissions) 
-                    VALUES ('lynx', 'Lynx Fiber Pvt Ltd', '03135776263', 'owner', TRUE, %s, '', '')
+                    (tenant_id, company_name, support_phone, owner_username, license_active, registration_date, license_expiry_date, staff_permissions, whatsapp_templates) 
+                    VALUES ('lynx', 'Lynx Fiber Pvt Ltd', '03135776263', 'owner', TRUE, %s, '', '', '')
                 """, (datetime.now().strftime("%Y-%m-%d"),))
                 
                 cursor.execute("SELECT COUNT(*) FROM users WHERE username = 'owner' AND tenant_id = 'lynx'")
@@ -326,6 +355,7 @@ def run_live_migrations():
                 cursor.execute("ALTER TABLE system_tenants ADD COLUMN IF NOT EXISTS whatsapp_instance_id TEXT DEFAULT '';")
                 cursor.execute("ALTER TABLE system_tenants ADD COLUMN IF NOT EXISTS whatsapp_token TEXT DEFAULT '';")
                 cursor.execute("ALTER TABLE system_tenants ADD COLUMN IF NOT EXISTS whatsapp_enabled BOOLEAN DEFAULT FALSE;")
+                cursor.execute("ALTER TABLE system_tenants ADD COLUMN IF NOT EXISTS whatsapp_templates TEXT DEFAULT '';")
     except Exception:
         pass
 
@@ -344,7 +374,7 @@ def fetch_active_tenant_metadata(tenant_id):
     try:
         with get_db_connection() as conn:
             with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-                cur.execute("SELECT company_name, support_phone, license_active, license_expiry_date, staff_permissions, whatsapp_instance_id, whatsapp_token, whatsapp_enabled FROM system_tenants WHERE tenant_id = %s", (tenant_id,))
+                cur.execute("SELECT company_name, support_phone, license_active, license_expiry_date, staff_permissions, whatsapp_instance_id, whatsapp_token, whatsapp_enabled, whatsapp_templates FROM system_tenants WHERE tenant_id = %s", (tenant_id,))
                 res = cur.fetchone()
                 if res:
                     perms = DEFAULT_STAFF_PERMS.copy()
@@ -361,11 +391,12 @@ def fetch_active_tenant_metadata(tenant_id):
                         "staff_permissions": perms,
                         "wa_instance_id": res.get("whatsapp_instance_id", ""),
                         "wa_token": res.get("whatsapp_token", ""),
-                        "wa_enabled": res.get("whatsapp_enabled", False)
+                        "wa_enabled": res.get("whatsapp_enabled", False),
+                        "wa_templates": res.get("whatsapp_templates", "")
                     }
-        return {"name": "Lynx Fiber Pvt Ltd", "phone": "03135776263", "active": True, "expiry_date": "", "staff_permissions": DEFAULT_STAFF_PERMS, "wa_instance_id": "", "wa_token": "", "wa_enabled": False}
+        return {"name": "Lynx Fiber Pvt Ltd", "phone": "03135776263", "active": True, "expiry_date": "", "staff_permissions": DEFAULT_STAFF_PERMS, "wa_instance_id": "", "wa_token": "", "wa_enabled": False, "wa_templates": ""}
     except Exception:
-        return {"name": "Lynx Fiber Pvt Ltd", "phone": "03135776263", "active": True, "expiry_date": "", "staff_permissions": DEFAULT_STAFF_PERMS, "wa_instance_id": "", "wa_token": "", "wa_enabled": False}
+        return {"name": "Lynx Fiber Pvt Ltd", "phone": "03135776263", "active": True, "expiry_date": "", "staff_permissions": DEFAULT_STAFF_PERMS, "wa_instance_id": "", "wa_token": "", "wa_enabled": False, "wa_templates": ""}
 
 def calculate_license_days(expiry_str):
     if not expiry_str or expiry_str.strip() == "":
@@ -590,8 +621,8 @@ else:
                                     else:
                                         cursor.execute("""
                                             INSERT INTO system_tenants 
-                                            (tenant_id, company_name, support_phone, owner_username, license_active, registration_date, license_expiry_date, staff_permissions) 
-                                            VALUES (%s, %s, %s, %s, FALSE, %s, '', '')
+                                            (tenant_id, company_name, support_phone, owner_username, license_active, registration_date, license_expiry_date, staff_permissions, whatsapp_templates) 
+                                            VALUES (%s, %s, %s, %s, FALSE, %s, '', '', '')
                                         """, (reg_tenant_id, reg_company_name, reg_support_phone, reg_owner_user, datetime.now().strftime("%Y-%m-%d")))
                                         
                                         cursor.execute("""
@@ -784,9 +815,31 @@ if routing_node in ["📊 Core Analytics Dashboard", "📊 Lynx Dashboard"]:
                 else:
                     wa_number = pure_digits
 
+                # Determine correct template type based on customer status
+                c_status = str(row_dict.get('status', '')).upper()
+                if c_status == "SUSPENDED":
+                    t_key = "expired_warning"
+                elif c_status in ["UNPAID", "PARTIAL"]:
+                    t_key = "bill_reminder"
+                else:
+                    t_key = "bill_paid"
+
+                # Pull parsed message preview for dynamic click dispatch mapping 
+                t_dict = DEFAULT_WA_TEMPLATES.copy()
+                if tenant_meta.get("wa_templates"):
+                    try: t_dict.update(json.loads(tenant_meta["wa_templates"]))
+                    except: pass
+                
+                ctx = {
+                    "name": row_dict.get('customername', ''), "username": row_dict.get('username', ''),
+                    "package": row_dict.get('package', ''), "bill": row_dict.get('billamount', 0),
+                    "arrears": row_dict.get('balanceshift', 0), "expiry": row_dict.get('expirydate', ''),
+                    "helpline": TENANT_SUPPORT_PHONE, "paid": collection_map.get(str(row_dict.get('username','')).lower().strip(), 0)
+                }
+                parsed_msg = parse_wa_template(t_dict.get(t_key, ""), ctx)
+
                 if len(wa_number) >= 10:
-                    wa_payload = f"Dear {row_dict.get('customername','')}, {GENERIC_TEXT} Bill Update. Arrears: Rs.{row_dict.get('balanceshift',0)}. Expiry: {row_dict.get('expirydate','')}. Support: {TENANT_SUPPORT_PHONE}"
-                    wa_action_html = f'<a href="https://wa.me/{wa_number}?text={urllib.parse.quote(wa_payload)}" target="_blank" class="btn-action btn-w">💬 WA</a>'
+                    wa_action_html = f'<a href="https://wa.me/{wa_number}?text={urllib.parse.quote(parsed_msg)}" target="_blank" class="btn-action btn-w">💬 WA</a>'
                 else:
                     wa_action_html = '<span class="btn-action btn-disabled">🚫 WA</span>'
 
@@ -821,7 +874,6 @@ elif routing_node == "👥 Operational Billing Center":
     if not is_management and "ALL" not in st.session_state['assigned_areas']:
         df_matrix = df_matrix[df_matrix['area'].str.lower().isin([s.lower() for s in st.session_state['assigned_areas']])]
 
-    # FIX: Synchronized structure to prevent component hierarchy rendering mismatches 
     if is_management:
         tabs = st.tabs(["💳 Capital Collection Hub", "➕ Provision New Client", "📥 Bulk Import Excel/CSV", "🛠️ Edit Terminal Profile", "🗑️ Remove Subscriber"])
         tab_col, tab_prov, tab_bulk, tab_edit, tab_del = tabs
@@ -921,8 +973,13 @@ elif routing_node == "👥 Operational Billing Center":
                 insert_activity_log(st.session_state['tenant_id'], st.session_state['username'], "BILL_PAYMENT", f"Staff posted Rs. {cash_in} for user {resolved_uid}. Status updated to {calculated_status}, Arrears set to Rs. {future_shift}, Expiry to {new_expiry}.")
                 st.success(f"🎉 Collection Recorded Cleanly! System Class Status: {calculated_status} | Extended To: {new_expiry}")
                 
-                wa_msg = f"Dear {node_row_dict.get('customername')},\nThank you for your payment of Rs. {cash_in} via {pay_method}.\nYour internet package has been renewed.\nNew Expiry Date: {new_expiry}\nRemaining Arrears: Rs. {future_shift}"
-                send_tenant_whatsapp(tenant_meta, node_row_dict.get('phone'), wa_msg)
+                # Dispatch CUSTOMIZABLE Bill Paid Notification 
+                wa_context = {
+                    "name": node_row_dict.get('customername', ''), "username": resolved_uid,
+                    "package": node_row_dict.get('package', ''), "paid": int(cash_in),
+                    "arrears": future_shift, "expiry": new_expiry, "method": pay_method
+                }
+                send_tenant_whatsapp(tenant_meta, node_row_dict.get('phone'), "bill_paid", wa_context)
 
                 st.session_state['recent_pdf_bytes'] = generate_receipt_pdf(TENANT_COMPANY_NAME, TENANT_SUPPORT_PHONE, invoice_uuid, resolved_uid, node_row_dict.get('customername'), node_row_dict.get('area'), node_row_dict.get('package'), cash_in, future_shift, pay_method)
                 st.session_state['recent_invoice_uuid'] = invoice_uuid
@@ -950,10 +1007,8 @@ elif routing_node == "👥 Operational Billing Center":
                 
                 if area_pkgs:
                     chosen_pkg = st.selectbox(f"Valid Packages for {in_area}", list(area_pkgs.keys()))
-                    try:
-                        suggested_rate = int(float(str(area_pkgs[chosen_pkg])))
-                    except Exception:
-                        suggested_rate = 1500
+                    try: suggested_rate = int(float(str(area_pkgs[chosen_pkg])))
+                    except: suggested_rate = 1500
                 else:
                     chosen_pkg = st.selectbox(f"Valid Packages for {in_area}", ["Standard Manual Baseline"])
                     suggested_rate = 1500
@@ -983,8 +1038,12 @@ elif routing_node == "👥 Operational Billing Center":
                                     insert_activity_log(st.session_state['tenant_id'], st.session_state['username'], "CREATE_CUSTOMER", f"Allocated new customer terminal profile for {in_id} ({in_name}) inside {in_area}.")
                                     st.success(f"🚀 Profile allocated! Expiry: {default_expiry}.")
                                     
-                                    wa_welcome_msg = f"Dear {in_name},\nWelcome to our network! Your new internet profile '{chosen_pkg}' has been successfully activated.\nMonthly Rate: Rs. {in_rate}\nExpiry Date: {default_expiry}"
-                                    send_tenant_whatsapp(tenant_meta, in_phone, wa_welcome_msg)
+                                    # Dispatch CUSTOMIZABLE New Connection Notification
+                                    prov_wa_context = {
+                                        "name": in_name, "username": in_id, "package": chosen_pkg, 
+                                        "bill": int(in_rate), "expiry": default_expiry
+                                    }
+                                    send_tenant_whatsapp(tenant_meta, norm_p, "new_connection", prov_wa_context)
                                     
                                     st.cache_data.clear()
                                     st.rerun()
@@ -1044,10 +1103,8 @@ elif routing_node == "👥 Operational Billing Center":
                                             if raw_amt.lower() in ['nan', 'none', '']:
                                                 bill_amt = 1500
                                             else:
-                                                try:
-                                                    bill_amt = int(float(raw_amt))
-                                                except:
-                                                    bill_amt = 1500
+                                                try: bill_amt = int(float(raw_amt))
+                                                except: bill_amt = 1500
                                                     
                                             default_expiry = (datetime.now() + relativedelta(months=1)).strftime("%Y-%m-%d")
                                             
@@ -1092,10 +1149,8 @@ elif routing_node == "👥 Operational Billing Center":
                     up_address = st.text_input("Address", value=edit_row_dict.get('address'), disabled=is_address_disabled)
                     up_sn = st.text_input("ONU SN", value=edit_row_dict.get('onuserialnumber'), disabled=is_onu_disabled)
                     
-                    try:
-                        current_rate_val = int(float(str(edit_row_dict.get('billamount', 0))))
-                    except Exception:
-                        current_rate_val = 0
+                    try: current_rate_val = int(float(str(edit_row_dict.get('billamount', 0))))
+                    except: current_rate_val = 0
                         
                     up_rate = st.number_input("Monthly Rate (Rs.)", value=current_rate_val, disabled=is_rate_disabled)
                     raw_stat = str(edit_row_dict.get('status', 'UNPAID')).upper()
@@ -1117,6 +1172,7 @@ elif routing_node == "👥 Operational Billing Center":
                                     SET customername=%s, phone=%s, address=%s, onuserialnumber=%s, billamount=%s, status=%s 
                                     WHERE username=%s AND tenant_id=%s
                                 """, (final_name, final_phone, final_address, final_sn, final_rate, final_status, edit_uid, st.session_state['tenant_id']))
+                        
                         insert_activity_log(st.session_state['tenant_id'], st.session_state['username'], "UPDATE_CUSTOMER", f"Modified criteria for customer {edit_uid}. Status set to {final_status}.")
                         st.success("Profile Changes Logged within Tenant context.")
                         st.cache_data.clear()
@@ -1223,7 +1279,6 @@ elif routing_node == "🔐 System Access Control":
             with adm_tabs[0]:
                 st.markdown("### 👑 LYNX MASTER CONTROL HUB")
                 
-                # Fetch all tenants
                 with get_db_connection() as conn:
                     with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
                         cur.execute("SELECT * FROM system_tenants ORDER BY registration_date DESC")
@@ -1237,12 +1292,11 @@ elif routing_node == "🔐 System Access Control":
                     
                     if tenant_select_list:
                         st.write("---")
-                        st.markdown("### 🛠️ EDIT TENANT MASTER CONTROL (Change Credentials & Details)")
+                        st.markdown("### 🛠️ EDIT TENANT MASTER CONTROL")
                         
                         chosen_target_tenant = st.selectbox("Select Target Tenant ID to Modify / Control", tenant_select_list)
                         tenant_record = next(item for item in all_tenants_rows if item["tenant_id"] == chosen_target_tenant)
                         
-                        # Master control form inputs populated with current data
                         with st.form("master_super_control_form"):
                             col_m1, col_m2 = st.columns(2)
                             with col_m1:
@@ -1261,21 +1315,18 @@ elif routing_node == "🔐 System Access Control":
                                 try:
                                     with get_db_connection() as conn:
                                         with conn.cursor() as cursor:
-                                            # Update system_tenants table row
                                             cursor.execute("""
                                                 UPDATE system_tenants 
                                                 SET tenant_id = %s, company_name = %s, support_phone = %s, owner_username = %s, license_active = %s, license_expiry_date = %s 
                                                 WHERE tenant_id = %s
                                             """, (m_tenant_id.strip().lower(), m_company_name.strip(), m_support_phone.strip(), m_owner_username.strip().lower(), m_license_toggle, m_expiry_input.strip(), chosen_target_tenant))
                                             
-                                            # Sync user account login details
                                             cursor.execute("""
                                                 UPDATE users 
                                                 SET username = %s, tenant_id = %s 
                                                 WHERE username = %s AND tenant_id = %s
                                             """, (m_owner_username.strip().lower(), m_tenant_id.strip().lower(), tenant_record["owner_username"], chosen_target_tenant))
                                             
-                                            # If a password was supplied, encrypt and inject it
                                             if m_new_pass.strip():
                                                 hashed_f = hash_password(m_new_pass.strip())
                                                 cursor.execute("""
@@ -1283,7 +1334,6 @@ elif routing_node == "🔐 System Access Control":
                                                     WHERE username = %s AND tenant_id = %s
                                                 """, (hashed_f, m_owner_username.strip().lower(), m_tenant_id.strip().lower()))
                                             
-                                            # Propagate tenant_id cascading updates if changed
                                             if m_tenant_id.strip().lower() != chosen_target_tenant:
                                                 cursor.execute("UPDATE users SET tenant_id = %s WHERE tenant_id = %s", (m_tenant_id.strip().lower(), chosen_target_tenant))
                                                 cursor.execute("UPDATE customers SET tenant_id = %s WHERE tenant_id = %s", (m_tenant_id.strip().lower(), chosen_target_tenant))
@@ -1299,12 +1349,11 @@ elif routing_node == "🔐 System Access Control":
                                 except Exception as err_m:
                                     st.error(f"SQL Execution Error: {err_m}")
                 
-                # FIX: WHATSAPP ENGINE IS NOW FULLY DISCLOSED TO THE LYNX OWNER INSTANCE TO PREVENT HIDDEN INVISIBILITY ISSUES
                 st.write("---")
                 st.markdown("### 🟢 Automated WhatsApp Settings for Master (`lynx`) Account")
                 with get_db_connection() as conn:
                     with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-                        cur.execute("SELECT whatsapp_enabled, whatsapp_instance_id, whatsapp_token FROM system_tenants WHERE tenant_id = 'lynx'")
+                        cur.execute("SELECT whatsapp_enabled, whatsapp_instance_id, whatsapp_token, whatsapp_templates FROM system_tenants WHERE tenant_id = 'lynx'")
                         lynx_wa_row = cur.fetchone()
                 
                 with st.form("master_lynx_whatsapp_form"):
@@ -1328,8 +1377,13 @@ elif routing_node == "🔐 System Access Control":
                 st.markdown("### 🏢 ISP Whitelabel Branding & WhatsApp Setup")
                 with get_db_connection() as conn:
                     with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-                        cur.execute("SELECT company_name, support_phone, whatsapp_enabled, whatsapp_instance_id, whatsapp_token FROM system_tenants WHERE tenant_id = %s", (st.session_state['tenant_id'],))
+                        cur.execute("SELECT company_name, support_phone, whatsapp_enabled, whatsapp_instance_id, whatsapp_token, whatsapp_templates FROM system_tenants WHERE tenant_id = %s", (st.session_state['tenant_id'],))
                         meta_row = cur.fetchone()
+
+                current_custom_templates = DEFAULT_WA_TEMPLATES.copy()
+                if meta_row and meta_row.get("whatsapp_templates"):
+                    try: current_custom_templates.update(json.loads(meta_row["whatsapp_templates"]))
+                    except: pass
 
                 with st.form("tenant_custom_branding_form"):
                     b_name = st.text_input("Company Brand Name Display", value=meta_row["company_name"] if meta_row else TENANT_COMPANY_NAME)
@@ -1337,22 +1391,38 @@ elif routing_node == "🔐 System Access Control":
                     
                     st.write("---")
                     st.markdown("#### 🟢 Automated WhatsApp Settings (Green-API)")
-                    st.caption("Setup your Green-API Instance ID and Token to enable automated WhatsApp notifications for your customers.")
-                    
                     wa_enabled = st.checkbox("Enable Automatic WhatsApp Alerts", value=meta_row.get("whatsapp_enabled", False) if meta_row else False)
                     wa_instance = st.text_input("Green-API Instance ID", value=meta_row.get("whatsapp_instance_id", "") if meta_row else "")
                     wa_token = st.text_input("Green-API Token", value=meta_row.get("whatsapp_token", "") if meta_row else "", type="password")
 
-                    if st.form_submit_button("💾 SAVE BRANDING & WHATSAPP LOGS"):
+                    st.write("---")
+                    st.markdown("#### 💬 Customizable Message Templates Engine")
+                    st.caption("Aap niche diye gaye messages ko apni marzi se Urdu/English mein edit kar sakte hain. Dynamic values ke liye in tags ka istamal karein: `{name}`, `{username}`, `{package}`, `{bill}`, `{paid}`, `{arrears}`, `{expiry}`, `{helpline}`")
+                    
+                    t_new = st.text_area("➕ New Connection / Welcome Message Template", value=current_custom_templates["new_connection"], height=80)
+                    t_paid = st.text_area("💳 Bill Paid Receipt Template", value=current_custom_templates["bill_paid"], height=80)
+                    t_remind = st.text_area("⚠️ Active Due Bill Reminder Template", value=current_custom_templates["bill_reminder"], height=80)
+                    t_exp = st.text_area("⏳ Line Suspended / Expired Warning Template", value=current_custom_templates["expired_warning"], height=80)
+
+                    if st.form_submit_button("💾 SAVE BRANDING & CUSTOM WHATSAPP TEMPLATES"):
+                        updated_templates_dict = {
+                            "new_connection": t_new,
+                            "bill_paid": t_paid,
+                            "bill_reminder": t_remind,
+                            "expired_warning": t_exp
+                        }
+                        templates_json = json.dumps(updated_templates_dict)
+
                         with get_db_connection() as conn:
                             with conn.cursor() as cursor:
                                 cursor.execute("""
                                     UPDATE system_tenants 
-                                    SET company_name=%s, support_phone=%s, whatsapp_enabled=%s, whatsapp_instance_id=%s, whatsapp_token=%s 
+                                    SET company_name=%s, support_phone=%s, whatsapp_enabled=%s, whatsapp_instance_id=%s, whatsapp_token=%s, whatsapp_templates=%s 
                                     WHERE tenant_id=%s
-                                """, (b_name, b_phone, wa_enabled, wa_instance, wa_token, st.session_state['tenant_id']))
-                        insert_activity_log(st.session_state['tenant_id'], st.session_state['username'], "UPDATE_BRANDING", f"Updated branding and WhatsApp configuration.")
-                        st.success("Metadata and API Configurations Saved cleanly inside cluster engine.")
+                                """, (b_name, b_phone, wa_enabled, wa_instance, wa_token, templates_json, st.session_state['tenant_id']))
+                        
+                        insert_activity_log(st.session_state['tenant_id'], st.session_state['username'], "UPDATE_BRANDING", f"Updated branding and WhatsApp custom templates configuration.")
+                        st.success("🎉 Branding, Credentials and Message Templates Saved Successfully!")
                         st.cache_data.clear()
                         st.rerun()
 
@@ -1392,12 +1462,8 @@ elif routing_node == "🔐 System Access Control":
                 
                 if st.form_submit_button("💾 UPDATE STAFF EDITING PERMISSIONS"):
                     updated_perms = {
-                        "customername": p_name_chk,
-                        "phone": p_phone_chk,
-                        "address": p_address_chk,
-                        "onuserialnumber": p_onu_chk,
-                        "billamount": p_rate_chk,
-                        "status": p_status_chk
+                        "customername": p_name_chk, "phone": p_phone_chk, "address": p_address_chk,
+                        "onuserialnumber": p_onu_chk, "billamount": p_rate_chk, "status": p_status_chk
                     }
                     perms_json_dump = json.dumps(updated_perms)
                     with get_db_connection() as conn:
@@ -1540,7 +1606,6 @@ elif routing_node == "🔐 System Access Control":
                                 cursor.execute("DELETE FROM areas WHERE LOWER(areaname) = LOWER(%s) AND tenant_id = %s", (del_area, st.session_state['tenant_id']))
                                 st.success(f"✅ Area wiped cleanly.")
                                 st.cache_data.clear()
-                                r_idx = adm_tabs.index(adm_tabs[3]) if adm_tabs[3] in adm_tabs else 0
                                 st.rerun()
 
         with adm_tabs[4]:
