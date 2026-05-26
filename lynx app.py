@@ -625,7 +625,6 @@ else:
                                     if cursor.fetchone()[0] > 0:
                                         st.error("❌ Unique tenant identifier already registered.")
                                     else:
-                                        # 🔍 FIX: While onboarding, write DEFAULT_WA_TEMPLATES as string directly to DB
                                         cursor.execute("""
                                             INSERT INTO system_tenants 
                                             (tenant_id, company_name, support_phone, owner_username, license_active, registration_date, license_expiry_date, staff_permissions, whatsapp_templates) 
@@ -1371,11 +1370,12 @@ elif routing_node == "🔐 System Access Control":
                     if st.form_submit_button("💾 SAVE MASTER WHATSAPP CONFIGS"):
                         with get_db_connection() as conn:
                             with conn.cursor() as cursor:
+                                # 🔍 FIX: Keep master templates default dictionary saved into json database row structure properly
                                 cursor.execute("""
                                     UPDATE system_tenants 
-                                    SET whatsapp_enabled=%s, whatsapp_instance_id=%s, whatsapp_token=%s 
+                                    SET whatsapp_enabled=%s, whatsapp_instance_id=%s, whatsapp_token=%s, whatsapp_templates=%s 
                                     WHERE tenant_id='lynx'
-                                """, (l_wa_enabled, l_wa_instance, l_wa_token, ))
+                                """, (l_wa_enabled, l_wa_instance, l_wa_token, json.dumps(DEFAULT_WA_TEMPLATES)))
                         st.success("✅ Lynx owner WhatsApp profile settings updated successfully!")
                         st.cache_data.clear()
                         st.rerun()
@@ -1390,7 +1390,6 @@ elif routing_node == "🔐 System Access Control":
                 current_custom_templates = DEFAULT_WA_TEMPLATES.copy()
                 if meta_row and meta_row.get("whatsapp_templates"):
                     try: 
-                        # 🔍 FIX: Ensure json string is parsed properly without falling back to blank fields
                         loaded_templates = json.loads(meta_row["whatsapp_templates"])
                         if isinstance(loaded_templates, dict):
                             current_custom_templates.update(loaded_templates)
