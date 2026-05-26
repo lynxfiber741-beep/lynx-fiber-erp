@@ -718,11 +718,14 @@ elif routing_node == "👥 Operational Billing Center":
     if not is_management and "ALL" not in st.session_state['assigned_areas']:
         df_matrix = df_matrix[df_matrix['area'].str.lower().isin([s.lower() for s in st.session_state['assigned_areas']])]
         
-    tabs_list = ["💳 Capital Collection Hub", "🛠️ Edit Terminal Profile"]
+    # Safely structure the tabs based on Role Permissions
     if is_management:
-        tabs_list.insert(1, "➕ Provision New Client")
-        tabs_list.insert(2, "📥 Bulk Import Excel/CSV")
-    tabs = st.tabs(tabs_list)
+        tabs = st.tabs(["💳 Capital Collection Hub", "➕ Provision New Client", "📥 Bulk Import Excel/CSV", "🛠️ Edit Terminal Profile", "🗑️ Remove Subscriber"])
+        tab_col, tab_prov, tab_bulk, tab_edit, tab_del = tabs
+    else:
+        tabs = st.tabs(["💳 Capital Collection Hub", "🛠️ Edit Terminal Profile"])
+        tab_col, tab_edit = tabs
+        tab_prov = tab_bulk = tab_del = None
     
     sub_map = {}
     if not df_matrix.empty:
@@ -732,7 +735,7 @@ elif routing_node == "👥 Operational Billing Center":
             if uid:
                 sub_map[f"[{uid}] - {row_dict.get('customername', '')}"] = uid
                 
-    with tabs[0]:
+    with tab_col:
         if not sub_map:
             st.info("No subscribers found.")
         else:
@@ -787,8 +790,8 @@ elif routing_node == "👥 Operational Billing Center":
                 st.download_button("📥 Download PDF Receipt", data=pdf_bytes, file_name=f"Receipt_{invoice_uuid}.pdf", mime="application/pdf")
                 st.cache_data.clear()
                 
-    if is_management:
-        with tabs[1]:
+    if tab_prov:
+        with tab_prov:
             if not all_system_areas:
                 st.error("❌ Register an Area Sector inside System Access Controls first.")
             else:
@@ -820,13 +823,13 @@ elif routing_node == "👥 Operational Billing Center":
                 if st.button("➕ SAVE PROVISION ACCOUNT", use_container_width=True):
                     norm_p = clean_and_validate_phone(in_phone)
                     if not in_id or not in_name or not norm_p:
-                        st.error("❌ Structural matching items missing.")
+                        st.error("❌ Structural matching items missing. Customer Name, Username and Phone are required.")
                     else:
                         with get_db_connection() as conn:
                             with conn.cursor() as cursor:
                                 cursor.execute("SELECT COUNT(*) FROM customers WHERE username = %s AND tenant_id = %s", (in_id, st.session_state['tenant_id']))
                                 if cursor.fetchone()[0] > 0:
-                                    st.error("❌ Identity Key / Username duplicate inside logs.")
+                                    st.error("❌ Identity Key / Username duplicate inside logs. This username is already registered.")
                                 else:
                                     default_expiry = (datetime.now() + relativedelta(months=1)).strftime("%Y-%m-%d")
                                     cursor.execute("""
@@ -839,7 +842,8 @@ elif routing_node == "👥 Operational Billing Center":
                                     st.cache_data.clear()
                                     st.rerun()
                                     
-        with tabs[2]:
+    if tab_bulk:
+        with tab_bulk:
             st.markdown("#### 📥 Download Sample Template")
             blueprint_df = pd.DataFrame([{
                 "username": "ali786", "customername": "Muhammad Ali", "phone": "03001234567",
@@ -851,70 +855,85 @@ elif routing_node == "👥 Operational Billing Center":
             st.download_button(label="📥 DOWNLOAD TEMPLATE FILE", data=csv_buffer.getvalue().encode('utf-8'), file_name="subscriber_template.csv", mime="text/csv", use_container_width=True)
             st.write("---")
             
-            uploaded_file = st.file_uploader("Upload Excel Sheet Matrix Log", type=['xlsx', 'csv'])
+            uploaded_file = st.file_uploader("Upload Excel/CSV Client Matrix Log", type=['xlsx', 'csv'])
             if uploaded_file:
                 try:
                     df_upload = pd.read_csv(uploaded_file) if uploaded_file.name.endswith('.csv') else pd.read_excel(uploaded_file)
-                    if st.button("⚡ Save Sheet Rows to Live Engine"):
-                        df_upload.columns = [c.lower() for c in df_upload.columns]
+                    if st.button("⚡ Process & Save Uploaded Document"):
+                        # Fixes spaces and casing in uploaded columns gracefully
+                        df_upload.columns = [str(c).lower().replace(" ", "").strip() for c in df_upload.columns]
+                        
                         inserted_rows = 0
-                        with get_db_connection() as conn:
-                            with conn.cursor() as cursor:
-                                for idx, row in df_upload.iterrows():
-                                    try:
-                                        # Safely extract and format to prevent Pandas KeyError or NaN strings
-                                        clean_id = str(row.get('username', '')).strip().lower()
-                                        if clean_id == 'nan' or not clean_id: 
-                                            continue
-                                        
-                                        c_name = str(row.get('customername', '')).strip()
-                                        if c_name.lower() == 'nan': c_name = 'Unknown'
-                                        
-                                        c_phone = clean_and_validate_phone(str(row.get('phone', '')))
-                                        
-                                        c_cnic = str(row.get('cnic', '')).strip()
-                                        if c_cnic.lower() == 'nan': c_cnic = ''
-                                        
-                                        c_pkg = str(row.get('package', 'Standard')).strip()
-                                        if c_pkg.lower() == 'nan' or not c_pkg: c_pkg = 'Standard'
-                                        
-                                        c_area = str(row.get('area', '')).strip()
-                                        if c_area.lower() == 'nan': c_area = 'Default'
-                                        
-                                        c_addr = str(row.get('address', '')).strip()
-                                        if c_addr.lower() == 'nan': c_addr = ''
-                                        
-                                        c_onu = str(row.get('onuserialnumber', '')).strip()
-                                        if c_onu.lower() == 'nan': c_onu = ''
-                                        
-                                        raw_amt = str(row.get('billamount', '1500')).strip()
-                                        if raw_amt.lower() == 'nan' or not raw_amt:
-                                            bill_amt = 1500
-                                        else:
-                                            bill_amt = int(float(raw_amt))
+                        skipped_duplicates = 0
+                        failed_rows = 0
+                        
+                        with st.spinner("Processing Matrix Data..."):
+                            with get_db_connection() as conn:
+                                with conn.cursor() as cursor:
+                                    for idx, row in df_upload.iterrows():
+                                        try:
+                                            # Secure Extractions
+                                            clean_id = str(row.get('username', '')).strip().lower()
+                                            if clean_id == 'nan' or not clean_id: 
+                                                failed_rows += 1
+                                                continue
                                             
-                                        default_expiry = (datetime.now() + relativedelta(months=1)).strftime("%Y-%m-%d")
-                                        
-                                        cursor.execute("""
-                                            INSERT INTO customers (username, customername, phone, cnic, package, billamount, area, address, onuserialnumber, balanceshift, status, expirydate, tenant_id)
-                                            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, 0, 'UNPAID', %s, %s)
-                                            ON CONFLICT (username, tenant_id) DO NOTHING
-                                        """, (clean_id, c_name, c_phone, c_cnic, c_pkg, bill_amt, c_area, c_addr, c_onu, default_expiry, st.session_state['tenant_id']))
-                                        
-                                        # Only increment if query successfully pushed a new row
-                                        if cursor.rowcount > 0:
+                                            # Ensure duplicate usernames aren't silenced randomly, but checked properly
+                                            cursor.execute("SELECT COUNT(*) FROM customers WHERE username = %s AND tenant_id = %s", (clean_id, st.session_state['tenant_id']))
+                                            if cursor.fetchone()[0] > 0:
+                                                skipped_duplicates += 1
+                                                continue # Already exists, safely skip and count
+                                                
+                                            c_name = str(row.get('customername', 'Unknown')).strip()
+                                            if c_name.lower() == 'nan': c_name = 'Unknown'
+                                            
+                                            c_phone = clean_and_validate_phone(str(row.get('phone', '')))
+                                            
+                                            c_cnic = str(row.get('cnic', '')).strip()
+                                            if c_cnic.lower() == 'nan': c_cnic = ''
+                                            
+                                            c_pkg = str(row.get('package', 'Standard')).strip()
+                                            if c_pkg.lower() == 'nan' or not c_pkg: c_pkg = 'Standard'
+                                            
+                                            c_area = str(row.get('area', 'Default')).strip()
+                                            if c_area.lower() == 'nan': c_area = 'Default'
+                                            
+                                            c_addr = str(row.get('address', '')).strip()
+                                            if c_addr.lower() == 'nan': c_addr = ''
+                                            
+                                            c_onu = str(row.get('onuserialnumber', '')).strip()
+                                            if c_onu.lower() == 'nan': c_onu = ''
+                                            
+                                            raw_amt = str(row.get('billamount', '1500')).strip()
+                                            if raw_amt.lower() in ['nan', 'none', '']:
+                                                bill_amt = 1500
+                                            else:
+                                                try:
+                                                    bill_amt = int(float(raw_amt))
+                                                except:
+                                                    bill_amt = 1500
+                                                
+                                            default_expiry = (datetime.now() + relativedelta(months=1)).strftime("%Y-%m-%d")
+                                            
+                                            cursor.execute("""
+                                                INSERT INTO customers (username, customername, phone, cnic, package, billamount, area, address, onuserialnumber, balanceshift, status, expirydate, tenant_id)
+                                                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, 0, 'UNPAID', %s, %s)
+                                            """, (clean_id, c_name, c_phone, c_cnic, c_pkg, bill_amt, c_area, c_addr, c_onu, default_expiry, st.session_state['tenant_id']))
+                                            
                                             inserted_rows += 1
-                                    except Exception as e:
-                                        # Safely bypass any row that fails database checks without breaking the bulk engine
-                                        pass
-                                        
-                        insert_activity_log(st.session_state['tenant_id'], st.session_state['username'], "BULK_IMPORT", f"Executed bulk system upload matrix processing {inserted_rows} clean entries.")
-                        st.success(f"🚀 Bulk Isolation processed {inserted_rows} entries cleanly!")
-                        st.cache_data.clear()
+                                        except Exception as e:
+                                            # If there's an internal error mapping, we add to failures
+                                            failed_rows += 1
+                                            
+                            insert_activity_log(st.session_state['tenant_id'], st.session_state['username'], "BULK_IMPORT", f"Bulk processing results - Inserted: {inserted_rows}, Skipped Diffs: {skipped_duplicates}, Failures: {failed_rows}")
+                            
+                            st.success(f"🚀 Matrix Processed Successfully!")
+                            st.info(f"📊 **Results:** {inserted_rows} Profiles Added | {skipped_duplicates} Duplicates Skipped | {failed_rows} Invalid/Blank Rows Ignored.")
+                            st.cache_data.clear()
                 except Exception as ex:
-                    st.error(f"Processing Error: {ex}")
+                    st.error(f"Critical Upload Error: Ensure you uploaded a valid CSV or Excel document matching the template headers exactly. System response: {ex}")
                     
-    with tabs[-1]:
+    with tab_edit:
         if not sub_map:
             st.info("Empty logs.")
         else:
@@ -946,6 +965,27 @@ elif routing_node == "👥 Operational Billing Center":
                             
                     insert_activity_log(st.session_state['tenant_id'], st.session_state['username'], "UPDATE_CUSTOMER", f"Modified data parameters for customer {edit_uid}. Status updated to {up_status}, rate set to Rs. {up_rate}.")
                     st.success("Profile Changes Logged within Tenant context.")
+                    st.cache_data.clear()
+                    st.rerun()
+
+    if tab_del:
+        with tab_del:
+            st.markdown("### 🗑️ Permanent Subscriber Deletion Module")
+            st.warning("⚠️ Warning: Proceeding with deletion will permanently wipe this customer from your active operational database.")
+            
+            if not sub_map:
+                st.info("No active terminals to remove.")
+            else:
+                del_target = st.selectbox("Select Subscriber Target for Deletion", list(sub_map.keys()), key="del_box")
+                del_uid = sub_map[del_target]
+                
+                if st.button("🗑️ PERMANENTLY REMOVE CUSTOMER TERMINAL", type="primary", use_container_width=True):
+                    with get_db_connection() as conn:
+                        with conn.cursor() as cursor:
+                            cursor.execute("DELETE FROM customers WHERE username = %s AND tenant_id = %s", (del_uid, st.session_state['tenant_id']))
+                    
+                    insert_activity_log(st.session_state['tenant_id'], st.session_state['username'], "DELETE_CUSTOMER", f"Permanently deleted subscriber profile: {del_uid}.")
+                    st.success(f"✅ Operations Success! Profile '{del_uid}' completely purged from tenant database.")
                     st.cache_data.clear()
                     st.rerun()
 
@@ -1092,6 +1132,32 @@ elif routing_node == "🔐 System Access Control":
                         insert_activity_log(st.session_state['tenant_id'], st.session_state['username'], "CREATE_SUB_USER", f"Provisioned sub-user identity {new_username} assigned with role {new_role}.")
                         st.success("User configuration posted.")
                         st.cache_data.clear()
+                        st.rerun()
+
+            st.write("---")
+            st.markdown("#### 👥 Current Staff Directory")
+            with get_db_connection() as conn:
+                with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                    cur.execute("SELECT username, role, assignedarea FROM users WHERE tenant_id = %s", (st.session_state['tenant_id'],))
+                    staff_rows = cur.fetchall()
+            
+            if staff_rows:
+                df_staff = pd.DataFrame(staff_rows)
+                df_staff.columns = [c.capitalize() for c in df_staff.columns]
+                st.dataframe(df_staff, use_container_width=True)
+                
+                # Fetch deletable staff (Cannot delete yourself or Master Owner)
+                deletable_staff = [r['username'] for r in staff_rows if r['username'] != st.session_state['username'] and str(r['role']).lower() != "owner"]
+                
+                if deletable_staff:
+                    st.markdown("##### 🗑️ Terminate Staff Account")
+                    del_staff_user = st.selectbox("Select Staff Profile to Disconnect", deletable_staff)
+                    if st.button("🗑️ DELETE STAFF PROFILE", type="primary"):
+                        with get_db_connection() as conn:
+                            with conn.cursor() as cursor:
+                                cursor.execute("DELETE FROM users WHERE username = %s AND tenant_id = %s", (del_staff_user, st.session_state['tenant_id']))
+                        insert_activity_log(st.session_state['tenant_id'], st.session_state['username'], "DELETE_SUB_USER", f"Removed access parameters for staff account {del_staff_user}.")
+                        st.success(f"✅ Staff connection successfully terminated for user '{del_staff_user}'!")
                         st.rerun()
                         
         with adm_tabs[2]:
