@@ -10,7 +10,7 @@ import re
 import io
 import os
 import json
-import requests # 🔥 WHATSAPP API KE LIYE ADD KIYA GAYA
+import requests 
 from datetime import datetime
 from contextlib import contextmanager
 from dateutil.relativedelta import relativedelta
@@ -83,13 +83,13 @@ GLOBAL_TARGET_ORDER = [
 if "DB_URL" in st.secrets:
     DB_URL = st.secrets["DB_URL"]
 else:
-    st.error("🔴 Critical Configuration Error: 'DB_URL' is missing from Streamlit Secrets! Please add it to execute.")
+    st.error("🔴 Critical Configuration Error: 'DB_URL' is missing from Streamlit Secrets!")
     st.stop()
 
 @st.cache_resource
 def init_connection_pool():
     try:
-        return SimpleConnectionPool(1, 15, dsn=DB_URL)
+        return SimpleConnectionPool(1, 20, dsn=DB_URL)
     except Exception as e:
         st.error(f"🔴 Critical Pool Init Error: {e}")
         st.stop()
@@ -133,7 +133,6 @@ def insert_activity_log(tenant_id, username, action_type, description):
     except Exception:
         pass
 
-# 🔥 NEW: DYNAMIC WHATSAPP CLOUD SENDER (GREEN-API)
 def send_tenant_whatsapp(tenant_metadata, phone_number, message_text):
     if not tenant_metadata.get("wa_enabled"):
         return False
@@ -226,7 +225,10 @@ def build_database_schema():
                     license_active BOOLEAN DEFAULT FALSE,
                     registration_date TEXT NOT NULL,
                     license_expiry_date TEXT NOT NULL DEFAULT '',
-                    staff_permissions TEXT DEFAULT ''
+                    staff_permissions TEXT DEFAULT '',
+                    whatsapp_instance_id TEXT DEFAULT '',
+                    whatsapp_token TEXT DEFAULT '',
+                    whatsapp_enabled BOOLEAN DEFAULT FALSE
                 )
             """)
             cursor.execute("""
@@ -323,7 +325,6 @@ def run_live_migrations():
                 cursor.execute("ALTER TABLE activity_logs ADD COLUMN IF NOT EXISTS timestamp TEXT NOT NULL DEFAULT '';")
                 cursor.execute("ALTER TABLE activity_logs ADD COLUMN IF NOT EXISTS description TEXT NOT NULL DEFAULT '';")
                 cursor.execute("ALTER TABLE system_tenants ADD COLUMN IF NOT EXISTS staff_permissions TEXT DEFAULT '';")
-                # 🔥 NEW WHATSAPP COLUMNS ADDED TO DB SCHEMA
                 cursor.execute("ALTER TABLE system_tenants ADD COLUMN IF NOT EXISTS whatsapp_instance_id TEXT DEFAULT '';")
                 cursor.execute("ALTER TABLE system_tenants ADD COLUMN IF NOT EXISTS whatsapp_token TEXT DEFAULT '';")
                 cursor.execute("ALTER TABLE system_tenants ADD COLUMN IF NOT EXISTS whatsapp_enabled BOOLEAN DEFAULT FALSE;")
@@ -345,7 +346,6 @@ def fetch_active_tenant_metadata(tenant_id):
     try:
         with get_db_connection() as conn:
             with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-                # 🔥 NOW FETCHING WHATSAPP SETTINGS TOO
                 cur.execute("SELECT company_name, support_phone, license_active, license_expiry_date, staff_permissions, whatsapp_instance_id, whatsapp_token, whatsapp_enabled FROM system_tenants WHERE tenant_id = %s", (tenant_id,))
                 res = cur.fetchone()
                 if res:
@@ -468,6 +468,7 @@ def clean_and_validate_phone(phone_str: str) -> str:
     if len(cleaned) == 10 and cleaned.startswith("3"):
         cleaned = "0" + cleaned
         return cleaned
+    return cleaned
 
 # ==========================================
 # 4.5. THEME ENGINE & CSS GENERATOR
@@ -553,7 +554,7 @@ else:
                                 st.session_state['username'] = user_match[1] if user_match[1] else user_input
                                 st.session_state['tenant_id'] = input_tenant
                                 raw_areas = user_match[2] if user_match[2] else "ALL"
-                                if user_match[0] in ["Owner", "Admin"] or raw_areas == "ALL":
+                                if str(user_match[0]).lower() in ["owner", "admin"] or raw_areas == "ALL":
                                     st.session_state['assigned_areas'] = ["ALL"]
                                 else:
                                     st.session_state['assigned_areas'] = [a.strip() for a in raw_areas.split(",") if a.strip()]
@@ -726,7 +727,6 @@ if routing_node in ["📊 Core Analytics Dashboard", "📊 Lynx Dashboard"]:
             total_active = len(base_df)
             total_paid = len(base_df[base_df['status'] == 'PAID'])
             total_unpaid = len(base_df[base_df['status'].isin(['UNPAID', 'PARTIAL', 'SUSPENDED'])])
-            total_suspended = len(base_df[base_df['status'] == 'SUSPENDED'])
             try:
                 total_arrears = int(float(str(base_df['balanceshift'].sum())))
             except Exception:
@@ -921,7 +921,6 @@ elif routing_node == "👥 Operational Billing Center":
                 insert_activity_log(st.session_state['tenant_id'], st.session_state['username'], "BILL_PAYMENT", f"Staff posted Rs. {cash_in} for user {resolved_uid}. Status updated to {calculated_status}, Arrears set to Rs. {future_shift}, Expiry to {new_expiry}.")
                 st.success(f"🎉 Collection Recorded Cleanly! System Class Status: {calculated_status} | Extended To: {new_expiry}")
                 
-                # 🔥 WHATSAPP TRIGGER ON BILL PAYMENT
                 wa_msg = f"Dear {node_row_dict.get('customername')},\nThank you for your payment of Rs. {cash_in} via {pay_method}.\nYour internet package has been renewed.\nNew Expiry Date: {new_expiry}\nRemaining Arrears: Rs. {future_shift}"
                 send_tenant_whatsapp(tenant_meta, node_row_dict.get('phone'), wa_msg)
 
@@ -984,7 +983,6 @@ elif routing_node == "👥 Operational Billing Center":
                                     insert_activity_log(st.session_state['tenant_id'], st.session_state['username'], "CREATE_CUSTOMER", f"Allocated new customer terminal profile for {in_id} ({in_name}) inside {in_area}.")
                                     st.success(f"🚀 Profile allocated! Expiry: {default_expiry}.")
                                     
-                                    # 🔥 WHATSAPP TRIGGER ON NEW PROVISIONING
                                     wa_welcome_msg = f"Dear {in_name},\nWelcome to our network! Your new internet profile '{chosen_pkg}' has been successfully activated.\nMonthly Rate: Rs. {in_rate}\nExpiry Date: {default_expiry}"
                                     send_tenant_whatsapp(tenant_meta, in_phone, wa_welcome_msg)
                                     
@@ -1141,7 +1139,7 @@ elif routing_node == "👥 Operational Billing Center":
                                 cursor.execute("DELETE FROM customers WHERE username = ANY(%s) AND tenant_id = %s", (del_uids, st.session_state['tenant_id']))
                         uids_log_str = ", ".join(del_uids)
                         insert_activity_log(st.session_state['tenant_id'], st.session_state['username'], "DELETE_CUSTOMERS", f"Permanently deleted: {uids_log_str}.")
-                        st.success(f"✅ Profiles completely purged.")
+                        st.success(f"¼ Profiles completely purged.")
                         st.cache_data.clear()
                         st.rerun()
 
@@ -1209,8 +1207,11 @@ elif routing_node == "🔐 System Access Control":
         st.markdown("<div class='main-title'>🔐 SYSTEM ACCESS PANEL</div>", unsafe_allow_html=True)
         all_system_areas = fetch_isolated_areas(st.session_state['tenant_id'])
         
+        # Determine strict master owner state status globally
+        is_master_owner = (st.session_state['tenant_id'] == 'lynx' and st.session_state['username'] == 'owner')
+
         adm_tabs = st.tabs([
-            "👑 SaaS Whitelabel License Manager" if (st.session_state['tenant_id'] == 'lynx' and st.session_state['username'] == 'owner') else "🏢 Branding & WhatsApp Controls",
+            "👑 SaaS Whitelabel License Manager" if is_master_owner else "🏢 Branding & WhatsApp Controls",
             "⚙️ Access Accounts Management",
             "📦 Fixed Packages Pricing Matrix",
             "🗺️ Dynamic Area Hubs Sector",
@@ -1219,7 +1220,7 @@ elif routing_node == "🔐 System Access Control":
             "💾 Data Backup Vault"
         ])
 
-        if st.session_state['tenant_id'] == 'lynx' and st.session_state['username'] == 'owner':
+        if is_master_owner:
             with adm_tabs[0]:
                 st.markdown("### 👑 LYNX MASTER CONTROL HUB")
                 with get_db_connection() as conn:
@@ -1265,7 +1266,6 @@ elif routing_node == "🔐 System Access Control":
                 st.markdown("### 🏢 ISP Whitelabel Branding & WhatsApp Setup")
                 with get_db_connection() as conn:
                     with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-                        # 🔥 NEW: FETCHING WA SETTINGS TO PRE-FILL FORM
                         cur.execute("SELECT company_name, support_phone, whatsapp_enabled, whatsapp_instance_id, whatsapp_token FROM system_tenants WHERE tenant_id = %s", (st.session_state['tenant_id'],))
                         meta_row = cur.fetchone()
 
@@ -1284,7 +1284,6 @@ elif routing_node == "🔐 System Access Control":
                     if st.form_submit_button("💾 SAVE BRANDING & WHATSAPP LOGS"):
                         with get_db_connection() as conn:
                             with conn.cursor() as cursor:
-                                # 🔥 NEW: UPDATING WA SETTINGS TO DB
                                 cursor.execute("""
                                     UPDATE system_tenants 
                                     SET company_name=%s, support_phone=%s, whatsapp_enabled=%s, whatsapp_instance_id=%s, whatsapp_token=%s 
@@ -1509,7 +1508,7 @@ elif routing_node == "🔐 System Access Control":
             try:
                 with get_db_connection() as conn:
                     with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-                        if st.session_state['tenant_id'] == 'lynx' and st.session_state['username'] == 'owner':
+                        if is_master_owner:
                             cur.execute("SELECT timestamp, tenant_id, username, action_type, description FROM activity_logs ORDER BY timestamp DESC LIMIT 500")
                         else:
                             cur.execute("SELECT timestamp, username, action_type, description FROM activity_logs WHERE tenant_id = %s ORDER BY timestamp DESC LIMIT 300", (st.session_state['tenant_id'],))
@@ -1524,7 +1523,6 @@ elif routing_node == "🔐 System Access Control":
 
         with adm_tabs[-1]:
             st.markdown("### 💾 Dynamic Data Backup Vault")
-            is_master_owner = (st.session_state['tenant_id'] == 'lynx' and st.session_state['username'] == 'owner')
             backup_scope = "Tenant Isolated Backup"
             if is_master_owner:
                 backup_scope = st.radio("Select Backup Scope", ["Current Tenant Only", "Full Server Master Backup"])
