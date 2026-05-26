@@ -16,6 +16,22 @@ from dateutil.relativedelta import relativedelta
 import bcrypt
 
 # ========================================== #
+# 🛑 SAAS MASTER CONFIGURATION & HIDDEN REGISTRY #
+# ========================================== #
+DISTRIBUTOR_NAME = "Lynx Fiber Internet"
+MASTER_NOTIFY_NUMBERS = ["03215943786", "03118808741"]
+GENERIC_TEXT = "Lynx Fiber Internet"
+
+# ========================================== #
+# 0. CORE PAGE CONFIGURATION (MUST BE FIRST) #
+# ========================================== #
+st.set_page_config(
+    page_title=f"Enterprise ERP Panel — Powered by {DISTRIBUTOR_NAME}", 
+    layout="wide", 
+    initial_sidebar_state="expanded"
+)
+
+# ========================================== #
 # REPORTLAB ENGINE (INTEGRATED RECEIPT GENERATOR) #
 # ========================================== #
 from reportlab.lib.pagesizes import letter
@@ -23,13 +39,6 @@ from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, Tabl
 from reportlab.lib import colors
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.enums import TA_CENTER
-
-# ========================================== #
-# 🛑 SAAS MASTER CONFIGURATION & HIDDEN REGISTRY #
-# ========================================== #
-DISTRIBUTOR_NAME = "Lynx Fiber Internet"
-MASTER_NOTIFY_NUMBERS = ["03215943786", "03118808741"]
-GENERIC_TEXT = "Lynx Fiber Internet"
 
 # ========================================== #
 # 1. CORE CONFIGURATION & SESSION STATE      #
@@ -405,8 +414,6 @@ def clean_and_validate_phone(phone_str: str) -> str:
     if len(cleaned) == 10 and cleaned.startswith("3"):
         cleaned = "0" + cleaned
     return cleaned
-
-st.set_page_config(page_title=f"Enterprise ERP Panel — Powered by {DISTRIBUTOR_NAME}", layout="wide", initial_sidebar_state="expanded")
 
 # UI Styles CSS Engine
 st.markdown(f"""
