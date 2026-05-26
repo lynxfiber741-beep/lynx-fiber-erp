@@ -69,6 +69,9 @@ if 'portal_mode' not in st.session_state:
     st.session_state['portal_mode'] = False
 if 'dashboard_status_filter' not in st.session_state:
     st.session_state['dashboard_status_filter'] = "ALL"
+# --- New Session State for Themes ---
+if 'app_theme' not in st.session_state:
+    st.session_state['app_theme'] = "Dark Nebula (Default)"
 
 GLOBAL_TARGET_ORDER = [
     "username", "customername", "phone", "cnic", "package", 
@@ -186,7 +189,6 @@ def generate_receipt_pdf(company_name, phone_ref, inv_id, c_id, c_name, area, pa
 def build_database_schema():
     with get_db_connection() as conn:
         with conn.cursor() as cursor:
-            # 1. System Tenants
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS system_tenants (
                     tenant_id TEXT PRIMARY KEY,
@@ -199,7 +201,6 @@ def build_database_schema():
                     staff_permissions TEXT DEFAULT ''
                 )
             """)
-            # 2. Users Table
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS users (
                     username TEXT NOT NULL,
@@ -210,7 +211,6 @@ def build_database_schema():
                     PRIMARY KEY (username, tenant_id)
                 )
             """)
-            # 3. Customers Table
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS customers (
                     username TEXT NOT NULL,
@@ -229,7 +229,6 @@ def build_database_schema():
                     PRIMARY KEY (username, tenant_id)
                 )
             """)
-            # 4. Areas Table
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS areas (
                     areaname TEXT NOT NULL,
@@ -237,7 +236,6 @@ def build_database_schema():
                     PRIMARY KEY (areaname, tenant_id)
                 )
             """)
-            # 5. Packages Table
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS packages (
                     packagename TEXT NOT NULL,
@@ -247,7 +245,6 @@ def build_database_schema():
                     PRIMARY KEY (packagename, areaname, tenant_id)
                 )
             """)
-            # 6. Billing History
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS billing_history (
                     invoiceid TEXT PRIMARY KEY,
@@ -265,7 +262,6 @@ def build_database_schema():
                     tenant_id TEXT NOT NULL DEFAULT 'lynx'
                 )
             """)
-            # 7. FIXED Activity Logs Table Structure Baseline
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS activity_logs (
                     log_id TEXT PRIMARY KEY,
@@ -277,7 +273,6 @@ def build_database_schema():
                 )
             """)
             
-            # Initial Data Setup
             cursor.execute("SELECT COUNT(*) FROM system_tenants WHERE tenant_id = 'lynx'")
             if cursor.fetchone()[0] == 0:
                 cursor.execute("""
@@ -292,7 +287,6 @@ def build_database_schema():
                     VALUES ('owner', %s, 'Owner', 'ALL', 'lynx')
                 """, (hash_password('lynxowner123'),))
 
-# 🔥 LIVE HOT-MIGRATION ALIGNMENT ENGINE
 def run_live_migrations():
     try:
         with get_db_connection() as conn:
@@ -307,7 +301,6 @@ def run_live_migrations():
 def initialize_application_database():
     build_database_schema()
 
-# Execute Orders Sequence
 initialize_application_database()
 run_live_migrations()
 
@@ -439,36 +432,101 @@ def clean_and_validate_phone(phone_str: str) -> str:
         cleaned = "0" + cleaned
     return cleaned
 
+
+# ========================================== #
+# 4.5. THEME ENGINE & CSS GENERATOR          #
+# ========================================== #
+THEMES = {
+    "Dark Nebula (Default)": {
+        "bg": "#0b0f19",
+        "sidebar_bg": "#111827",
+        "text": "#e5e7eb",
+        "heading": "#10b981", 
+        "accent": "#3b82f6", 
+        "card_bg": "#1f2937",
+        "table_th": "#1f2937",
+        "table_td": "#111827",
+        "border": "#374151",
+        "input_bg": "#ffffff",
+        "input_text": "#000000",
+        "login_box_border": "#10b981"
+    },
+    "Light Corporate": {
+        "bg": "#f8fafc",
+        "sidebar_bg": "#ffffff",
+        "text": "#1e293b",
+        "heading": "#059669",
+        "accent": "#2563eb",
+        "card_bg": "#ffffff",
+        "table_th": "#e2e8f0",
+        "table_td": "#ffffff",
+        "border": "#cbd5e1",
+        "input_bg": "#f1f5f9",
+        "input_text": "#0f172a",
+        "login_box_border": "#2563eb"
+    },
+    "Midnight Crimson": {
+        "bg": "#11090b",
+        "sidebar_bg": "#1a0e11",
+        "text": "#fda4af",
+        "heading": "#e11d48",
+        "accent": "#be123c",
+        "card_bg": "#281216",
+        "table_th": "#281216",
+        "table_td": "#1a0e11",
+        "border": "#4c1d28",
+        "input_bg": "#fff1f2",
+        "input_text": "#4c0519",
+        "login_box_border": "#e11d48"
+    },
+    "Ocean Wave": {
+        "bg": "#0f172a",
+        "sidebar_bg": "#1e293b",
+        "text": "#e0f2fe",
+        "heading": "#0ea5e9",
+        "accent": "#0284c7",
+        "card_bg": "#0f172a",
+        "table_th": "#1e293b",
+        "table_td": "#0f172a",
+        "border": "#38bdf8",
+        "input_bg": "#f0f9ff",
+        "input_text": "#0c4a6e",
+        "login_box_border": "#0ea5e9"
+    }
+}
+
+active_theme = THEMES.get(st.session_state['app_theme'], THEMES["Dark Nebula (Default)"])
+
 # UI Styles CSS Engine
 st.markdown(f"""
 <style>
     .stApp [data-testid="stHeader"] {{ background: transparent !important; height: 50px !important; }}
     .stApp .block-container {{ padding-top: 0.5rem !important; padding-bottom: 1rem !important; max-width: 100% !important; }}
-    .stApp {{ background-color: #0b0f19; color: #f1f5f9; font-family: sans-serif; }}
-    [data-testid="stSidebar"] {{ background-color: #111827; border-right: 1px solid #1f2937; }}
-    div[data-testid="stTextInput"] input, div[data-testid="stNumberInput"] input, div[data-testid="stTextArea"] textarea {{ color: #000000 !important; background-color: #ffffff !important; font-weight: bold !important; font-size: 16px !important; border: 2px solid #3b82f6 !important; border-radius: 8px !important; }}
-    div[data-testid="stNumberInput"] button {{ background-color: #e2e8f0 !important; color: #000000 !important; }}
-    div[data-baseweb="select"] > div {{ background-color: #ffffff !important; color: #000000 !important; font-weight: bold !important; font-size: 16px !important; border: 2px solid #3b82f6 !important; border-radius: 8px !important; }}
-    div[data-baseweb="select"] span, div[data-baseweb="select"] div {{ color: #000000 !important; }}
-    ul[role="listbox"] li {{ color: #000000 !important; background-color: #ffffff !important; font-weight: 600 !important; }}
-    label, p, .stMarkdown div {{ color: #e5e7eb !important; font-weight: 500; }}
-    div.stButton > button, div.stFormSubmitButton > button {{ background: linear-gradient(135deg, #1e293b 0%, #111827 100%) !important; color: #3b82f6 !important; border: 2px solid #3b82f6 !important; border-radius: 12px !important; padding: 15px !important; font-weight: bold !important; font-size: 15px !important; transition: all 0.3s ease; box-shadow: 0 4px 10px rgba(0,0,0,0.3) !important; width: 100% !important; display: flex !important; align-items: center !important; justify-content: center !important; }}
-    div.stButton > button:hover, div.stFormSubmitButton > button:hover {{ background: #3b82f6 !important; color: #ffffff !important; border: 2px solid #60a5fa !important; box-shadow: 0 0 15px rgba(59, 130, 246, 0.5) !important; }}
+    .stApp {{ background-color: {active_theme['bg']}; color: {active_theme['text']}; font-family: sans-serif; }}
+    [data-testid="stSidebar"] {{ background-color: {active_theme['sidebar_bg']}; border-right: 1px solid {active_theme['border']}; }}
+    div[data-testid="stTextInput"] input, div[data-testid="stNumberInput"] input, div[data-testid="stTextArea"] textarea {{ color: {active_theme['input_text']} !important; background-color: {active_theme['input_bg']} !important; font-weight: bold !important; font-size: 16px !important; border: 2px solid {active_theme['accent']} !important; border-radius: 8px !important; }}
+    div[data-testid="stNumberInput"] button {{ background-color: {active_theme['input_bg']} !important; color: {active_theme['input_text']} !important; }}
+    div[data-baseweb="select"] > div {{ background-color: {active_theme['input_bg']} !important; color: {active_theme['input_text']} !important; font-weight: bold !important; font-size: 16px !important; border: 2px solid {active_theme['accent']} !important; border-radius: 8px !important; }}
+    div[data-baseweb="select"] span, div[data-baseweb="select"] div {{ color: {active_theme['input_text']} !important; }}
+    ul[role="listbox"] li {{ color: {active_theme['input_text']} !important; background-color: {active_theme['input_bg']} !important; font-weight: 600 !important; }}
+    label, p, .stMarkdown div {{ color: {active_theme['text']} !important; font-weight: 500; }}
+    div.stButton > button, div.stFormSubmitButton > button {{ background: linear-gradient(135deg, {active_theme['sidebar_bg']} 0%, {active_theme['bg']} 100%) !important; color: {active_theme['accent']} !important; border: 2px solid {active_theme['accent']} !important; border-radius: 12px !important; padding: 15px !important; font-weight: bold !important; font-size: 15px !important; transition: all 0.3s ease; box-shadow: 0 4px 10px rgba(0,0,0,0.3) !important; width: 100% !important; display: flex !important; align-items: center !important; justify-content: center !important; }}
+    div.stButton > button:hover, div.stFormSubmitButton > button:hover {{ background: {active_theme['accent']} !important; color: #ffffff !important; border: 2px solid {active_theme['accent']} !important; box-shadow: 0 0 15px {active_theme['accent']}80 !important; }}
     .table-wrapper {{ overflow-x: auto; width: 100%; -webkit-overflow-scrolling: touch; margin-top: 15px; }}
-    .premium-table {{ width: 100%; border-collapse: collapse; border-radius: 12px; overflow: hidden; background: #111827; }}
-    .premium-table th {{ background: #1f2937; color: #10b981; padding: 14px; text-align: left; font-size: 13px; border-bottom: 2px solid #374151; white-space: nowrap; text-transform: uppercase;}}
-    .premium-table td {{ padding: 14px; border-bottom: 1px solid #1f2937; font-size: 13px; color: #e5e7eb; white-space: nowrap; }}
+    .premium-table {{ width: 100%; border-collapse: collapse; border-radius: 12px; overflow: hidden; background: {active_theme['table_td']}; }}
+    .premium-table th {{ background: {active_theme['table_th']}; color: {active_theme['heading']}; padding: 14px; text-align: left; font-size: 13px; border-bottom: 2px solid {active_theme['border']}; white-space: nowrap; text-transform: uppercase;}}
+    .premium-table td {{ padding: 14px; border-bottom: 1px solid {active_theme['border']}; font-size: 13px; color: {active_theme['text']}; white-space: nowrap; }}
     .btn-action {{ padding: 6px 12px; border-radius: 6px; font-weight: bold; text-decoration: none; font-size: 12px; display: inline-block; margin-right: 4px; }}
     .btn-c {{ background-color: #2563eb; color: white !important; }}
     .btn-w {{ background-color: #16a34a; color: white !important; }}
-    .client-card {{ background: #1f2937; padding: 20px; border-radius: 12px; border: 1px solid #374151; margin-bottom: 15px; }}
-    .main-title {{ color: #10b981; font-size: 28px; font-weight: 800; text-align: center; margin-bottom: 25px; }}
-    .front-login-box {{ max-width: 450px; margin: 40px auto; background: #111827; padding: 40px; border-radius: 16px; border: 1px solid #10b981; box-shadow: 0 15px 35px rgba(16, 185, 129, 0.2); }}
-    .system-card {{ background: #1e293b; border: 1px solid #475569; border-radius: 10px; padding: 15px; margin-bottom: 15px; text-align: center; }}
-    .system-card h4 {{ margin: 0 0 10px 0; color: #3b82f6; font-size: 16px; font-weight: bold;}}
-    .saas-footer {{ text-align: center; font-size: 12px; color: #6b7280; margin-top: 50px; padding: 15px; border-top: 1px solid #1f2937; }}
-    .saas-footer b {{ color: #3b82f6; }}
-    .live-calc-box {{ background-color: #111827; border: 2px dashed #10b981; padding: 15px; border-radius: 10px; margin-bottom: 15px; }}
+    .client-card {{ background: {active_theme['card_bg']}; padding: 20px; border-radius: 12px; border: 1px solid {active_theme['border']}; margin-bottom: 15px; }}
+    .main-title {{ color: {active_theme['heading']}; font-size: 28px; font-weight: 800; text-align: center; margin-bottom: 25px; }}
+    .front-login-box {{ max-width: 450px; margin: 40px auto; background: {active_theme['sidebar_bg']}; padding: 40px; border-radius: 16px; border: 1px solid {active_theme['login_box_border']}; box-shadow: 0 15px 35px rgba(16, 185, 129, 0.2); }}
+    .system-card {{ background: {active_theme['card_bg']}; border: 1px solid {active_theme['border']}; border-radius: 10px; padding: 15px; margin-bottom: 15px; text-align: center; }}
+    .system-card h4 {{ margin: 0 0 10px 0; color: {active_theme['accent']}; font-size: 16px; font-weight: bold;}}
+    .saas-footer {{ text-align: center; font-size: 12px; color: {active_theme['text']}; opacity: 0.7; margin-top: 50px; padding: 15px; border-top: 1px solid {active_theme['border']}; }}
+    .saas-footer b {{ color: {active_theme['accent']}; }}
+    .live-calc-box {{ background-color: {active_theme['bg']}; border: 2px dashed {active_theme['heading']}; padding: 15px; border-radius: 10px; margin-bottom: 15px; }}
 </style>
 """, unsafe_allow_html=True)
 
@@ -489,7 +547,7 @@ else:
         login_tab, register_tab = st.tabs(["🔒 Secure Login Portal", "➕ Register New ISP Application"])
         
         with login_tab:
-            st.markdown(f"<h3 style='text-align:center; color:#10b981;'>ERP SYSTEM LOGIN</h3>", unsafe_allow_html=True)
+            st.markdown(f"<h3 style='text-align:center; color:{active_theme['heading']};'>ERP SYSTEM LOGIN</h3>", unsafe_allow_html=True)
             input_tenant = st.text_input("Tenant Domain ID / Code (e.g., lynx)", key="log_tenant").strip().lower()
             user_input = (st.text_input("Username Key", key="front_user") or "").strip().lower()
             pass_input = st.text_input("Security Password", type="password", key="front_pass")
@@ -522,7 +580,7 @@ else:
                             st.error("❌ Invalid Tenant, Username, or Password Variant.")
                             
         with register_tab:
-            st.markdown("<h3 style='text-align:center; color:#3b82f6;'>SaaS Tenant Onboarding</h3>", unsafe_allow_html=True)
+            st.markdown(f"<h3 style='text-align:center; color:{active_theme['accent']};'>SaaS Tenant Onboarding</h3>", unsafe_allow_html=True)
             with st.form("saas_tenant_registration_form"):
                 reg_tenant_id = st.text_input("Choose Unique Tenant Code (e.g., falcon, alpha)").strip().lower()
                 reg_company_name = st.text_input("ISP Company Full Brand Name").strip()
@@ -571,7 +629,7 @@ else:
 
 if st.session_state['authenticated'] and not st.session_state['portal_mode']:
     with st.sidebar:
-        st.markdown(f"<h2 style='color:#10b981; font-weight:900; text-align:center;'>{str(TENANT_COMPANY_NAME).upper()}</h2>", unsafe_allow_html=True)
+        st.markdown(f"<h2 style='color:{active_theme['heading']}; font-weight:900; text-align:center;'>{str(TENANT_COMPANY_NAME).upper()}</h2>", unsafe_allow_html=True)
         st.markdown(f"<p style='text-align:center; font-size:11px;'>Instance: <b>{st.session_state.get('tenant_id', 'lynx')}</b></p>", unsafe_allow_html=True)
         st.markdown(f"<p style='text-align:center; font-size:12px; color:#f59e0b;'>⏳ Account Life: <br><b>{license_status_text}</b></p>", unsafe_allow_html=True)
         
@@ -592,9 +650,23 @@ if st.session_state['authenticated'] and not st.session_state['portal_mode']:
                 st.rerun()
                 
         st.write("---")
+        
+        # 🔥 NEW THEME SELECTOR 🔥
+        st.markdown(f"🎨 **Personalize Theme**")
+        selected_theme = st.selectbox(
+            "Select UI Theme", 
+            list(THEMES.keys()), 
+            index=list(THEMES.keys()).index(st.session_state['app_theme']),
+            label_visibility="collapsed"
+        )
+        if selected_theme != st.session_state['app_theme']:
+            st.session_state['app_theme'] = selected_theme
+            st.rerun()
+            
+        st.write("---")
         username_display = str(st.session_state.get('username', 'UNKNOWN')).upper()
         role_display = str(st.session_state.get('user_role', 'STAFF')).upper()
-        st.markdown(f"<p style='text-align:center;'>👤 Active: <b>{username_display}</b><br>📍 Role: <b style='color:#10b981;'>{role_display}</b></p>", unsafe_allow_html=True)
+        st.markdown(f"<p style='text-align:center;'>👤 Active: <b>{username_display}</b><br>📍 Role: <b style='color:{active_theme['heading']};'>{role_display}</b></p>", unsafe_allow_html=True)
         
         if st.button("🔒 Logout System", use_container_width=True):
             insert_activity_log(st.session_state['tenant_id'], st.session_state['username'], "LOGOUT", "User terminated application session manually.")
@@ -645,7 +717,7 @@ if routing_node in ["📊 Core Analytics Dashboard", "📊 Lynx Dashboard"]:
                     hub_uids = [str(x).lower().strip() for x in segment['username'].tolist() if x]
                     hub_collected = sum(collection_map.get(uid, 0) for uid in hub_uids)
                     
-                    b_color = "#10b981" if (i+j)%2 == 0 else "#3b82f6"
+                    b_color = active_theme['heading'] if (i+j)%2 == 0 else active_theme['accent']
                     with cols[j]:
                         st.markdown(f"""
                         <div class="system-card" style="border-left: 5px solid {b_color};">
@@ -843,8 +915,8 @@ elif routing_node == "👥 Operational Billing Center":
                 <p>📦 <b>Package Extension Charges ({billing_months} Month(s)):</b> Rs. {package_total_cost:,}</p>
                 <p>⏮️ <b>Past Arrears Covered:</b> Rs. {base_shift:,}</p>
                 <p>🎁 <b>Discount Subtracted:</b> Rs. {discount:,}</p>
-                <h4 style='color:#3b82f6;'><b>Net Outstanding Due:</b> Rs. {final_due:,}</h4>
-                <hr style='border:1px solid #1f2937;'>
+                <h4 style='color:{active_theme['accent']};'><b>Net Outstanding Due:</b> Rs. {final_due:,}</h4>
+                <hr style='border:1px solid {active_theme['border']};'>
                 <h4>🔮 <b>Auto Post Action State:</b> <span style='color:{status_color}; font-weight:bold;'>{calculated_status}</span></h4>
                 <p>💾 <b>New Balanceshift/Arrears Log:</b> Rs. {future_shift:,}</p>
             </div>
@@ -854,7 +926,7 @@ elif routing_node == "👥 Operational Billing Center":
                 today_dt = datetime.now()
                 current_expiry_str = str(node_row_dict.get('expirydate', '')).strip()
                 
-                # Smart Expiry Calculator: Add to existing expiry if line is active, otherwise start from today
+                # Smart Expiry Calculator
                 try:
                     old_expiry_dt = datetime.strptime(current_expiry_str, "%Y-%m-%d")
                     base_dt = today_dt if old_expiry_dt < today_dt else old_expiry_dt
@@ -866,14 +938,12 @@ elif routing_node == "👥 Operational Billing Center":
                 
                 with get_db_connection() as conn:
                     with conn.cursor() as cursor:
-                        # Update customer fields flawlessly based on automatic calculations
                         cursor.execute("""
                             UPDATE customers 
                             SET balanceshift = %s, status = %s, expirydate = %s 
                             WHERE username = %s AND tenant_id = %s
                         """, (future_shift, calculated_status, new_expiry, resolved_uid, st.session_state['tenant_id']))
                         
-                        # Post onto transaction history clean ledger logs
                         cursor.execute("""
                             INSERT INTO billing_history (invoiceid, customerid, customername, area, phone, datetimestamp, currentpackage, amountpaid, remainingarrears, transactiontype, paymentmethod, discountgiven, tenant_id)
                             VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, 'BILL_PAYMENT', %s, %s, %s)
@@ -1415,7 +1485,7 @@ elif routing_node == "🔐 System Access Control":
                                 cursor.execute("DELETE FROM areas WHERE LOWER(areaname) = LOWER(%s) AND tenant_id = %s", (del_area, st.session_state['tenant_id']))
                                 st.success(f"✅ Area wiped cleanly.")
                                 st.cache_data.clear()
-                                rerun()
+                                st.rerun()
                                 
         with adm_tabs[4]:
             if str(st.session_state.get('user_role', '')).lower() != "owner":
@@ -1534,10 +1604,10 @@ elif routing_node == "📱 Client Portal":
                 balance_shift_val = 0
                 
             st.markdown(f"""
-            <div class="client-card" style="border: 2px solid #3b82f6;">
-                <h2 style="color:#3b82f6; text-align:center; font-weight:bold;">📄 DIGITAL BILL & QUOTATION</h2>
+            <div class="client-card" style="border: 2px solid {active_theme['accent']};">
+                <h2 style="color:{active_theme['accent']}; text-align:center; font-weight:bold;">📄 DIGITAL BILL & QUOTATION</h2>
                 <p style="text-align:center; color:#9ca3af; font-size:13px;">Provider: {html.escape(str(t_meta["name"]))} | Helpline: {html.escape(str(t_meta["phone"]))}</p>
-                <hr style="border: 1px solid #374151;">
+                <hr style="border: 1px solid {active_theme['border']};">
                 <h3 style="color:#10b981; margin-top:15px;">👤 Account ID: {html.escape(str(c_dict.get('username','')))}</h3>
                 <p><b>CUSTOMER NAME:</b> {html.escape(str(c_dict.get('customername','')))}</p>
                 <p><b>CONNECTED AREA:</b> {html.escape(str(c_dict.get('area','')))}</p>
