@@ -8,7 +8,6 @@ import uuid
 import html
 import re
 import io
-import os
 import json
 import requests 
 from datetime import datetime
@@ -154,10 +153,9 @@ def send_tenant_whatsapp(tenant_metadata, phone_number, message_text):
         "chatId": f"{clean_phone}@c.us",
         "message": full_message
     }
-    headers = {'Content-Type': 'application/json'}
 
     try:
-        requests.post(url, json=payload, headers=headers, timeout=5)
+        requests.post(url, json=payload, headers={'Content-Type': 'application/json'}, timeout=5)
         return True
     except Exception:
         return False
@@ -389,6 +387,7 @@ def calculate_license_days(expiry_str):
     except Exception:
         return "Invalid Expiry Mapping", False
 
+# Cache data configurations safe reference mapping logic
 tenant_meta = fetch_active_tenant_metadata(st.session_state['tenant_id'])
 TENANT_COMPANY_NAME = tenant_meta["name"]
 TENANT_SUPPORT_PHONE = tenant_meta["phone"]
@@ -822,6 +821,7 @@ elif routing_node == "👥 Operational Billing Center":
     if not is_management and "ALL" not in st.session_state['assigned_areas']:
         df_matrix = df_matrix[df_matrix['area'].str.lower().isin([s.lower() for s in st.session_state['assigned_areas']])]
 
+    # FIX: Synchronized structure to prevent component hierarchy rendering mismatches 
     if is_management:
         tabs = st.tabs(["💳 Capital Collection Hub", "➕ Provision New Client", "📥 Bulk Import Excel/CSV", "🛠️ Edit Terminal Profile", "🗑️ Remove Subscriber"])
         tab_col, tab_prov, tab_bulk, tab_edit, tab_del = tabs
@@ -1207,7 +1207,6 @@ elif routing_node == "🔐 System Access Control":
         st.markdown("<div class='main-title'>🔐 SYSTEM ACCESS PANEL</div>", unsafe_allow_html=True)
         all_system_areas = fetch_isolated_areas(st.session_state['tenant_id'])
         
-        # Determine strict master owner state status globally
         is_master_owner = (st.session_state['tenant_id'] == 'lynx' and st.session_state['username'] == 'owner')
 
         adm_tabs = st.tabs([
@@ -1223,44 +1222,107 @@ elif routing_node == "🔐 System Access Control":
         if is_master_owner:
             with adm_tabs[0]:
                 st.markdown("### 👑 LYNX MASTER CONTROL HUB")
+                
+                # Fetch all tenants
                 with get_db_connection() as conn:
                     with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
                         cur.execute("SELECT * FROM system_tenants ORDER BY registration_date DESC")
                         all_tenants_rows = cur.fetchall()
+                
                 if all_tenants_rows:
                     df_tenants_view = pd.DataFrame(all_tenants_rows)
                     st.dataframe(df_tenants_view, use_container_width=True)
-                    tenant_select_list = [t['tenant_id'] for t in all_tenants_rows if t['tenant_id'] != 'lynx']
+                    
+                    tenant_select_list = [t['tenant_id'] for t in all_tenants_rows]
+                    
                     if tenant_select_list:
-                        chosen_target_tenant = st.selectbox("Select Target Tenant ID to Modify Access", tenant_select_list)
-                        tenant_record = next(item for item in all_tenants_rows if item["tenant_id"] == chosen_target_tenant)
-                        current_status = tenant_record["license_active"]
-                        current_expiry_val = tenant_record.get("license_expiry_date", "")
-
                         st.write("---")
-                        st.markdown(f"#### ⚙️ Edit Authorization System: `{chosen_target_tenant}`")
-                        new_license_toggle = st.checkbox("Grant Premium Software Activation Status", value=current_status)
-                        new_expiry_input = st.text_input("Set License Expiry Date (YYYY-MM-DD) [Blank = Lifetime]", value=current_expiry_val)
+                        st.markdown("### 🛠️ EDIT TENANT MASTER CONTROL (Change Credentials & Details)")
                         
-                        st.markdown("##### 🔑 Master Password Override Tool")
-                        new_tenant_pass_force = st.text_input("Force Reset Tenant Admin Password", type="password")
-
-                        if st.button("💾 LOCK CONFIGURATION STATUS KEY"):
-                            with get_db_connection() as conn:
-                                with conn.cursor() as cursor:
-                                    cursor.execute("""
-                                        UPDATE system_tenants SET license_active = %s, license_expiry_date = %s 
-                                        WHERE tenant_id = %s
-                                    """, (new_license_toggle, new_expiry_input.strip(), chosen_target_tenant))
-                                    if new_tenant_pass_force.strip():
-                                        t_owner = tenant_record["owner_username"]
-                                        hashed_f = hash_password(new_tenant_pass_force.strip())
-                                        cursor.execute("UPDATE users SET password = %s WHERE username = %s AND tenant_id = %s", (hashed_f, t_owner, chosen_target_tenant))
-                                        st.success(f"🔑 Password updated for owner: `{t_owner}`")
-                            insert_activity_log("lynx", "owner", "MASTER_OVERRIDE", f"Modified tenant `{chosen_target_tenant}`.")
-                            st.success("Dynamic access lock state updated.")
-                            st.cache_data.clear()
-                            st.rerun()
+                        chosen_target_tenant = st.selectbox("Select Target Tenant ID to Modify / Control", tenant_select_list)
+                        tenant_record = next(item for item in all_tenants_rows if item["tenant_id"] == chosen_target_tenant)
+                        
+                        # Master control form inputs populated with current data
+                        with st.form("master_super_control_form"):
+                            col_m1, col_m2 = st.columns(2)
+                            with col_m1:
+                                m_tenant_id = st.text_input("Modify Tenant ID (Unique Code)", value=tenant_record["tenant_id"])
+                                m_company_name = st.text_input("ISP Brand/Company Name", value=tenant_record["company_name"])
+                                m_support_phone = st.text_input("Mobile / Support Helpline Number", value=tenant_record["support_phone"])
+                            with col_m2:
+                                m_owner_username = st.text_input("Owner Username Key", value=tenant_record["owner_username"])
+                                m_license_toggle = st.checkbox("Grant Premium Software Activation Status", value=tenant_record["license_active"])
+                                m_expiry_input = st.text_input("Set License Expiry Date (YYYY-MM-DD) [Blank = Lifetime]", value=tenant_record.get("license_expiry_date", ""))
+                            
+                            st.markdown("##### 🔑 Security Override")
+                            m_new_pass = st.text_input("Force Reset / Change Password (Leave blank to keep current)", type="password")
+                            
+                            if st.form_submit_button("💾 LOCK MASTER CONFIGURATION & UPDATE ALL SECTOR ROWS"):
+                                try:
+                                    with get_db_connection() as conn:
+                                        with conn.cursor() as cursor:
+                                            # Update system_tenants table row
+                                            cursor.execute("""
+                                                UPDATE system_tenants 
+                                                SET tenant_id = %s, company_name = %s, support_phone = %s, owner_username = %s, license_active = %s, license_expiry_date = %s 
+                                                WHERE tenant_id = %s
+                                            """, (m_tenant_id.strip().lower(), m_company_name.strip(), m_support_phone.strip(), m_owner_username.strip().lower(), m_license_toggle, m_expiry_input.strip(), chosen_target_tenant))
+                                            
+                                            # Sync user account login details
+                                            cursor.execute("""
+                                                UPDATE users 
+                                                SET username = %s, tenant_id = %s 
+                                                WHERE username = %s AND tenant_id = %s
+                                            """, (m_owner_username.strip().lower(), m_tenant_id.strip().lower(), tenant_record["owner_username"], chosen_target_tenant))
+                                            
+                                            # If a password was supplied, encrypt and inject it
+                                            if m_new_pass.strip():
+                                                hashed_f = hash_password(m_new_pass.strip())
+                                                cursor.execute("""
+                                                    UPDATE users SET password = %s 
+                                                    WHERE username = %s AND tenant_id = %s
+                                                """, (hashed_f, m_owner_username.strip().lower(), m_tenant_id.strip().lower()))
+                                            
+                                            # Propagate tenant_id cascading updates if changed
+                                            if m_tenant_id.strip().lower() != chosen_target_tenant:
+                                                cursor.execute("UPDATE users SET tenant_id = %s WHERE tenant_id = %s", (m_tenant_id.strip().lower(), chosen_target_tenant))
+                                                cursor.execute("UPDATE customers SET tenant_id = %s WHERE tenant_id = %s", (m_tenant_id.strip().lower(), chosen_target_tenant))
+                                                cursor.execute("UPDATE areas SET tenant_id = %s WHERE tenant_id = %s", (m_tenant_id.strip().lower(), chosen_target_tenant))
+                                                cursor.execute("UPDATE packages SET tenant_id = %s WHERE tenant_id = %s", (m_tenant_id.strip().lower(), chosen_target_tenant))
+                                                cursor.execute("UPDATE billing_history SET tenant_id = %s WHERE tenant_id = %s", (m_tenant_id.strip().lower(), chosen_target_tenant))
+                                                cursor.execute("UPDATE activity_logs SET tenant_id = %s WHERE tenant_id = %s", (m_tenant_id.strip().lower(), chosen_target_tenant))
+                                    
+                                    insert_activity_log("lynx", "owner", "MASTER_CRITICAL_OVERRIDE", f"Full modification performed on entity: {chosen_target_tenant}")
+                                    st.success("🎉 Master control update written cleanly across database nodes!")
+                                    st.cache_data.clear()
+                                    st.rerun()
+                                except Exception as err_m:
+                                    st.error(f"SQL Execution Error: {err_m}")
+                
+                # FIX: WHATSAPP ENGINE IS NOW FULLY DISCLOSED TO THE LYNX OWNER INSTANCE TO PREVENT HIDDEN INVISIBILITY ISSUES
+                st.write("---")
+                st.markdown("### 🟢 Automated WhatsApp Settings for Master (`lynx`) Account")
+                with get_db_connection() as conn:
+                    with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                        cur.execute("SELECT whatsapp_enabled, whatsapp_instance_id, whatsapp_token FROM system_tenants WHERE tenant_id = 'lynx'")
+                        lynx_wa_row = cur.fetchone()
+                
+                with st.form("master_lynx_whatsapp_form"):
+                    l_wa_enabled = st.checkbox("Enable Automatic WhatsApp Alerts (Master)", value=lynx_wa_row.get("whatsapp_enabled", False) if lynx_wa_row else False)
+                    l_wa_instance = st.text_input("Green-API Instance ID (Master)", value=lynx_wa_row.get("whatsapp_instance_id", "") if lynx_wa_row else "")
+                    l_wa_token = st.text_input("Green-API Token (Master)", value=lynx_wa_row.get("whatsapp_token", "") if lynx_wa_row else "", type="password")
+                    
+                    if st.form_submit_button("💾 SAVE MASTER WHATSAPP CONFIGS"):
+                        with get_db_connection() as conn:
+                            with conn.cursor() as cursor:
+                                cursor.execute("""
+                                    UPDATE system_tenants 
+                                    SET whatsapp_enabled=%s, whatsapp_instance_id=%s, whatsapp_token=%s 
+                                    WHERE tenant_id='lynx'
+                                """, (l_wa_enabled, l_wa_instance, l_wa_token, ))
+                        st.success("✅ Lynx owner WhatsApp profile settings updated successfully!")
+                        st.cache_data.clear()
+                        st.rerun()
         else:
             with adm_tabs[0]:
                 st.markdown("### 🏢 ISP Whitelabel Branding & WhatsApp Setup")
@@ -1478,6 +1540,7 @@ elif routing_node == "🔐 System Access Control":
                                 cursor.execute("DELETE FROM areas WHERE LOWER(areaname) = LOWER(%s) AND tenant_id = %s", (del_area, st.session_state['tenant_id']))
                                 st.success(f"✅ Area wiped cleanly.")
                                 st.cache_data.clear()
+                                r_idx = adm_tabs.index(adm_tabs[3]) if adm_tabs[3] in adm_tabs else 0
                                 st.rerun()
 
         with adm_tabs[4]:
