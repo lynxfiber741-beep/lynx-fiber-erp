@@ -335,8 +335,8 @@ def build_database_schema():
                 cursor.execute("""
                     INSERT INTO system_tenants 
                     (tenant_id, company_name, support_phone, owner_username, license_active, registration_date, license_expiry_date, staff_permissions, whatsapp_templates) 
-                    VALUES ('lynx', 'Lynx Fiber Pvt Ltd', '03135776263', 'owner', TRUE, %s, '', '', '')
-                """, (datetime.now().strftime("%Y-%m-%d"),))
+                    VALUES ('lynx', 'Lynx Fiber Pvt Ltd', '03135776263', 'owner', TRUE, %s, '', '', %s)
+                """, (datetime.now().strftime("%Y-%m-%d"), json.dumps(DEFAULT_WA_TEMPLATES)))
                 
                 cursor.execute("SELECT COUNT(*) FROM users WHERE username = 'owner' AND tenant_id = 'lynx'")
                 if cursor.fetchone()[0] == 0:
@@ -1362,15 +1362,25 @@ elif routing_node == "🔐 System Access Control":
                         cur.execute("SELECT whatsapp_enabled, whatsapp_instance_id, whatsapp_token, whatsapp_templates FROM system_tenants WHERE tenant_id = 'lynx'")
                         lynx_wa_row = cur.fetchone()
                 
+                # 🔍 DETAILED FIX: Fallbacks definition to prevent empty interface rendering
+                if lynx_wa_row:
+                    master_wa_enabled_val = bool(lynx_wa_row.get("whatsapp_enabled", False))
+                    master_wa_instance_val = str(lynx_wa_row.get("whatsapp_instance_id", "") or "")
+                    master_wa_token_val = str(lynx_wa_row.get("whatsapp_token", "") or "")
+                else:
+                    master_wa_enabled_val = False
+                    master_wa_instance_val = ""
+                    master_wa_token_val = ""
+
                 with st.form("master_lynx_whatsapp_form"):
-                    l_wa_enabled = st.checkbox("Enable Automatic WhatsApp Alerts (Master)", value=lynx_wa_row.get("whatsapp_enabled", False) if lynx_wa_row else False)
-                    l_wa_instance = st.text_input("Green-API Instance ID (Master)", value=lynx_wa_row.get("whatsapp_instance_id", "") if lynx_wa_row else "")
-                    l_wa_token = st.text_input("Green-API Token (Master)", value=lynx_wa_row.get("whatsapp_token", "") if lynx_wa_row else "", type="password")
+                    l_wa_enabled = st.checkbox("Enable Automatic WhatsApp Alerts (Master)", value=master_wa_enabled_val)
+                    l_wa_instance = st.text_input("Green-API Instance ID (Master)", value=master_wa_instance_val)
+                    l_wa_token = st.text_input("Green-API Token (Master)", value=master_wa_token_val, type="password")
                     
                     if st.form_submit_button("💾 SAVE MASTER WHATSAPP CONFIGS"):
                         with get_db_connection() as conn:
                             with conn.cursor() as cursor:
-                                # 🔍 FIX: Keep master templates default dictionary saved into json database row structure properly
+                                # Ensure existing row is updated or template json isn't corrupted
                                 cursor.execute("""
                                     UPDATE system_tenants 
                                     SET whatsapp_enabled=%s, whatsapp_instance_id=%s, whatsapp_token=%s, whatsapp_templates=%s 
@@ -1616,7 +1626,7 @@ elif routing_node == "🔐 System Access Control":
                                 cursor.execute("DELETE FROM areas WHERE LOWER(areaname) = LOWER(%s) AND tenant_id = %s", (del_area, st.session_state['tenant_id']))
                                 st.success(f"✅ Area wiped cleanly.")
                                 st.cache_data.clear()
-                                st.rerun()
+                                re.rerun()
 
         with adm_tabs[4]:
             if str(st.session_state.get('user_role', '')).lower() != "owner":
