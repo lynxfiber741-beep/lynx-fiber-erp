@@ -1067,19 +1067,59 @@ elif routing_node == "👥 Operational Billing Center":
 # ========================================== #
 elif routing_node == "📜 Lifetime Ledger History":
     st.markdown("<div class='main-title'>📜 ACCOUNT LEDGER METRICS & AUDIT TRAIL</div>", unsafe_allow_html=True)
-    df_ledger = pd.DataFrame()
-    with get_db_connection() as conn:
-        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-            cur.execute("SELECT * FROM billing_history WHERE tenant_id = %s ORDER BY datetimestamp DESC", (st.session_state['tenant_id'],))
-            l_rows = cur.fetchall()
-            if l_rows:
-                df_ledger = pd.DataFrame(l_rows)
-                
-    if df_ledger.empty:
-        st.info("No transactional logs found inside your tenant node registry.")
-    else:
-        df_ledger.columns = [c.lower() for c in df_ledger.columns]
-        st.dataframe(df_ledger, use_container_width=True)
+    
+    tab_all, tab_paid = st.tabs(["📜 All Ledger History", "✅ Paid Users (Date Filter)"])
+
+    with tab_all:
+        df_ledger = pd.DataFrame()
+        with get_db_connection() as conn:
+            with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                cur.execute("SELECT * FROM billing_history WHERE tenant_id = %s ORDER BY datetimestamp DESC", (st.session_state['tenant_id'],))
+                l_rows = cur.fetchall()
+                if l_rows:
+                    df_ledger = pd.DataFrame(l_rows)
+                    
+        if df_ledger.empty:
+            st.info("No transactional logs found inside your tenant node registry.")
+        else:
+            df_ledger.columns = [c.lower() for c in df_ledger.columns]
+            st.dataframe(df_ledger, use_container_width=True)
+
+    with tab_paid:
+        st.markdown("### 📅 Filter Paid Users by Date")
+        col_d1, col_d2 = st.columns(2)
+        with col_d1:
+            start_date = st.date_input("Start Date", value=datetime.now().date())
+        with col_d2:
+            end_date = st.date_input("End Date", value=datetime.now().date())
+
+        if st.button("🔍 Generate Paid Users Report", use_container_width=True):
+            with get_db_connection() as conn:
+                with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                    query = """
+                        SELECT customerid, customername, area, phone, amountpaid, datetimestamp, paymentmethod
+                        FROM billing_history
+                        WHERE tenant_id = %s
+                        AND transactiontype = 'BILL_PAYMENT'
+                        AND SUBSTRING(datetimestamp, 1, 10) >= %s
+                        AND SUBSTRING(datetimestamp, 1, 10) <= %s
+                        ORDER BY datetimestamp DESC
+                    """
+                    cur.execute(query, (st.session_state['tenant_id'], str(start_date), str(end_date)))
+                    paid_rows = cur.fetchall()
+
+            if paid_rows:
+                df_paid = pd.DataFrame(paid_rows)
+                st.success(f"✅ Found {len(df_paid)} paid transactions between {start_date} and {end_date}.")
+                st.dataframe(df_paid, use_container_width=True)
+
+                try:
+                    total_col = int(float(str(df_paid['amountpaid'].sum())))
+                    st.markdown(f"#### 💰 Total Collection Amount: **Rs. {total_col:,}**", unsafe_allow_html=True)
+                except Exception:
+                    pass
+            else:
+                st.warning("⚠️ No paid records found in this date range.")
 
 # ========================================== #
 # VIEW 4: SYSTEM ACCESS CONFIGS              #
