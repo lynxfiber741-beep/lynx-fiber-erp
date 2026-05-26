@@ -1291,8 +1291,7 @@ elif routing_node == "🔐 System Access Control":
                         all_tenants_rows = cur.fetchall()
                 
                 if all_tenants_rows:
-                    df_tenants_view = pd.DataFrame(all_tenants_rows)
-                    st.dataframe(df_tenants_view, use_container_width=True)
+                    st.dataframe(pd.DataFrame(all_tenants_rows), use_container_width=True)
                     
                     tenant_select_list = [t['tenant_id'] for t in all_tenants_rows]
                     
@@ -1307,7 +1306,7 @@ elif routing_node == "🔐 System Access Control":
                             col_m1, col_m2 = st.columns(2)
                             with col_m1:
                                 m_tenant_id = st.text_input("Modify Tenant ID (Unique Code)", value=tenant_record["tenant_id"])
-                                m_company_name = st.text_input("ISP Brand/Company Name", value=tenant_record["company_name"])
+                                m_company_name = m_company_name = st.text_input("ISP Brand/Company Name", value=tenant_record["company_name"])
                                 m_support_phone = st.text_input("Mobile / Support Helpline Number", value=tenant_record["support_phone"])
                             with col_m2:
                                 m_owner_username = st.text_input("Owner Username Key", value=tenant_record["owner_username"])
@@ -1362,7 +1361,16 @@ elif routing_node == "🔐 System Access Control":
                         cur.execute("SELECT whatsapp_enabled, whatsapp_instance_id, whatsapp_token, whatsapp_templates FROM system_tenants WHERE tenant_id = 'lynx'")
                         lynx_wa_row = cur.fetchone()
                 
-                # 🔍 DETAILED FIX: Fallbacks definition to prevent empty interface rendering
+                # 🔍 PERFECT FIX: Load existing templates or fallback to defaults for master row
+                master_custom_templates = DEFAULT_WA_TEMPLATES.copy()
+                if lynx_wa_row and lynx_wa_row.get("whatsapp_templates"):
+                    try:
+                        loaded_m_templates = json.loads(lynx_wa_row["whatsapp_templates"])
+                        if isinstance(loaded_m_templates, dict):
+                            master_custom_templates.update(loaded_m_templates)
+                    except:
+                        pass
+
                 if lynx_wa_row:
                     master_wa_enabled_val = bool(lynx_wa_row.get("whatsapp_enabled", False))
                     master_wa_instance_val = str(lynx_wa_row.get("whatsapp_instance_id", "") or "")
@@ -1377,15 +1385,27 @@ elif routing_node == "🔐 System Access Control":
                     l_wa_instance = st.text_input("Green-API Instance ID (Master)", value=master_wa_instance_val)
                     l_wa_token = st.text_input("Green-API Token (Master)", value=master_wa_token_val, type="password")
                     
+                    st.markdown("#### 💬 Customizable Message Templates Engine (Master)")
+                    st.caption("Master (`lynx`) account k templates yahan se customize karein:")
+                    m_t_new = st.text_area("➕ New Connection Template (Master)", value=master_custom_templates["new_connection"], height=80)
+                    m_t_paid = st.text_area("💳 Bill Paid Template (Master)", value=master_custom_templates["bill_paid"], height=80)
+                    m_t_remind = st.text_area("⚠️ Bill Reminder Template (Master)", value=master_custom_templates["bill_reminder"], height=80)
+                    m_t_exp = st.text_area("⏳ Line Suspended Template (Master)", value=master_custom_templates["expired_warning"], height=80)
+                    
                     if st.form_submit_button("💾 SAVE MASTER WHATSAPP CONFIGS"):
+                        master_updated_templates = {
+                            "new_connection": m_t_new,
+                            "bill_paid": m_t_paid,
+                            "bill_reminder": m_t_remind,
+                            "expired_warning": m_t_exp
+                        }
                         with get_db_connection() as conn:
                             with conn.cursor() as cursor:
-                                # Ensure existing row is updated or template json isn't corrupted
                                 cursor.execute("""
                                     UPDATE system_tenants 
                                     SET whatsapp_enabled=%s, whatsapp_instance_id=%s, whatsapp_token=%s, whatsapp_templates=%s 
                                     WHERE tenant_id='lynx'
-                                """, (l_wa_enabled, l_wa_instance, l_wa_token, json.dumps(DEFAULT_WA_TEMPLATES)))
+                                """, (l_wa_enabled, l_wa_instance, l_wa_token, json.dumps(master_updated_templates)))
                         st.success("✅ Lynx owner WhatsApp profile settings updated successfully!")
                         st.cache_data.clear()
                         st.rerun()
