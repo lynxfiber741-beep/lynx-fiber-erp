@@ -673,7 +673,7 @@ if routing_node in ["📊 Core Analytics Dashboard", "📊 Lynx Dashboard"]:
             
             col_b1, col_b2, col_b3, col_b4 = st.columns(4)
             col_b1.metric("Terminals Active", total_active)
-            col_b2.metric("Paid Accounts", total_paid, delta_color="inverse")
+            col_b2.metric("Paid Accounts", total_paid)  # Fixed: Removed empty delta_color="inverse"
             col_b3.metric("Total Arrears", f"Rs. {total_arrears:,}")
             col_b4.metric("Suspended Lines", total_suspended)
             
@@ -780,6 +780,7 @@ elif routing_node == "👥 Operational Billing Center":
             st.markdown(f"### Live Total Due: <span style='color:#10b981;'>Rs. {final_due:,}</span>", unsafe_allow_html=True)
             cash_in = st.number_input("Capital Received (Rs.)", min_value=0, value=final_due)
             
+            # FIXED: Removed st.download_button nested inside action trigger loop (Session State caching approach added)
             if st.button("💳 POST TRANSACTION & EXTEND LINE", use_container_width=True):
                 future_shift = int(final_due - cash_in)
                 new_state = "PARTIAL" if future_shift > 0 and cash_in > 0 else ("UNPAID" if future_shift > 0 else "PAID")
@@ -806,9 +807,14 @@ elif routing_node == "👥 Operational Billing Center":
                 insert_activity_log(st.session_state['tenant_id'], st.session_state['username'], "BILL_PAYMENT", f"Posted Rs. {cash_in} for {resolved_uid}. Arrears set to Rs. {future_shift}, Expiry extended to {new_expiry}.")
                 st.success(f"🎉 Collection Recorded Cleanly! Extended Lock To: {new_expiry}")
                 
-                pdf_bytes = generate_receipt_pdf(TENANT_COMPANY_NAME, TENANT_SUPPORT_PHONE, invoice_uuid, resolved_uid, node_row_dict.get('customername'), node_row_dict.get('area'), node_row_dict.get('package'), cash_in, future_shift, pay_method)
-                st.download_button("📥 Download PDF Receipt", data=pdf_bytes, file_name=f"Receipt_{invoice_uuid}.pdf", mime="application/pdf")
+                # Render logic preserved dynamically
+                st.session_state['recent_pdf_bytes'] = generate_receipt_pdf(TENANT_COMPANY_NAME, TENANT_SUPPORT_PHONE, invoice_uuid, resolved_uid, node_row_dict.get('customername'), node_row_dict.get('area'), node_row_dict.get('package'), cash_in, future_shift, pay_method)
+                st.session_state['recent_invoice_uuid'] = invoice_uuid
                 st.cache_data.clear()
+                
+            # Safely render the download button independently based on state
+            if 'recent_pdf_bytes' in st.session_state:
+                st.download_button("📥 Download Generated PDF Receipt", data=st.session_state['recent_pdf_bytes'], file_name=f"Receipt_{st.session_state.get('recent_invoice_uuid', 'INV')}.pdf", mime="application/pdf", use_container_width=True)
                 
     if tab_prov:
         with tab_prov:
@@ -984,7 +990,11 @@ elif routing_node == "👥 Operational Billing Center":
                     current_rate_val = 0
                     
                 up_rate = st.number_input("Monthly Rate (Rs.)", value=current_rate_val, disabled=is_rate_disabled)
-                up_status = st.selectbox("Line Status", ["PAID", "PARTIAL", "UNPAID", "SUSPENDED"], index=["PAID", "PARTIAL", "UNPAID", "SUSPENDED"].index(edit_row_dict.get('status','UNPAID')), disabled=is_status_disabled)
+                
+                # FIXED: Added crash protection for unexpected status capitalization in database
+                raw_stat = str(edit_row_dict.get('status', 'UNPAID')).upper()
+                safe_stat = raw_stat if raw_stat in ["PAID", "PARTIAL", "UNPAID", "SUSPENDED"] else "UNPAID"
+                up_status = st.selectbox("Line Status", ["PAID", "PARTIAL", "UNPAID", "SUSPENDED"], index=["PAID", "PARTIAL", "UNPAID", "SUSPENDED"].index(safe_stat), disabled=is_status_disabled)
                 
                 if st.form_submit_button("💾 COMMIT MODIFICATIONS"):
                     # Generate safe fallbacks for disabled parameters so existing data isn't wiped out blankly
@@ -993,7 +1003,7 @@ elif routing_node == "👥 Operational Billing Center":
                     final_address = edit_row_dict.get('address') if is_address_disabled else up_address
                     final_sn = edit_row_dict.get('onuserialnumber') if is_onu_disabled else up_sn
                     final_rate = int(current_rate_val) if is_rate_disabled else int(up_rate)
-                    final_status = edit_row_dict.get('status','UNPAID') if is_status_disabled else up_status
+                    final_status = safe_stat if is_status_disabled else up_status
 
                     with get_db_connection() as conn:
                         with conn.cursor() as cursor:
@@ -1015,7 +1025,6 @@ elif routing_node == "👥 Operational Billing Center":
             if not sub_map:
                 st.info("No active terminals to remove.")
             else:
-                # Modifying from st.selectbox to st.multiselect to support multiple removals
                 del_targets = st.multiselect("Select Subscriber Target(s) for Deletion", list(sub_map.keys()), key="del_box")
                 
                 if st.button("🗑️ PERMANENTLY REMOVE SELECTED CUSTOMER TERMINALS", type="primary", use_container_width=True):
@@ -1025,7 +1034,6 @@ elif routing_node == "👥 Operational Billing Center":
                         del_uids = [sub_map[target] for target in del_targets]
                         with get_db_connection() as conn:
                             with conn.cursor() as cursor:
-                                # Optimized logic using ANY clause for bulk row dropping inside database cluster layer
                                 cursor.execute("DELETE FROM customers WHERE username = ANY(%s) AND tenant_id = %s", (del_uids, st.session_state['tenant_id']))
                         
                         uids_log_str = ", ".join(del_uids)
@@ -1159,7 +1167,6 @@ elif routing_node == "🔐 System Access Control":
                                 else:
                                     st.error("❌ Validation failed.")
 
-            # 🔥 NEW COMPREHENSIVE OWNER STAFF PERMISSIONS TUNER PANEL
             st.write("---")
             st.markdown("#### 🛠️ Configurable Staff Profile Editing Rules")
             st.write("Choose exactly what metrics your Staff personnel are authorized to rewrite inside the Terminal Form:")
@@ -1227,7 +1234,7 @@ elif routing_node == "🔐 System Access Control":
                 df_staff.columns = [c.capitalize() for c in df_staff.columns]
                 st.dataframe(df_staff, use_container_width=True)
                 
-                # Fetch deletable staff (Cannot delete yourself or Master Owner)
+                # Fetch deletable staff
                 deletable_staff = [r['username'] for r in staff_rows if r['username'] != st.session_state['username'] and str(r['role']).lower() != "owner"]
                 
                 if deletable_staff:
@@ -1375,6 +1382,7 @@ elif routing_node == "🔐 System Access Control":
             if is_master_owner:
                 backup_scope = st.radio("Select Backup Scope", ["Current Tenant Only", "Full Server Master Backup (All Tenants Data)"])
                 
+            # FIXED: Nested st.download_button logic converted to safe Session State structure
             if st.button("⚡ GENERATE SYSTEM BACKUP SNAPSHOT", use_container_width=True):
                 with st.spinner("Database se data safe download kiya ja raha hai..."):
                     try:
@@ -1390,18 +1398,22 @@ elif routing_node == "🔐 System Access Control":
                                 df_bak = pd.read_sql_query(q, conn, params=params)
                                 backup_payload[t_name] = df_bak.to_dict(orient='records')
                                 
-                        json_str = json.dumps(backup_payload, default=str, indent=4)
+                        st.session_state['safe_backup_json'] = json.dumps(backup_payload, default=str, indent=4)
                         insert_activity_log(st.session_state['tenant_id'], st.session_state['username'], "GENERATE_BACKUP", f"Exported state backup ledger snapshot. Scope profile type: {backup_scope}")
                         st.success("✅ Database Snapshot processed successfully! Niche diye gaye button se file download karein.")
-                        st.download_button(
-                            label="📥 DOWNLOAD BACKUP FILE (.JSON)",
-                            data=json_str,
-                            file_name=f"Lynx_Backup_{st.session_state['tenant_id']}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json",
-                            mime="application/json",
-                            use_container_width=True
-                        )
+                        
                     except Exception as b_err:
                         st.error(f"Backup Error: {b_err}")
+                        
+            # Button dynamically appears outside execution block for stability
+            if 'safe_backup_json' in st.session_state:
+                st.download_button(
+                    label="📥 DOWNLOAD PREPARED BACKUP FILE (.JSON)",
+                    data=st.session_state['safe_backup_json'],
+                    file_name=f"Lynx_Backup_{st.session_state['tenant_id']}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json",
+                    mime="application/json",
+                    use_container_width=True
+                )
 
 # ========================================== #
 # VIEW 5: SUBSCRIBER SELF-SERVICE INVENTORY  #
