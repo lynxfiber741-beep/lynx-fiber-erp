@@ -970,24 +970,30 @@ elif routing_node == "👥 Operational Billing Center":
 
     if tab_del:
         with tab_del:
-            st.markdown("### 🗑️ Permanent Subscriber Deletion Module")
-            st.warning("⚠️ Warning: Proceeding with deletion will permanently wipe this customer from your active operational database.")
+            st.markdown("### 🗑️ Permanent Multi-Subscriber Deletion Module")
+            st.warning("⚠️ Warning: Proceeding with deletion will permanently wipe selected customers from your active operational database.")
             
             if not sub_map:
                 st.info("No active terminals to remove.")
             else:
-                del_target = st.selectbox("Select Subscriber Target for Deletion", list(sub_map.keys()), key="del_box")
-                del_uid = sub_map[del_target]
+                # Modifying from st.selectbox to st.multiselect to support multiple removals
+                del_targets = st.multiselect("Select Subscriber Target(s) for Deletion", list(sub_map.keys()), key="del_box")
                 
-                if st.button("🗑️ PERMANENTLY REMOVE CUSTOMER TERMINAL", type="primary", use_container_width=True):
-                    with get_db_connection() as conn:
-                        with conn.cursor() as cursor:
-                            cursor.execute("DELETE FROM customers WHERE username = %s AND tenant_id = %s", (del_uid, st.session_state['tenant_id']))
-                    
-                    insert_activity_log(st.session_state['tenant_id'], st.session_state['username'], "DELETE_CUSTOMER", f"Permanently deleted subscriber profile: {del_uid}.")
-                    st.success(f"✅ Operations Success! Profile '{del_uid}' completely purged from tenant database.")
-                    st.cache_data.clear()
-                    st.rerun()
+                if st.button("🗑️ PERMANENTLY REMOVE SELECTED CUSTOMER TERMINALS", type="primary", use_container_width=True):
+                    if not del_targets:
+                        st.error("❌ Please select at least one subscriber to delete.")
+                    else:
+                        del_uids = [sub_map[target] for target in del_targets]
+                        with get_db_connection() as conn:
+                            with conn.cursor() as cursor:
+                                # Optimized logic using ANY clause for bulk row dropping inside database cluster layer
+                                cursor.execute("DELETE FROM customers WHERE username = ANY(%s) AND tenant_id = %s", (del_uids, st.session_state['tenant_id']))
+                        
+                        uids_log_str = ", ".join(del_uids)
+                        insert_activity_log(st.session_state['tenant_id'], st.session_state['username'], "DELETE_CUSTOMERS", f"Permanently deleted subscriber profiles: {uids_log_str}.")
+                        st.success(f"✅ Operations Success! Profiles '{uids_log_str}' completely purged from tenant database.")
+                        st.cache_data.clear()
+                        st.rerun()
 
 # ========================================== #
 # VIEW 3: LIFETIME AUDIT LEDGER HISTORY       #
