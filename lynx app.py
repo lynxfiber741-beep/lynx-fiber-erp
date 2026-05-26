@@ -862,19 +862,52 @@ elif routing_node == "👥 Operational Billing Center":
                             with conn.cursor() as cursor:
                                 for idx, row in df_upload.iterrows():
                                     try:
-                                        clean_id = str(row['username']).strip().lower()
-                                        default_expiry = (datetime.now() + relativedelta(months=1)).strftime("%Y-%m-%d")
+                                        # Safely extract and format to prevent Pandas KeyError or NaN strings
+                                        clean_id = str(row.get('username', '')).strip().lower()
+                                        if clean_id == 'nan' or not clean_id: 
+                                            continue
+                                        
+                                        c_name = str(row.get('customername', '')).strip()
+                                        if c_name.lower() == 'nan': c_name = 'Unknown'
+                                        
+                                        c_phone = clean_and_validate_phone(str(row.get('phone', '')))
+                                        
+                                        c_cnic = str(row.get('cnic', '')).strip()
+                                        if c_cnic.lower() == 'nan': c_cnic = ''
+                                        
+                                        c_pkg = str(row.get('package', 'Standard')).strip()
+                                        if c_pkg.lower() == 'nan' or not c_pkg: c_pkg = 'Standard'
+                                        
+                                        c_area = str(row.get('area', '')).strip()
+                                        if c_area.lower() == 'nan': c_area = 'Default'
+                                        
+                                        c_addr = str(row.get('address', '')).strip()
+                                        if c_addr.lower() == 'nan': c_addr = ''
+                                        
+                                        c_onu = str(row.get('onuserialnumber', '')).strip()
+                                        if c_onu.lower() == 'nan': c_onu = ''
+                                        
                                         raw_amt = str(row.get('billamount', '1500')).strip()
-                                        bill_amt = int(float(raw_amt)) if raw_amt else 1500
+                                        if raw_amt.lower() == 'nan' or not raw_amt:
+                                            bill_amt = 1500
+                                        else:
+                                            bill_amt = int(float(raw_amt))
+                                            
+                                        default_expiry = (datetime.now() + relativedelta(months=1)).strftime("%Y-%m-%d")
                                         
                                         cursor.execute("""
                                             INSERT INTO customers (username, customername, phone, cnic, package, billamount, area, address, onuserialnumber, balanceshift, status, expirydate, tenant_id)
                                             VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, 0, 'UNPAID', %s, %s)
                                             ON CONFLICT (username, tenant_id) DO NOTHING
-                                        """, (clean_id, str(row['customername']), clean_and_validate_phone(str(row['phone'])), str(row.get('cnic','')), str(row.get('package','Standard')), bill_amt, str(row['area']), str(row.get('address','')), str(row.get('onuserialnumber','')), default_expiry, st.session_state['tenant_id']))
-                                        inserted_rows += 1
-                                    except Exception:
+                                        """, (clean_id, c_name, c_phone, c_cnic, c_pkg, bill_amt, c_area, c_addr, c_onu, default_expiry, st.session_state['tenant_id']))
+                                        
+                                        # Only increment if query successfully pushed a new row
+                                        if cursor.rowcount > 0:
+                                            inserted_rows += 1
+                                    except Exception as e:
+                                        # Safely bypass any row that fails database checks without breaking the bulk engine
                                         pass
+                                        
                         insert_activity_log(st.session_state['tenant_id'], st.session_state['username'], "BULK_IMPORT", f"Executed bulk system upload matrix processing {inserted_rows} clean entries.")
                         st.success(f"🚀 Bulk Isolation processed {inserted_rows} entries cleanly!")
                         st.cache_data.clear()
