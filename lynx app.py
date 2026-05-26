@@ -22,6 +22,16 @@ DISTRIBUTOR_NAME = "Lynx Fiber Internet"
 MASTER_NOTIFY_NUMBERS = ["03215943786", "03118808741"]
 GENERIC_TEXT = "Lynx Fiber Internet"
 
+# Default fallback staff editing permissions
+DEFAULT_STAFF_PERMS = {
+    "customername": True,
+    "phone": True,
+    "address": True,
+    "onuserialnumber": True,
+    "billamount": False,
+    "status": False
+}
+
 # ========================================== #
 # 0. CORE PAGE CONFIGURATION (MUST BE FIRST) #
 # ========================================== #
@@ -183,7 +193,8 @@ def build_database_schema():
                     owner_username TEXT NOT NULL,
                     license_active BOOLEAN DEFAULT FALSE,
                     registration_date TEXT NOT NULL,
-                    license_expiry_date TEXT NOT NULL DEFAULT ''
+                    license_expiry_date TEXT NOT NULL DEFAULT '',
+                    staff_permissions TEXT DEFAULT ''
                 )
             """)
             # 2. Users Table
@@ -268,8 +279,8 @@ def build_database_schema():
             cursor.execute("SELECT COUNT(*) FROM system_tenants WHERE tenant_id = 'lynx'")
             if cursor.fetchone()[0] == 0:
                 cursor.execute("""
-                    INSERT INTO system_tenants (tenant_id, company_name, support_phone, owner_username, license_active, registration_date, license_expiry_date)
-                    VALUES ('lynx', 'Lynx Fiber Pvt Ltd', '03135776263', 'owner', TRUE, %s, '')
+                    INSERT INTO system_tenants (tenant_id, company_name, support_phone, owner_username, license_active, registration_date, license_expiry_date, staff_permissions)
+                    VALUES ('lynx', 'Lynx Fiber Pvt Ltd', '03135776263', 'owner', TRUE, %s, '', '')
                 """, (datetime.now().strftime("%Y-%m-%d"),))
                 
             cursor.execute("SELECT COUNT(*) FROM users WHERE username = 'owner' AND tenant_id = 'lynx'")
@@ -286,6 +297,7 @@ def run_live_migrations():
             with conn.cursor() as cursor:
                 cursor.execute("ALTER TABLE activity_logs ADD COLUMN IF NOT EXISTS timestamp TEXT NOT NULL DEFAULT '';")
                 cursor.execute("ALTER TABLE activity_logs ADD COLUMN IF NOT EXISTS description TEXT NOT NULL DEFAULT '';")
+                cursor.execute("ALTER TABLE system_tenants ADD COLUMN IF NOT EXISTS staff_permissions TEXT DEFAULT '';")
     except Exception:
         pass
 
@@ -305,18 +317,25 @@ def fetch_active_tenant_metadata(tenant_id):
     try:
         with get_db_connection() as conn:
             with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-                cur.execute("SELECT company_name, support_phone, license_active, license_expiry_date FROM system_tenants WHERE tenant_id = %s", (tenant_id,))
+                cur.execute("SELECT company_name, support_phone, license_active, license_expiry_date, staff_permissions FROM system_tenants WHERE tenant_id = %s", (tenant_id,))
                 res = cur.fetchone()
                 if res:
+                    perms = DEFAULT_STAFF_PERMS.copy()
+                    if res.get("staff_permissions"):
+                        try:
+                            perms.update(json.loads(res["staff_permissions"]))
+                        except Exception:
+                            pass
                     return {
                         "name": res["company_name"],
                         "phone": res["support_phone"],
                         "active": res["license_active"],
-                        "expiry_date": res.get("license_expiry_date", "")
+                        "expiry_date": res.get("license_expiry_date", ""),
+                        "staff_permissions": perms
                     }
-        return {"name": "Lynx Fiber Pvt Ltd", "phone": "03135776263", "active": True, "expiry_date": ""}
+        return {"name": "Lynx Fiber Pvt Ltd", "phone": "03135776263", "active": True, "expiry_date": "", "staff_permissions": DEFAULT_STAFF_PERMS}
     except Exception:
-        return {"name": "Lynx Fiber Pvt Ltd", "phone": "03135776263", "active": True, "expiry_date": ""}
+        return {"name": "Lynx Fiber Pvt Ltd", "phone": "03135776263", "active": True, "expiry_date": "", "staff_permissions": DEFAULT_STAFF_PERMS}
 
 def calculate_license_days(expiry_str):
     if not expiry_str or expiry_str.strip() == "":
@@ -341,6 +360,7 @@ def calculate_license_days(expiry_str):
 tenant_meta = fetch_active_tenant_metadata(st.session_state['tenant_id'])
 TENANT_COMPANY_NAME = tenant_meta["name"]
 TENANT_SUPPORT_PHONE = tenant_meta["phone"]
+STAFF_PERMISSIONS = tenant_meta["staff_permissions"]
 license_status_text, is_license_valid = calculate_license_days(tenant_meta.get("expiry_date", ""))
 
 if not tenant_meta["active"] or not is_license_valid:
@@ -520,8 +540,8 @@ else:
                                         st.error("❌ Unique tenant identifier already registered.")
                                     else:
                                         cursor.execute("""
-                                            INSERT INTO system_tenants (tenant_id, company_name, support_phone, owner_username, license_active, registration_date, license_expiry_date)
-                                            VALUES (%s, %s, %s, %s, FALSE, %s, '')
+                                            INSERT INTO system_tenants (tenant_id, company_name, support_phone, owner_username, license_active, registration_date, license_expiry_date, staff_permissions)
+                                            VALUES (%s, %s, %s, %s, FALSE, %s, '', '')
                                         """, (reg_tenant_id, reg_company_name, reg_support_phone, reg_owner_user, datetime.now().strftime("%Y-%m-%d")))
                                         cursor.execute("""
                                             INSERT INTO users (username, password, role, assignedarea, tenant_id)
@@ -942,28 +962,47 @@ elif routing_node == "👥 Operational Billing Center":
             edit_row_dict = df_matrix[df_matrix['username'] == edit_uid].iloc[0].to_dict()
             
             with st.form("edit_terminal_form"):
-                up_name = st.text_input("Customer Name", value=edit_row_dict.get('customername'))
-                up_phone = st.text_input("Phone Number", value=edit_row_dict.get('phone'))
-                up_address = st.text_input("Address", value=edit_row_dict.get('address'))
-                up_sn = st.text_input("ONU SN", value=edit_row_dict.get('onuserialnumber'))
+                # Staff dynamic locked/unlocked configuration gate
+                is_name_disabled = not is_management and not STAFF_PERMISSIONS.get("customername", True)
+                is_phone_disabled = not is_management and not STAFF_PERMISSIONS.get("phone", True)
+                is_address_disabled = not is_management and not STAFF_PERMISSIONS.get("address", True)
+                is_onu_disabled = not is_management and not STAFF_PERMISSIONS.get("onuserialnumber", True)
+                is_rate_disabled = not is_management and not STAFF_PERMISSIONS.get("billamount", False)
+                is_status_disabled = not is_management and not STAFF_PERMISSIONS.get("status", False)
+                
+                if not is_management:
+                    st.caption("🔒 *Note: Some fields may be locked by the Owner based on your profile permission rules.*")
+
+                up_name = st.text_input("Customer Name", value=edit_row_dict.get('customername'), disabled=is_name_disabled)
+                up_phone = st.text_input("Phone Number", value=edit_row_dict.get('phone'), disabled=is_phone_disabled)
+                up_address = st.text_input("Address", value=edit_row_dict.get('address'), disabled=is_address_disabled)
+                up_sn = st.text_input("ONU SN", value=edit_row_dict.get('onuserialnumber'), disabled=is_onu_disabled)
                 
                 try:
                     current_rate_val = int(float(str(edit_row_dict.get('billamount', 0))))
                 except Exception:
                     current_rate_val = 0
                     
-                up_rate = st.number_input("Monthly Rate (Rs.)", value=current_rate_val)
-                up_status = st.selectbox("Line Status", ["PAID", "PARTIAL", "UNPAID", "SUSPENDED"], index=["PAID", "PARTIAL", "UNPAID", "SUSPENDED"].index(edit_row_dict.get('status','UNPAID')))
+                up_rate = st.number_input("Monthly Rate (Rs.)", value=current_rate_val, disabled=is_rate_disabled)
+                up_status = st.selectbox("Line Status", ["PAID", "PARTIAL", "UNPAID", "SUSPENDED"], index=["PAID", "PARTIAL", "UNPAID", "SUSPENDED"].index(edit_row_dict.get('status','UNPAID')), disabled=is_status_disabled)
                 
                 if st.form_submit_button("💾 COMMIT MODIFICATIONS"):
+                    # Generate safe fallbacks for disabled parameters so existing data isn't wiped out blankly
+                    final_name = edit_row_dict.get('customername') if is_name_disabled else up_name
+                    final_phone = edit_row_dict.get('phone') if is_phone_disabled else clean_and_validate_phone(up_phone)
+                    final_address = edit_row_dict.get('address') if is_address_disabled else up_address
+                    final_sn = edit_row_dict.get('onuserialnumber') if is_onu_disabled else up_sn
+                    final_rate = int(current_rate_val) if is_rate_disabled else int(up_rate)
+                    final_status = edit_row_dict.get('status','UNPAID') if is_status_disabled else up_status
+
                     with get_db_connection() as conn:
                         with conn.cursor() as cursor:
                             cursor.execute("""
                                 UPDATE customers SET customername=%s, phone=%s, address=%s, onuserialnumber=%s, billamount=%s, status=%s 
                                 WHERE username=%s AND tenant_id=%s
-                            """, (up_name, clean_and_validate_phone(up_phone), up_address, up_sn, int(up_rate), up_status, edit_uid, st.session_state['tenant_id']))
+                            """, (final_name, final_phone, final_address, final_sn, final_rate, final_status, edit_uid, st.session_state['tenant_id']))
                             
-                    insert_activity_log(st.session_state['tenant_id'], st.session_state['username'], "UPDATE_CUSTOMER", f"Modified data parameters for customer {edit_uid}. Status updated to {up_status}, rate set to Rs. {up_rate}.")
+                    insert_activity_log(st.session_state['tenant_id'], st.session_state['username'], "UPDATE_CUSTOMER", f"Modified data parameters for customer {edit_uid}. Status updated to {final_status}, rate set to Rs. {final_rate}.")
                     st.success("Profile Changes Logged within Tenant context.")
                     st.cache_data.clear()
                     st.rerun()
@@ -1119,6 +1158,42 @@ elif routing_node == "🔐 System Access Control":
                                     st.success("🎉 Your credentials updated successfully!")
                                 else:
                                     st.error("❌ Validation failed.")
+
+            # 🔥 NEW COMPREHENSIVE OWNER STAFF PERMISSIONS TUNER PANEL
+            st.write("---")
+            st.markdown("#### 🛠️ Configurable Staff Profile Editing Rules")
+            st.write("Choose exactly what metrics your Staff personnel are authorized to rewrite inside the Terminal Form:")
+            
+            with st.form("owner_staff_permissions_form"):
+                col_p_a, col_p_b = st.columns(2)
+                with col_p_a:
+                    p_name_chk = st.checkbox("Allow Editing Customer Name", value=STAFF_PERMISSIONS.get("customername", True))
+                    p_phone_chk = st.checkbox("Allow Editing Phone Number", value=STAFF_PERMISSIONS.get("phone", True))
+                    p_address_chk = st.checkbox("Allow Editing Physical Address", value=STAFF_PERMISSIONS.get("address", True))
+                with col_p_b:
+                    p_onu_chk = st.checkbox("Allow Editing ONU Hardware Serial", value=STAFF_PERMISSIONS.get("onuserialnumber", True))
+                    p_rate_chk = st.checkbox("Allow Changing Monthly Package Price (Rate)", value=STAFF_PERMISSIONS.get("billamount", False))
+                    p_status_chk = st.checkbox("Allow Overriding Status (Paid/Suspended Line)", value=STAFF_PERMISSIONS.get("status", False))
+                
+                if st.form_submit_button("💾 UPDATE STAFF EDITING PERMISSIONS"):
+                    updated_perms = {
+                        "customername": p_name_chk,
+                        "phone": p_phone_chk,
+                        "address": p_address_chk,
+                        "onuserialnumber": p_onu_chk,
+                        "billamount": p_rate_chk,
+                        "status": p_status_chk
+                    }
+                    perms_json_dump = json.dumps(updated_perms)
+                    with get_db_connection() as conn:
+                        with conn.cursor() as cursor:
+                            cursor.execute("UPDATE system_tenants SET staff_permissions = %s WHERE tenant_id = %s", (perms_json_dump, st.session_state['tenant_id']))
+                    
+                    insert_activity_log(st.session_state['tenant_id'], st.session_state['username'], "UPDATE_STAFF_RULES", "Owner adjusted staff editing restrictions metrics.")
+                    st.success("🎉 Permissions Updated Instantly! Staff rules mapped successfully.")
+                    st.cache_data.clear()
+                    st.rerun()
+
             st.write("---")
             st.markdown("#### ➕ Provision Sub-User Entity")
             with st.form("create_subuser_form"):
