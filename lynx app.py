@@ -380,6 +380,8 @@ def fetch_isolated_matrix(tenant_id):
                     df['area'] = df['area'].fillna('').astype(str)
                     df['username'] = df['username'].fillna('').astype(str)
                     df['status'] = df['status'].fillna('UNPAID').astype(str)
+                    df['balanceshift'] = pd.to_numeric(df['balanceshift'], errors='coerce').fillna(0).astype(int)
+                    df['billamount'] = pd.to_numeric(df['billamount'], errors='coerce').fillna(0).astype(int)
                     extended_cols = GLOBAL_TARGET_ORDER + [c for c in df.columns if c not in GLOBAL_TARGET_ORDER]
                     return df.reindex(columns=extended_cols)
         return pd.DataFrame(columns=GLOBAL_TARGET_ORDER + ['balanceshift', 'status', 'expirydate', 'tenant_id'])
@@ -528,11 +530,11 @@ else:
                 
                 if st.form_submit_button("➕ SUBMIT ACTIVATION APP PROPOSAL"):
                     if not reg_tenant_id or not reg_company_name or not reg_owner_user or not reg_owner_pass:
-                        st.error("❌ Tamam fields fill karna lazmi hain.")
+                        st.error("❌ Mandatory registration input fields are empty.")
                     elif len(reg_tenant_id) < 3:
-                        st.error("❌ Tenant Code kam se kam 3 words ka hona chahiye.")
+                        st.error("❌ Tenant Code must be at least 3 characters long.")
                     elif len(reg_owner_pass) < 6:
-                        st.error("❌ Password kam se kam 6 characters ka hona lazmi hai.")
+                        st.error("❌ Password string must consist of at least 6 characters.")
                     else:
                         try:
                             with get_db_connection() as conn:
@@ -1101,8 +1103,8 @@ elif routing_node == "📜 Lifetime Ledger History":
                         FROM billing_history
                         WHERE tenant_id = %s
                         AND transactiontype = 'BILL_PAYMENT'
-                        AND SUBSTRING(datetimestamp, 1, 10) >= %s
-                        AND SUBSTRING(datetimestamp, 1, 10) <= %s
+                        AND LEFT(datetimestamp, 10) >= %s
+                        AND LEFT(datetimestamp, 10) <= %s
                         ORDER BY datetimestamp DESC
                     """
                     cur.execute(query, (st.session_state['tenant_id'], str(start_date), str(end_date)))
@@ -1442,8 +1444,11 @@ elif routing_node == "🔐 System Access Control":
                                 if backup_scope == "Tenant Isolated Backup" or not is_master_owner:
                                     q += " WHERE tenant_id = %s"
                                     params.append(st.session_state['tenant_id'])
-                                df_bak = pd.read_sql_query(q, conn, params=params)
-                                backup_payload[t_name] = df_bak.to_dict(orient='records')
+                                
+                                with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as b_cur:
+                                    b_cur.execute(q, params)
+                                    bak_rows = b_cur.fetchall()
+                                    backup_payload[t_name] = bak_rows if bak_rows else []
                                 
                         st.session_state['safe_backup_json'] = json.dumps(backup_payload, default=str, indent=4)
                         insert_activity_log(st.session_state['tenant_id'], st.session_state['username'], "GENERATE_BACKUP", f"Exported state backup.")
