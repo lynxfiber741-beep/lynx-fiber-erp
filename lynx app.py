@@ -383,6 +383,12 @@ def fetch_active_tenant_metadata(tenant_id):
                             perms.update(json.loads(res["staff_permissions"]))
                         except Exception:
                             pass
+                    
+                    # 🔍 FIX: Ensure default templates are populated if blank inside DB row
+                    wa_templates_raw = res.get("whatsapp_templates", "")
+                    if not wa_templates_raw or wa_templates_raw.strip() == "":
+                        wa_templates_raw = json.dumps(DEFAULT_WA_TEMPLATES)
+                        
                     return {
                         "name": res["company_name"],
                         "phone": res["support_phone"],
@@ -392,11 +398,11 @@ def fetch_active_tenant_metadata(tenant_id):
                         "wa_instance_id": res.get("whatsapp_instance_id", ""),
                         "wa_token": res.get("whatsapp_token", ""),
                         "wa_enabled": res.get("whatsapp_enabled", False),
-                        "wa_templates": res.get("whatsapp_templates", "")
+                        "wa_templates": wa_templates_raw
                     }
-        return {"name": "Lynx Fiber Pvt Ltd", "phone": "03135776263", "active": True, "expiry_date": "", "staff_permissions": DEFAULT_STAFF_PERMS, "wa_instance_id": "", "wa_token": "", "wa_enabled": False, "wa_templates": ""}
+        return {"name": "Lynx Fiber Pvt Ltd", "phone": "03135776263", "active": True, "expiry_date": "", "staff_permissions": DEFAULT_STAFF_PERMS, "wa_instance_id": "", "wa_token": "", "wa_enabled": False, "wa_templates": json.dumps(DEFAULT_WA_TEMPLATES)}
     except Exception:
-        return {"name": "Lynx Fiber Pvt Ltd", "phone": "03135776263", "active": True, "expiry_date": "", "staff_permissions": DEFAULT_STAFF_PERMS, "wa_instance_id": "", "wa_token": "", "wa_enabled": False, "wa_templates": ""}
+        return {"name": "Lynx Fiber Pvt Ltd", "phone": "03135776263", "active": True, "expiry_date": "", "staff_permissions": DEFAULT_STAFF_PERMS, "wa_instance_id": "", "wa_token": "", "wa_enabled": False, "wa_templates": json.dumps(DEFAULT_WA_TEMPLATES)}
 
 def calculate_license_days(expiry_str):
     if not expiry_str or expiry_str.strip() == "":
@@ -619,11 +625,12 @@ else:
                                     if cursor.fetchone()[0] > 0:
                                         st.error("❌ Unique tenant identifier already registered.")
                                     else:
+                                        # 🔍 FIX: While onboarding, write DEFAULT_WA_TEMPLATES as string directly to DB
                                         cursor.execute("""
                                             INSERT INTO system_tenants 
                                             (tenant_id, company_name, support_phone, owner_username, license_active, registration_date, license_expiry_date, staff_permissions, whatsapp_templates) 
-                                            VALUES (%s, %s, %s, %s, FALSE, %s, '', '', '')
-                                        """, (reg_tenant_id, reg_company_name, reg_support_phone, reg_owner_user, datetime.now().strftime("%Y-%m-%d")))
+                                            VALUES (%s, %s, %s, %s, FALSE, %s, '', '', %s)
+                                        """, (reg_tenant_id, reg_company_name, reg_support_phone, reg_owner_user, datetime.now().strftime("%Y-%m-%d"), json.dumps(DEFAULT_WA_TEMPLATES)))
                                         
                                         cursor.execute("""
                                             INSERT INTO users (username, password, role, assignedarea, tenant_id) 
@@ -1350,7 +1357,7 @@ elif routing_node == "🔐 System Access Control":
                                     st.error(f"SQL Execution Error: {err_m}")
                 
                 st.write("---")
-                st.markdown("### 🟢 Automated WhatsApp Settings for Master (`lynx`) Account")
+                st.markdown("### 👑 Automated WhatsApp Settings for Master (`lynx`) Account")
                 with get_db_connection() as conn:
                     with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
                         cur.execute("SELECT whatsapp_enabled, whatsapp_instance_id, whatsapp_token, whatsapp_templates FROM system_tenants WHERE tenant_id = 'lynx'")
@@ -1382,7 +1389,11 @@ elif routing_node == "🔐 System Access Control":
 
                 current_custom_templates = DEFAULT_WA_TEMPLATES.copy()
                 if meta_row and meta_row.get("whatsapp_templates"):
-                    try: current_custom_templates.update(json.loads(meta_row["whatsapp_templates"]))
+                    try: 
+                        # 🔍 FIX: Ensure json string is parsed properly without falling back to blank fields
+                        loaded_templates = json.loads(meta_row["whatsapp_templates"])
+                        if isinstance(loaded_templates, dict):
+                            current_custom_templates.update(loaded_templates)
                     except: pass
 
                 with st.form("tenant_custom_branding_form"):
