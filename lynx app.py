@@ -792,39 +792,43 @@ if routing_node in ["📊 Core Analytics Dashboard", "📊 Lynx Dashboard"]:
             total_active = len(base_df)
             total_paid = len(base_df[base_df['status'] == 'PAID'])
             total_unpaid = len(base_df[base_df['status'].isin(['UNPAID', 'PARTIAL', 'SUSPENDED'])])
-            try:
-                total_arrears = int(float(str(base_df['balanceshift'].sum())))
-            except Exception:
-                total_arrears = 0
-            st.markdown("### 📊 Interactive Live Filters")
-            st.caption("Niche diye gaye buttons par click karke table data ko instant status ke mutabiq filter karein:")
-            metric_col1, metric_col2, metric_col3, metric_col4 = st.columns(4)
-            with metric_col1:
-                if st.button(f"🌐 All Terminals ({total_active})", use_container_width=True):
-                    st.session_state['dashboard_status_filter'] = "ALL"
-                    st.rerun()
-            with metric_col2:
-                if st.button(f"✅ Paid Accounts ({total_paid})", use_container_width=True):
-                    st.session_state['dashboard_status_filter'] = "PAID"
-                    st.rerun()
-            with metric_col3:
-                if st.button(f"❌ Unpaid / Defaulters ({total_unpaid})", use_container_width=True):
-                    st.session_state['dashboard_status_filter'] = "UNPAID_ANY"
-                    st.rerun()
-            with metric_col4:
-                st.metric("Total Arrears Balance", f"Rs. {total_arrears:,}")
+                total_free = len(base_df[(base_df['billamount'] == 0) | (base_df['package'].astype(str).str.contains('free', case=False, na=False))])
+                try:
+                    total_arrears = int(float(str(base_df['balanceshift'].sum())))
+                except Exception:
+                    total_arrears = 0
+                st.markdown("### 📊 Interactive Live Filters")
+                st.caption("Niche diye gaye buttons par click karke table data ko instant status ke mutabiq filter karein:")
+                metric_col1, metric_col2, metric_col3, metric_col4, metric_col5 = st.columns(5)
+                with metric_col1:
+                    if st.button(f"🌐 All Terminals ({total_active})", use_container_width=True):
+                        st.session_state['dashboard_status_filter'] = "ALL"
+                        st.rerun()
+                with metric_col2:
+                    if st.button(f"✅ Paid Accounts ({total_paid})", use_container_width=True):
+                        st.session_state['dashboard_status_filter'] = "PAID"
+                        st.rerun()
+                with metric_col3:
+                    if st.button(f"❌ Unpaid / Defaulters ({total_unpaid})", use_container_width=True):
+                        st.session_state['dashboard_status_filter'] = "UNPAID_ANY"
+                        st.rerun()
+                with metric_col4:
+                    if st.button(f"🆓 Free Accounts ({total_free})", use_container_width=True):
+                        st.session_state['dashboard_status_filter'] = "FREE"
+                        st.rerun()
+                with metric_col5:
+                    st.metric("Total Arrears Balance", f"Rs. {total_arrears:,}")
                 
-            active_filter_state = st.session_state['dashboard_status_filter']
-            if active_filter_state == "PAID":
-                base_df = base_df[base_df['status'] == 'PAID'].copy()
-                st.markdown(f"🟢 *Showing Only **PAID** Subscriber List ({len(base_df)} accounts)*")
-            elif active_filter_state == "UNPAID_ANY":
-                base_df = base_df[base_df['status'].isin(['UNPAID', 'PARTIAL', 'SUSPENDED'])].copy()
-                st.markdown(f"🔴 *Showing Only **UNPAID / PARTIAL / SUSPENDED** Defaulter List ({len(base_df)} accounts)*")
-            else:
-                st.markdown(f"🔵 *Showing **ALL** Assigned Subscriber Directory*")
-                
-            search_query = st.text_input("🔍 Fast Find Subscriber Row Analyzer")
+                active_filter_state = st.session_state['dashboard_status_filter']
+                if active_filter_state == "PAID":
+                    base_df = base_df[base_df['status'] == 'PAID'].copy()
+                    st.markdown(f"🟢 *Showing Only **PAID** Subscriber List ({len(base_df)} accounts)*")
+                elif active_filter_state == "UNPAID_ANY":
+                    base_df = base_df[base_df['status'].isin(['UNPAID', 'PARTIAL', 'SUSPENDED'])].copy()
+                    st.markdown(f"🔴 *Showing Only **UNPAID / PARTIAL / SUSPENDED** Defaulter List ({len(base_df)} accounts)*")
+                elif active_filter_state == "FREE":
+                    base_df = base_df[(base_df['billamount'] == 0) | (base_df['package'].astype(str).str.contains('free', case=False, na=False))].copy()
+                    st.markdown(f"🟣 *Showing Only **FREE** Subscribers ({len(base_df)} accounts)*")
             if search_query:
                 clean_q = search_query.lower().strip()
                 search_blob = base_df.astype(str).apply(lambda row: ' '.join(row).lower(), axis=1)
