@@ -746,7 +746,24 @@ if routing_node in ["📊 Core Analytics Dashboard", "📊 Lynx Dashboard"]:
         st.warning("⚠️ Operational Database is empty. No subscribers registered.")
     else:
         collection_map = fetch_isolated_billing_summary(st.session_state['tenant_id'])
+        filtered_matrix = df_matrix.copy()
+        if not is_high_profile and "ALL" not in st.session_state['assigned_areas']:
+            filtered_matrix = filtered_matrix[filtered_matrix['area'].str.lower().isin([s.lower() for s in st.session_state['assigned_areas']])]
+        total_free_customers = len(filtered_matrix[(filtered_matrix['billamount'] == 0) | (filtered_matrix['package'].astype(str).str.contains('free', case=False, na=False))])
+        total_free_customers = int(total_free_customers)
         st.markdown("### 🌐 Active System Node Overview")
+        summary_cols = st.columns([1, 1, 1, 1])
+        with summary_cols[0]:
+            st.markdown(f"<div class='system-card' style='border-left: 5px solid {active_theme['heading']};'><h4>🆓 Free Customer Summary</h4><p style='font-size:24px; font-weight:bold; margin:0;'>{total_free_customers}</p><p style='margin:0;'>Total Free Subscribers</p></div>", unsafe_allow_html=True)
+        with summary_cols[1]:
+            total_assigned = len(filtered_matrix)
+            st.markdown(f"<div class='system-card' style='border-left: 5px solid {active_theme['accent']};'><h4>📊 Assigned Coverage</h4><p style='font-size:24px; font-weight:bold; margin:0;'>{total_assigned}</p><p style='margin:0;'>Active Assigned Accounts</p></div>", unsafe_allow_html=True)
+        with summary_cols[2]:
+            total_paid_overall = len(filtered_matrix[filtered_matrix['status'] == 'PAID'])
+            st.markdown(f"<div class='system-card' style='border-left: 5px solid #10b981;'><h4>✅ Paid Customers</h4><p style='font-size:24px; font-weight:bold; margin:0;'>{total_paid_overall}</p><p style='margin:0;'>Paid Subscribers</p></div>", unsafe_allow_html=True)
+        with summary_cols[3]:
+            total_unpaid_overall = len(filtered_matrix[filtered_matrix['status'].isin(['UNPAID', 'PARTIAL', 'SUSPENDED'])])
+            st.markdown(f"<div class='system-card' style='border-left: 5px solid #f43f5e;'><h4>❌ Defaulter Pool</h4><p style='font-size:24px; font-weight:bold; margin:0;'>{total_unpaid_overall}</p><p style='margin:0;'>Unpaid / Suspended</p></div>", unsafe_allow_html=True)
         for i in range(0, len(cards_display_areas), 2):
             cols = st.columns(2)
             for j in range(2):
