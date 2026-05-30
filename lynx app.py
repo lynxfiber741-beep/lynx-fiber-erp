@@ -126,17 +126,35 @@ def verify_password(password: str, hashed_password: str) -> bool:
         return False
 
 def insert_activity_log(tenant_id, username, action_type, description):
+    if not tenant_id or not username or not action_type:
+        return False
+
     try:
         log_id = f"LOG-{uuid.uuid4().hex[:10].upper()}"
         ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         with get_db_connection() as conn:
             with conn.cursor() as cursor:
                 cursor.execute("""
+                    CREATE TABLE IF NOT EXISTS activity_logs (
+                        log_id TEXT PRIMARY KEY,
+                        tenant_id TEXT NOT NULL,
+                        username TEXT NOT NULL,
+                        action_type TEXT NOT NULL,
+                        description TEXT NOT NULL,
+                        timestamp TEXT NOT NULL DEFAULT ''
+                    )
+                """)
+                cursor.execute("""
                     INSERT INTO activity_logs (log_id, tenant_id, username, action_type, description, timestamp)
                     VALUES (%s, %s, %s, %s, %s, %s)
                 """, (log_id, tenant_id, username, action_type, description, ts))
-    except Exception:
-        pass
+        return True
+    except Exception as exc:
+        try:
+            print(f"[ActivityLogError] {exc}")
+        except Exception:
+            pass
+        return False
 
 
 def restore_login_from_query_params():
@@ -1855,13 +1873,30 @@ elif routing_node == "🔐 System Access Control":
             st.markdown("### 📋 System Activity & User Login Logs")
             try:
                 with get_db_connection() as conn:
+                    with conn.cursor() as cur:
+                        cur.execute("""
+                            CREATE TABLE IF NOT EXISTS activity_logs (
+                                log_id TEXT PRIMARY KEY,
+                                tenant_id TEXT NOT NULL,
+                                username TEXT NOT NULL,
+                                action_type TEXT NOT NULL,
+                                description TEXT NOT NULL,
+                                timestamp TEXT NOT NULL DEFAULT ''
+                            )
+                        """)
                     with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-                        if is_master_owner: cur.execute("SELECT timestamp, tenant_id, username, action_type, description FROM activity_logs ORDER BY timestamp DESC LIMIT 500")
-                        else: cur.execute("SELECT timestamp, username, action_type, description FROM activity_logs WHERE tenant_id = %s ORDER BY timestamp DESC LIMIT 300", (st.session_state['tenant_id'],))
+                        if is_master_owner:
+                            cur.execute("SELECT timestamp, tenant_id, username, action_type, description FROM activity_logs ORDER BY timestamp DESC LIMIT 500")
+                        else:
+                            cur.execute("SELECT timestamp, username, action_type, description FROM activity_logs WHERE tenant_id = %s ORDER BY timestamp DESC LIMIT 300", (st.session_state['tenant_id'],))
                         log_rows = cur.fetchall()
-                if log_rows: st.dataframe(pd.DataFrame(log_rows), use_container_width=True)
-                else: st.info("Abhi tak koi logs jama nahi huay.")
-            except Exception as log_err: st.error(f"Logs pull karne mein masla aya: {log_err}")
+                if log_rows:
+                    st.dataframe(pd.DataFrame(log_rows), use_container_width=True)
+                else:
+                    st.info("Abhi tak koi logs jama nahi huay. Agar activity logs tab missing ho, تو ایڈمن ڈیش بورڈ چیک کریں یا دوبارہ اپلیکیشن رنز کریں۔")
+            except Exception as log_err:
+                st.error(f"Logs pull karne mein masla aya: {log_err}")
+                st.info("🔧 اگر یہ ایرر ٹیبل نہ ہونے کی وجہ سے ہو تو، صفحہ دوبارہ لوڈ کریں یا لاگ فنکشن دوبارہ initialize کریں۔")
 
         with adm_tabs[-1]:
             st.markdown("### 💾 Dynamic Data Backup Vault")
