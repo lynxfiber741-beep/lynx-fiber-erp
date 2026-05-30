@@ -85,10 +85,11 @@ GLOBAL_TARGET_ORDER = [
 # ==========================================
 # 2. SECURE POOLED DATABASE REGISTRY
 # ==========================================
-if "DB_URL" in st.secrets:
+try:
     DB_URL = st.secrets["DB_URL"]
-else:
+except Exception as exc:
     st.error("🔴 Critical Configuration Error: 'DB_URL' is missing from Streamlit Secrets!")
+    st.error("Please create a Streamlit secrets file at .streamlit/secrets.toml with a DB_URL entry.")
     st.stop()
 
 @st.cache_resource
