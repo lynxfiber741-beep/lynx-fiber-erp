@@ -1591,6 +1591,14 @@ elif routing_node == "👥 Operational Billing Center":
                     safe_stat = raw_stat if raw_stat in ["PAID", "PARTIAL", "UNPAID", "SUSPENDED", "FREE"] else "UNPAID"
                     up_status = st.selectbox("Line Status", ["PAID", "PARTIAL", "UNPAID", "SUSPENDED", "FREE"], index=["PAID", "PARTIAL", "UNPAID", "SUSPENDED", "FREE"].index(safe_stat), disabled=is_status_disabled)
                     st.caption("🆓 To make a subscriber free: set Monthly Rate to 0 and choose status FREE.")
+                    # Expiry date field - editable only by Owner/Admin
+                    is_expiry_disabled = not is_management
+                    existing_expiry = str(edit_row_dict.get('expirydate', '')).strip()
+                    if is_expiry_disabled:
+                        st.caption(f"🔒 Expiry Date: {existing_expiry} (Only Owner/Admin can change)")
+                        up_expiry = existing_expiry
+                    else:
+                        up_expiry = st.text_input("Expiry Date (YYYY-MM-DD)", value=existing_expiry)
                     if st.form_submit_button("💾 COMMIT MODIFICATIONS"):
                         final_name = edit_row_dict.get('customername') if is_name_disabled else up_name
                         final_phone = edit_row_dict.get('phone') if is_phone_disabled else clean_and_validate_phone(up_phone)
@@ -1599,12 +1607,13 @@ elif routing_node == "👥 Operational Billing Center":
                         final_rate = int(current_rate_val) if is_rate_disabled else int(up_rate)
                         final_arrears = current_arrears_val if not is_management else int(up_arrears)
                         final_status = safe_stat if is_status_disabled else up_status
+                        final_expiry = existing_expiry if is_expiry_disabled else up_expiry
                         with get_db_connection() as conn:
                             with conn.cursor() as cursor:
                                 cursor.execute("""
-                                    UPDATE customers SET customername=%s, phone=%s, address=%s, onuserialnumber=%s, billamount=%s, balanceshift=%s, status=%s WHERE username=%s AND tenant_id=%s
-                                """, (final_name, final_phone, final_address, final_sn, final_rate, final_arrears, final_status, edit_uid, st.session_state['tenant_id']))
-                                insert_activity_log(st.session_state['tenant_id'], st.session_state['username'], "UPDATE_CUSTOMER", f"Modified criteria for customer {edit_uid}. Status set to {final_status}.")
+                                    UPDATE customers SET customername=%s, phone=%s, address=%s, onuserialnumber=%s, billamount=%s, balanceshift=%s, status=%s, expirydate=%s WHERE username=%s AND tenant_id=%s
+                                """, (final_name, final_phone, final_address, final_sn, final_rate, final_arrears, final_status, final_expiry, edit_uid, st.session_state['tenant_id']))
+                                insert_activity_log(st.session_state['tenant_id'], st.session_state['username'], "UPDATE_CUSTOMER", f"Modified criteria for customer {edit_uid}. Status set to {final_status}. Expiry set to {final_expiry}.")
                         st.success("Profile Changes Logged within Tenant context.")
                         st.cache_data.clear()
                         st.rerun()
