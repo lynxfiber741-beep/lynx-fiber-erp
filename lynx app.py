@@ -749,7 +749,11 @@ if routing_node in ["📊 Core Analytics Dashboard", "📊 Lynx Dashboard"]:
         filtered_matrix = df_matrix.copy()
         if not is_high_profile and "ALL" not in st.session_state['assigned_areas']:
             filtered_matrix = filtered_matrix[filtered_matrix['area'].str.lower().isin([s.lower() for s in st.session_state['assigned_areas']])]
-        total_free_customers = len(filtered_matrix[(filtered_matrix['billamount'] == 0) | (filtered_matrix['package'].astype(str).str.contains('free', case=False, na=False))])
+        total_free_customers = len(filtered_matrix[
+            (filtered_matrix['status'] == 'FREE') |
+            (filtered_matrix['billamount'] == 0) |
+            (filtered_matrix['package'].astype(str).str.contains('free', case=False, na=False))
+        ])
         total_free_customers = int(total_free_customers)
         st.markdown("### 🌐 Active System Node Overview")
         summary_cols = st.columns([1, 1, 1, 1])
@@ -764,6 +768,7 @@ if routing_node in ["📊 Core Analytics Dashboard", "📊 Lynx Dashboard"]:
         with summary_cols[3]:
             total_unpaid_overall = len(filtered_matrix[filtered_matrix['status'].isin(['UNPAID', 'PARTIAL', 'SUSPENDED'])])
             st.markdown(f"<div class='system-card' style='border-left: 5px solid #f43f5e;'><h4>❌ Defaulter Pool</h4><p style='font-size:24px; font-weight:bold; margin:0;'>{total_unpaid_overall}</p><p style='margin:0;'>Unpaid / Suspended</p></div>", unsafe_allow_html=True)
+        st.markdown("<p style='font-size:14px; color:#f59e0b; margin-top:0.5rem;'>Free customers are matched by status FREE, bill amount 0, or package name containing 'free'. Use the edit form to set Monthly Rate = 0 and choose FREE status.</p>", unsafe_allow_html=True)
         for i in range(0, len(cards_display_areas), 2):
             cols = st.columns(2)
             for j in range(2):
@@ -1401,8 +1406,9 @@ elif routing_node == "👥 Operational Billing Center":
                     up_rate = st.number_input("Monthly Rate (Rs.)", value=current_rate_val, disabled=is_rate_disabled)
                     up_arrears = st.number_input("Outstanding Arrears (Rs.)", min_value=0, value=current_arrears_val, disabled=not is_management)
                     raw_stat = str(edit_row_dict.get('status', 'UNPAID')).upper()
-                    safe_stat = raw_stat if raw_stat in ["PAID", "PARTIAL", "UNPAID", "SUSPENDED"] else "UNPAID"
-                    up_status = st.selectbox("Line Status", ["PAID", "PARTIAL", "UNPAID", "SUSPENDED"], index=["PAID", "PARTIAL", "UNPAID", "SUSPENDED"].index(safe_stat), disabled=is_status_disabled)
+                    safe_stat = raw_stat if raw_stat in ["PAID", "PARTIAL", "UNPAID", "SUSPENDED", "FREE"] else "UNPAID"
+                    up_status = st.selectbox("Line Status", ["PAID", "PARTIAL", "UNPAID", "SUSPENDED", "FREE"], index=["PAID", "PARTIAL", "UNPAID", "SUSPENDED", "FREE"].index(safe_stat), disabled=is_status_disabled)
+                    st.caption("🆓 To make a subscriber free: set Monthly Rate to 0 and choose status FREE.")
                     if st.form_submit_button("💾 COMMIT MODIFICATIONS"):
                         final_name = edit_row_dict.get('customername') if is_name_disabled else up_name
                         final_phone = edit_row_dict.get('phone') if is_phone_disabled else clean_and_validate_phone(up_phone)
