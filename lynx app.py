@@ -756,19 +756,7 @@ if routing_node in ["📊 Core Analytics Dashboard", "📊 Lynx Dashboard"]:
         ])
         total_free_customers = int(total_free_customers)
         st.markdown("### 🌐 Active System Node Overview")
-        summary_cols = st.columns([1, 1, 1, 1])
-        with summary_cols[0]:
-            st.markdown(f"<div class='system-card' style='border-left: 5px solid {active_theme['heading']};'><h4>🆓 Free Customer Summary</h4><p style='font-size:24px; font-weight:bold; margin:0;'>{total_free_customers}</p><p style='margin:0;'>Total Free Subscribers</p></div>", unsafe_allow_html=True)
-        with summary_cols[1]:
-            total_assigned = len(filtered_matrix)
-            st.markdown(f"<div class='system-card' style='border-left: 5px solid {active_theme['accent']};'><h4>📊 Assigned Coverage</h4><p style='font-size:24px; font-weight:bold; margin:0;'>{total_assigned}</p><p style='margin:0;'>Active Assigned Accounts</p></div>", unsafe_allow_html=True)
-        with summary_cols[2]:
-            total_paid_overall = len(filtered_matrix[filtered_matrix['status'] == 'PAID'])
-            st.markdown(f"<div class='system-card' style='border-left: 5px solid #10b981;'><h4>✅ Paid Customers</h4><p style='font-size:24px; font-weight:bold; margin:0;'>{total_paid_overall}</p><p style='margin:0;'>Paid Subscribers</p></div>", unsafe_allow_html=True)
-        with summary_cols[3]:
-            total_unpaid_overall = len(filtered_matrix[filtered_matrix['status'].isin(['UNPAID', 'PARTIAL', 'SUSPENDED'])])
-            st.markdown(f"<div class='system-card' style='border-left: 5px solid #f43f5e;'><h4>❌ Defaulter Pool</h4><p style='font-size:24px; font-weight:bold; margin:0;'>{total_unpaid_overall}</p><p style='margin:0;'>Unpaid / Suspended</p></div>", unsafe_allow_html=True)
-        st.markdown("<p style='font-size:14px; color:#f59e0b; margin-top:0.5rem;'>Free customers are matched by status FREE, bill amount 0, or package name containing 'free'. Use the edit form to set Monthly Rate = 0 and choose FREE status.</p>", unsafe_allow_html=True)
+        st.markdown(f"<p style='font-size:16px; color:{active_theme['heading']}; margin-bottom:0.75rem;'>🆓 Free Subscribers in Overview: <b>{total_free_customers}</b></p>", unsafe_allow_html=True)
         for i in range(0, len(cards_display_areas), 2):
             cols = st.columns(2)
             for j in range(2):
@@ -786,6 +774,11 @@ if routing_node in ["📊 Core Analytics Dashboard", "📊 Lynx Dashboard"]:
                     hub_partial_count = len(segment[segment['status'] == 'PARTIAL'])
                     hub_unpaid_count = len(segment[segment['status'] == 'UNPAID'])
                     hub_suspended_count = len(segment[segment['status'] == 'SUSPENDED'] )
+                    hub_free_count = len(segment[
+                        (segment['status'] == 'FREE') |
+                        (segment['billamount'] == 0) |
+                        (segment['package'].astype(str).str.contains('free', case=False, na=False))
+                    ])
                     hub_uids = [str(x).lower().strip() for x in segment['username'].tolist() if x]
                     hub_collected = sum(collection_map.get(uid, 0) for uid in hub_uids)
                     b_color = active_theme['heading'] if (i+j)%2 == 0 else active_theme['accent']
@@ -797,6 +790,7 @@ if routing_node in ["📊 Core Analytics Dashboard", "📊 Lynx Dashboard"]:
                             <p><b>Expected Revenue:</b> Rs. {hub_bill:,}</p>
                             <p style="color:#10b981; font-weight:bold;"><b>✅ Paid Users:</b> {hub_paid_count} (Recv: Rs. {hub_collected:,})</p>
                             <p style="color:#f59e0b; font-weight:bold;"><b>🟡 Partial Accounts:</b> {hub_partial_count}</p>
+                            <p style="color:#6366f1; font-weight:bold;"><b>🆓 Free Accounts:</b> {hub_free_count}</p>
                             <p style="color:#f43f5e; font-weight:bold;"><b>❌ Unpaid / Suspended:</b> {hub_unpaid_count} / {hub_suspended_count}</p>
                             <p style="color:#f43f5e; font-weight:500;"><b>⚠️ Outstanding Arrears:</b> Rs. {hub_arrears:,}</p>
                         </div>
