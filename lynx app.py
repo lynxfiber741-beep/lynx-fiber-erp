@@ -138,6 +138,54 @@ def insert_activity_log(tenant_id, username, action_type, description):
     except Exception:
         pass
 
+
+def restore_login_from_query_params():
+    query_params = st.experimental_get_query_params()
+    auth_flag = query_params.get("auth", [""])[0]
+    tenant = query_params.get("tenant", [""])[0].strip().lower()
+    user_key = query_params.get("user", [""])[0].strip().lower()
+
+    if auth_flag != "1" or st.session_state.get("authenticated", False):
+        return False
+
+    if not tenant or not user_key:
+        return False
+
+    try:
+        with get_db_connection() as conn:
+            with conn.cursor() as cursor:
+                cursor.execute(
+                    "SELECT role, username, assignedarea FROM users WHERE LOWER(username) = %s AND tenant_id = %s",
+                    (user_key, tenant)
+                )
+                user_match = cursor.fetchone()
+                if not user_match:
+                    return False
+
+                t_meta = fetch_active_tenant_metadata(tenant)
+                _, valid_chk = calculate_license_days(t_meta.get("expiry_date", ""))
+                if not t_meta["active"] or not valid_chk:
+                    return False
+
+                st.session_state["authenticated"] = True
+                st.session_state["user_role"] = user_match[0] if user_match[0] else "Staff"
+                st.session_state["username"] = user_match[1] if user_match[1] else user_key
+                st.session_state["tenant_id"] = tenant
+                raw_areas = user_match[2] if user_match[2] else "ALL"
+                if str(user_match[0]).lower() in ["owner", "admin"] or raw_areas == "ALL":
+                    st.session_state["assigned_areas"] = ["ALL"]
+                else:
+                    st.session_state["assigned_areas"] = [a.strip() for a in raw_areas.split(",") if a.strip()]
+                st.session_state["current_node"] = "📊 Lynx Dashboard"
+                insert_activity_log(tenant, st.session_state["username"], "LOGIN", "System restored from browser refresh via persistent auth parameters.")
+                return True
+
+    except Exception:
+        return False
+
+    return False
+
+
 def parse_wa_template(template_str, data_dict):
     out = template_str
     for key, val in data_dict.items():
@@ -407,6 +455,7 @@ def calculate_license_days(expiry_str):
     except Exception:
         return "Invalid Expiry Mapping", False
 
+restore_login_from_query_params()
 tenant_meta = fetch_active_tenant_metadata(st.session_state['tenant_id'])
 TENANT_COMPANY_NAME = tenant_meta["name"]
 TENANT_SUPPORT_PHONE = tenant_meta["phone"]
@@ -580,6 +629,7 @@ else:
                                     st.session_state['assigned_areas'] = [a.strip() for a in raw_areas.split(",") if a.strip()]
                                 st.session_state['current_node'] = "📊 Lynx Dashboard"
                                 insert_activity_log(input_tenant, st.session_state['username'], "LOGIN", "System initialized successfully via secure portal node.")
+                                st.experimental_set_query_params(auth='1', tenant=input_tenant, user=st.session_state['username'])
                                 st.cache_data.clear()
                                 st.rerun()
                         else:
@@ -666,6 +716,7 @@ if st.session_state['authenticated'] and not st.session_state['portal_mode']:
         if st.button("🔒 Logout System", use_container_width=True):
             insert_activity_log(st.session_state['tenant_id'], st.session_state['username'], "LOGOUT", "User terminated application session manually.")
             st.session_state['authenticated'] = False
+            st.experimental_set_query_params()
             st.rerun()
 
 # ==========================================
