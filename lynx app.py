@@ -1209,9 +1209,50 @@ elif routing_node == "👥 Operational Billing Center":
             if not available_map:
                 st.warning("No unpaid/partial/suspended accounts found in your current scope.")
             else:
-                target_label = st.selectbox("Select Target Subscriber", list(available_map.keys()))
-                resolved_uid = available_map[target_label]
-                node_row_dict = df_matrix[df_matrix['username'] == resolved_uid].iloc[0].to_dict()
+                # Allow filtering by username / CNIC / phone before showing the name+address list
+                col_filter = st.text_input("Search by username, CNIC or phone (optional)", key="col_select_filter")
+                col_filter_clean = col_filter.strip().lower()
+
+                display_map = {}
+                for label, uid in available_map.items():
+                    row = df_matrix[df_matrix['username'] == uid].iloc[0].to_dict()
+                    name = str(row.get('customername', '')).strip()
+                    addr = str(row.get('address', '')).strip()
+
+                    # If a filter is provided, match against uid, cnic, phone, name, or address
+                    if col_filter_clean:
+                        cnic = str(row.get('cnic', '')).strip().lower()
+                        phone = str(row.get('phone', '')).strip().lower()
+                        if not (
+                            col_filter_clean in str(uid).lower()
+                            or col_filter_clean in cnic
+                            or col_filter_clean in phone
+                            or col_filter_clean in name.lower()
+                            or col_filter_clean in addr.lower()
+                        ):
+                            continue
+
+                    display_addr = (addr[:60] + '...') if len(addr) > 60 else addr
+                    display_label = f"{name} — {display_addr}" if display_addr else f"{name}"
+
+                    # Disambiguate duplicates by adding area or phone tail (still hide CNIC/username)
+                    if display_label in display_map:
+                        area = row.get('area', '')
+                        disp2 = f"{display_label} — {area}" if area else f"{display_label} — #{uid[-4:]}"
+                        if disp2 in display_map:
+                            phone_tail = str(row.get('phone', ''))[-4:]
+                            phone_tail = phone_tail if phone_tail else uid[-4:]
+                            disp2 = f"{disp2} — {phone_tail}"
+                        display_label = disp2
+
+                    display_map[display_label] = uid
+
+                if not display_map:
+                    st.warning("No matching subscribers for the given filter.")
+                else:
+                    target_label = st.selectbox("Select Target Subscriber", list(display_map.keys()))
+                    resolved_uid = display_map[target_label]
+                    node_row_dict = df_matrix[df_matrix['username'] == resolved_uid].iloc[0].to_dict()
                 try:
                     base_bill = int(float(str(node_row_dict.get('billamount', 0))))
                     base_shift = int(float(str(node_row_dict.get('balanceshift', 0))))
