@@ -223,34 +223,47 @@ def send_tenant_whatsapp(tenant_metadata, phone_number, template_key, context_da
     api_token = tenant_metadata.get("wa_token")
     if not instance_id or not api_token:
         return False
-    
+
     templates = DEFAULT_WA_TEMPLATES.copy()
     if tenant_metadata.get("wa_templates"):
         try:
             templates.update(json.loads(tenant_metadata["wa_templates"]))
-        except Exception:
-            pass
-            
+        except Exception as exc:
+            print(f"[WA Template Parse Error] {exc}")
+
     raw_message = templates.get(template_key, DEFAULT_WA_TEMPLATES.get(template_key, ""))
     if not raw_message:
         return False
-        
+
     context_data.setdefault("helpline", tenant_metadata.get("phone", ""))
     formatted_message = parse_wa_template(raw_message, context_data)
-    
-    clean_phone = phone_number.replace("-", "").strip()
+
+    if not phone_number:
+        return False
+
+    clean_phone = str(phone_number).replace("-", "").replace("+", "").strip()
+    clean_phone = re.sub(r"\D", "", clean_phone)
     if clean_phone.startswith("0"):
         clean_phone = "92" + clean_phone[1:]
-        
+    elif len(clean_phone) == 10 and clean_phone.startswith("3"):
+        clean_phone = "92" + clean_phone
+
+    if not clean_phone:
+        return False
+
     url = f"https://api.green-api.com/waInstance{instance_id}/sendMessage/{api_token}"
     payload = {
         "chatId": f"{clean_phone}@c.us",
         "message": formatted_message
     }
     try:
-        requests.post(url, json=payload, headers={'Content-Type': 'application/json'}, timeout=5)
-        return True
-    except Exception:
+        response = requests.post(url, json=payload, headers={'Content-Type': 'application/json'}, timeout=5)
+        return response.ok
+    except requests.exceptions.RequestException as exc:
+        print(f"[WA Send Error] {exc}")
+        return False
+    except Exception as exc:
+        print(f"[WA Unexpected Error] {exc}")
         return False
 
 def generate_receipt_pdf(company_name, phone_ref, inv_id, c_id, c_name, area, package, paid, arrears, method):
@@ -414,8 +427,8 @@ def run_live_migrations():
                 cursor.execute("ALTER TABLE system_tenants ADD COLUMN IF NOT EXISTS whatsapp_token TEXT DEFAULT '';")
                 cursor.execute("ALTER TABLE system_tenants ADD COLUMN IF NOT EXISTS whatsapp_enabled BOOLEAN DEFAULT FALSE;")
                 cursor.execute("ALTER TABLE system_tenants ADD COLUMN IF NOT EXISTS whatsapp_templates TEXT DEFAULT '';")
-    except Exception:
-        pass
+    except Exception as exc:
+        print(f"[MigrationError] {exc}")
 
 @st.cache_resource
 def initialize_application_database():
