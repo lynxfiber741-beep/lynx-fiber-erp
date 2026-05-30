@@ -837,6 +837,7 @@ if routing_node in ["📊 Core Analytics Dashboard", "📊 Lynx Dashboard"]:
 
             if active_filter_state == "UNPAID_ANY" and not base_df.empty:
                 st.markdown("### 💳 Quick Pay Unpaid Subscriber")
+                st.info("Direct settlement is available here. Select a subscriber from the unpaid list below and settle the due amount without going to the Billing tab.")
                 unpaid_labels = []
                 unpaid_map = {}
                 for _, row in base_df.iterrows():
@@ -868,8 +869,8 @@ if routing_node in ["📊 Core Analytics Dashboard", "📊 Lynx Dashboard"]:
                     dp_package_total_cost = dp_base_bill * dp_months
                     dp_net_payable = dp_package_total_cost + dp_base_shift
                     dp_final_due = max(dp_net_payable - dp_discount, 0)
-                    dp_cash_in = st.number_input("Amount Received (Rs.)", min_value=0, value=dp_final_due, key="dashboard_unpaid_cash")
-                    dp_future_shift = int(dp_final_due - dp_cash_in)
+                    dp_cash_in = st.number_input("Amount Received (Rs.)", min_value=0, max_value=dp_final_due, value=dp_final_due, key="dashboard_unpaid_cash")
+                    dp_future_shift = max(0, int(dp_final_due - dp_cash_in))
 
                     if dp_future_shift <= 0:
                         dp_status = "PAID"
@@ -1001,8 +1002,8 @@ elif routing_node == "👥 Operational Billing Center":
                 final_due = max(net_payable - discount, 0)
                 
                 st.markdown("### ⚡ Live Payment Overview Breakdown")
-                cash_in = st.number_input("Capital Received From Customer (Rs.)", min_value=0, value=final_due)
-                future_shift = int(final_due - cash_in)
+                cash_in = st.number_input("Capital Received From Customer (Rs.)", min_value=0, max_value=final_due, value=final_due)
+                future_shift = max(0, int(final_due - cash_in))
                 
                 if future_shift <= 0:
                     calculated_status = "PAID"
