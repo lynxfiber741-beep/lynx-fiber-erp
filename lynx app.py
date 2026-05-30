@@ -834,6 +834,98 @@ if routing_node in ["📊 Core Analytics Dashboard", "📊 Lynx Dashboard"]:
                 html_rows.append(f'<td><a href="tel:{pure_digits}" class="btn-action btn-c">📞 Call</a> {wa_action_html}</td></tr>')
             html_rows.append("</table></div>")
             st.markdown("".join(html_rows), unsafe_allow_html=True)
+
+            if active_filter_state == "UNPAID_ANY" and not base_df.empty:
+                st.markdown("### 💳 Quick Pay Unpaid Subscriber")
+                unpaid_labels = []
+                unpaid_map = {}
+                for _, row in base_df.iterrows():
+                    uid = str(row.get('username', '')).strip()
+                    label = f"[{uid}] {row.get('customername', '')} — Rs. {int(float(str(row.get('balanceshift', 0)))):,}"
+                    unpaid_labels.append(label)
+                    unpaid_map[label] = uid
+                selected_unpaid_label = st.selectbox("Choose unpaid subscriber to pay now", unpaid_labels, key="dashboard_unpaid_pay_select")
+                if selected_unpaid_label:
+                    selected_uid = unpaid_map[selected_unpaid_label]
+                    selected_row = base_df[base_df['username'] == selected_uid].iloc[0].to_dict()
+                    try:
+                        dp_base_bill = int(float(str(selected_row.get('billamount', 0))))
+                    except Exception:
+                        dp_base_bill = 0
+                    try:
+                        dp_base_shift = int(float(str(selected_row.get('balanceshift', 0))))
+                    except Exception:
+                        dp_base_shift = 0
+                    st.info(f"📊 Plan Rate: Rs. {dp_base_bill:,} | Current Arrears: Rs. {dp_base_shift:,} | Expiry: {selected_row.get('expirydate', '')}")
+                    pay_col1, pay_col2, pay_col3 = st.columns(3)
+                    with pay_col1:
+                        dp_months = st.selectbox("Advance Months", [1, 3, 6, 12], key="dashboard_unpaid_months")
+                    with pay_col2:
+                        dp_method = st.selectbox("Payment Method", ["CASH", "EASYPAISA", "JAZZCASH", "BANK_TRANSFER"], key="dashboard_unpaid_method")
+                    with pay_col3:
+                        dp_discount = st.number_input("Discount (Rs.)", min_value=0, value=0, step=50, key="dashboard_unpaid_discount")
+
+                    dp_package_total_cost = dp_base_bill * dp_months
+                    dp_net_payable = dp_package_total_cost + dp_base_shift
+                    dp_final_due = max(dp_net_payable - dp_discount, 0)
+                    dp_cash_in = st.number_input("Amount Received (Rs.)", min_value=0, value=dp_final_due, key="dashboard_unpaid_cash")
+                    dp_future_shift = int(dp_final_due - dp_cash_in)
+
+                    if dp_future_shift <= 0:
+                        dp_status = "PAID"
+                        dp_color = "#10b981"
+                    elif dp_cash_in > 0:
+                        dp_status = "PARTIAL"
+                        dp_color = "#f59e0b"
+                    else:
+                        dp_status = "UNPAID"
+                        dp_color = "#f43f5e"
+
+                    st.markdown(f"""
+                    <div class='live-calc-box'>
+                        <p>📦 <b>Package Extension Charges ({dp_months} Month(s)):</b> Rs. {dp_package_total_cost:,}</p>
+                        <p>⏮️ <b>Existing Arrears:</b> Rs. {dp_base_shift:,}</p>
+                        <p>🎁 <b>Discount:</b> Rs. {dp_discount:,}</p>
+                        <h4 style='color:{active_theme['accent']};'><b>Final Due:</b> Rs. {dp_final_due:,}</h4>
+                        <hr style='border:1px solid {active_theme['border']};'>
+                        <h4>🔮 <b>Updated Status:</b> <span style='color:{dp_color}; font-weight:bold;'>{dp_status}</span></h4>
+                        <p>💾 <b>New Arrears Balance:</b> Rs. {dp_future_shift:,}</p>
+                    </div>
+                    """, unsafe_allow_html=True)
+
+                    if st.button("💳 SETTLE THIS UNPAID ACCOUNT", key=f"dashboard_pay_{selected_uid}", use_container_width=True):
+                        today_dt = datetime.now()
+                        current_expiry_str = str(selected_row.get('expirydate', '')).strip()
+                        try:
+                            dp_old_expiry = datetime.strptime(current_expiry_str, "%Y-%m-%d")
+                            dp_base_dt = today_dt if dp_old_expiry < today_dt else dp_old_expiry
+                        except Exception:
+                            dp_base_dt = today_dt
+                        dp_new_expiry = (dp_base_dt + relativedelta(months=dp_months)).strftime("%Y-%m-%d")
+                        dp_invoice_uuid = f"INV-{uuid.uuid4().hex[:10].upper()}"
+                        with get_db_connection() as conn:
+                            with conn.cursor() as cursor:
+                                cursor.execute("""
+                                    UPDATE customers SET balanceshift = %s, status = %s, expirydate = %s WHERE username = %s AND tenant_id = %s
+                                """, (dp_future_shift, dp_status, dp_new_expiry, selected_uid, st.session_state['tenant_id']))
+                                cursor.execute("""
+                                    INSERT INTO billing_history (invoiceid, customerid, customername, area, phone, datetimestamp, currentpackage, amountpaid, remainingarrears, transactiontype, paymentmethod, discountgiven, tenant_id)
+                                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, 'BILL_PAYMENT', %s, %s, %s)
+                                """, (dp_invoice_uuid, selected_uid, selected_row.get('customername'), selected_row.get('area'), selected_row.get('phone'), datetime.now().strftime("%Y-%m-%d %H:%M:%S"), selected_row.get('package'), int(dp_cash_in), dp_future_shift, dp_method, int(dp_discount), st.session_state['tenant_id']))
+                                insert_activity_log(st.session_state['tenant_id'], st.session_state['username'], "BILL_PAYMENT", f"Quick dashboard payment Rs. {dp_cash_in} for user {selected_uid}. Status {dp_status}, Arrears {dp_future_shift}, Expiry {dp_new_expiry}.")
+                        st.success(f"✅ Payment recorded for {selected_uid}! Status: {dp_status} | New Expiry: {dp_new_expiry}")
+                        wa_context = {
+                            "name": selected_row.get('customername', ''), "username": selected_uid, "package": selected_row.get('package', ''), "paid": int(dp_cash_in), "arrears": dp_future_shift, "expiry": dp_new_expiry, "method": dp_method
+                        }
+                        send_tenant_whatsapp(tenant_meta, selected_row.get('phone'), "bill_paid", wa_context)
+                        st.session_state['recent_pdf_bytes'] = generate_receipt_pdf(TENANT_COMPANY_NAME, TENANT_SUPPORT_PHONE, dp_invoice_uuid, selected_uid, selected_row.get('customername'), selected_row.get('area'), selected_row.get('package'), dp_cash_in, dp_future_shift, dp_method)
+                        st.session_state['recent_invoice_uuid'] = dp_invoice_uuid
+                        st.cache_data.clear()
+                        st.rerun()
+
+                    if 'recent_pdf_bytes' in st.session_state:
+                        st.download_button("📥 Download Generated PDF Receipt", data=st.session_state['recent_pdf_bytes'], file_name=f"Receipt_{st.session_state.get('recent_invoice_uuid', 'INV')}.pdf", mime="application/pdf", use_container_width=True)
+
     st.markdown(f"<div class='saas-footer'>Distributed & Licensed by: <b>{DISTRIBUTOR_NAME}</b></div>", unsafe_allow_html=True)
 
 # ==========================================
