@@ -869,6 +869,10 @@ if routing_node in ["📊 Core Analytics Dashboard", "📊 Lynx Dashboard"]:
                     st.rerun()
             with metric_col5:
                 st.metric("Total Arrears Balance", f"Rs. {total_arrears:,}")
+                st.caption("Total arrears is calculated from the current subscriber rows' balanceshift field.")
+                if st.button("Filter by Outstanding Arrears", use_container_width=True, key="filter_total_arrears"):
+                    st.session_state['dashboard_status_filter'] = "UNPAID_ANY"
+                    st.rerun()
             
             search_query = st.text_input("🔍 Fast Find Subscriber Row Analyzer")
             
