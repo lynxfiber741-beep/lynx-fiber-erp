@@ -135,9 +135,8 @@ def insert_activity_log(tenant_id, username, action_type, description):
                     INSERT INTO activity_logs (log_id, tenant_id, username, action_type, description, timestamp)
                     VALUES (%s, %s, %s, %s, %s, %s)
                 """, (log_id, tenant_id, username, action_type, description, ts))
-    except Exception as e:
-        import sys
-        print(f"[LOG ERROR] Failed to record system log activity: {e}", file=sys.stderr)
+    except Exception:
+        pass
 
 def parse_wa_template(template_str, data_dict):
     out = template_str
@@ -585,12 +584,6 @@ else:
                                 st.rerun()
                         else:
                             st.error("❌ Invalid Tenant, Username, or Password Variant.")
-                            insert_activity_log(
-                                input_tenant if input_tenant else "unknown", 
-                                user_input if user_input else "anonymous", 
-                                "FAILED_LOGIN", 
-                                "Unauthorized entry attempt: Invalid username or security credentials passed."
-                            )
         with register_tab:
             st.markdown(f"<h3 style='text-align:center; color:{active_theme['accent']};'>SaaS Tenant Onboarding</h3>", unsafe_allow_html=True)
             with st.form("saas_tenant_registration_form"):
@@ -661,7 +654,7 @@ if st.session_state['authenticated'] and not st.session_state['portal_mode']:
         st.write("---")
         st.markdown(f"🎨 **Personalize Theme**")
         selected_theme = st.selectbox(
-            "Select UI Theme", list(THEMES.keys()), index=list(THEMES.keys()), format_func=lambda x: x, label_visibility="collapsed"
+            "Select UI Theme", list(THEMES.keys()), index=list(THEMES.keys()).index(st.session_state['app_theme']), label_visibility="collapsed"
         )
         if selected_theme != st.session_state['app_theme']:
             st.session_state['app_theme'] = selected_theme
@@ -958,7 +951,7 @@ elif routing_node == "👥 Operational Billing Center":
         if 'recent_pdf_bytes' in st.session_state:
             st.download_button("📥 Download Generated PDF Receipt", data=st.session_state['recent_pdf_bytes'], file_name=f"Receipt_{st.session_state.get('recent_invoice_uuid', 'INV')}.pdf", mime="application/pdf", use_container_width=True)
 
-    # --- STATUS AND REVERSAL CONTROL TAB ---
+    # --- NEW FEATURE: STATUS AND REVERSAL CONTROL TAB ---
     if tab_status_rev:
         with tab_status_rev:
             if not sub_map:
@@ -1391,10 +1384,10 @@ elif routing_node == "🔐 System Access Control":
                         if st.form_submit_button("💾 SAVE MASTER WHATSAPP CONFIGS"):
                             master_updated_templates = {"new_connection": m_t_new, "bill_paid": m_t_paid, "bill_reminder": m_t_remind, "expired_warning": m_t_exp}
                             with get_db_connection() as conn:
-                                Grid_update = conn.cursor()
-                                Grid_update.execute("""
-                                    UPDATE system_tenants SET whatsapp_enabled=%s, whatsapp_instance_id=%s, whatsapp_token=%s, whatsapp_templates=%s WHERE tenant_id='lynx'
-                                """, (l_wa_enabled, l_wa_instance, l_wa_token, json.dumps(master_updated_templates)))
+                                with conn.cursor() as cursor:
+                                    cursor.execute("""
+                                        UPDATE system_tenants SET whatsapp_enabled=%s, whatsapp_instance_id=%s, whatsapp_token=%s, whatsapp_templates=%s WHERE tenant_id='lynx'
+                                    """, (l_wa_enabled, l_wa_instance, l_wa_token, json.dumps(master_updated_templates)))
                             st.success("✅ Lynx owner WhatsApp profile settings updated successfully!")
                             st.cache_data.clear()
                             st.rerun()
@@ -1618,43 +1611,12 @@ elif routing_node == "🔐 System Access Control":
             try:
                 with get_db_connection() as conn:
                     with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-                        if is_master_owner: 
-                            cur.execute("SELECT timestamp, tenant_id, username, action_type, description FROM activity_logs ORDER BY timestamp DESC LIMIT 500")
-                        else: 
-                            cur.execute("SELECT timestamp, username, action_type, description FROM activity_logs WHERE tenant_id = %s ORDER BY timestamp DESC LIMIT 300", (st.session_state['tenant_id'],))
+                        if is_master_owner: cur.execute("SELECT timestamp, tenant_id, username, action_type, description FROM activity_logs ORDER BY timestamp DESC LIMIT 500")
+                        else: cur.execute("SELECT timestamp, username, action_type, description FROM activity_logs WHERE tenant_id = %s ORDER BY timestamp DESC LIMIT 300", (st.session_state['tenant_id'],))
                         log_rows = cur.fetchall()
-                        
-                if log_rows:
-                    df_logs = pd.DataFrame(log_rows)
-                    
-                    st.markdown("#### 🔍 Filter Logs Dynamically")
-                    col_l1, col_l2 = st.columns(2)
-                    with col_l1:
-                        search_user = st.text_input("Search by Username Key", value="").strip().lower()
-                    with col_l2:
-                        unique_actions = ["ALL"] + list(df_logs['action_type'].unique())
-                        filter_action = st.selectbox("Filter by System Action Type", unique_actions)
-                        
-                    if search_user:
-                        df_logs = df_logs[df_logs['username'].str.lower().str.contains(search_user, na=False)]
-                    if filter_action != "ALL":
-                        df_logs = df_logs[df_logs['action_type'] == filter_action]
-                        
-                    tot_logs = len(df_logs)
-                    success_logins = len(df_logs[df_logs['action_type'] == 'LOGIN'])
-                    failed_logins = len(df_logs[df_logs['action_type'] == 'FAILED_LOGIN'])
-                    
-                    m_col1, m_col2, m_col3 = st.columns(3)
-                    m_col1.metric("Total Matches Listed", tot_logs)
-                    m_col2.metric("Successful Logins Trailed", success_logins)
-                    m_col3.metric("Blocked/Failed Intrusions", failed_logins)
-                    
-                    df_logs.columns = [c.replace('_', ' ').upper() for c in df_logs.columns]
-                    st.dataframe(df_logs, use_container_width=True)
-                else:
-                    st.info("Abhi tak koi logs jama nahi huay.")
-            except Exception as log_err: 
-                st.error(f"Logs pull karne mein masla aya: {log_err}")
+                if log_rows: st.dataframe(pd.DataFrame(log_rows), use_container_width=True)
+                else: st.info("Abhi tak koi logs jama nahi huay.")
+            except Exception as log_err: st.error(f"Logs pull karne mein masla aya: {log_err}")
 
         with adm_tabs[-1]:
             st.markdown("### 💾 Dynamic Data Backup Vault")
@@ -1710,7 +1672,7 @@ elif routing_node == "📱 Client Portal":
             except Exception: bill_amt_val = 0; balance_shift_val = 0
             st.markdown(f"""
             <div class="client-card" style="border: 2px solid {active_theme['accent']};">
-                <h2 style="text-align:center; font-weight:bold;">📄 DIGITAL BILL & QUOTATION</h2>
+                <h2 style="color:{active_theme['accent']}; text-align:center; font-weight:bold;">📄 DIGITAL BILL & QUOTATION</h2>
                 <p style="text-align:center; color:#9ca3af; font-size:13px;">Provider: {html.escape(str(t_meta["name"]))} | Helpline: {html.escape(str(t_meta["phone"]))}</p>
                 <hr style="with: 1px solid {active_theme['border']};">
                 <h3 style="color:#10b981; margin-top:15px;">👤 Account ID: {html.escape(str(c_dict.get('username','')))}</h3>
