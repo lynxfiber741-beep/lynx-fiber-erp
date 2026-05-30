@@ -967,7 +967,7 @@ elif routing_node == "👥 Operational Billing Center":
                     st.rerun()
                 
                 if 'recent_pdf_bytes' in st.session_state:
-                    st.download_button("📥 Download Generated PDF Receipt", data=st.session_state['recent_pdf_bytes'], file_name=f"Receipt_{st.session_state.get('recent_invoice_uuid', 'INV')}.pdf", mime="application/pdf", use_container_width=True)
+                            st.download_button("📥 Download Generated PDF Receipt", data=st.session_state['recent_pdf_bytes'], file_name=f"Receipt_{st.session_state.get('recent_invoice_uuid', 'INV')}.pdf", mime="application/pdf", use_container_width=True)
 
     # --- NEW FEATURE: STATUS AND REVERSAL CONTROL TAB ---
     if tab_status_rev:
