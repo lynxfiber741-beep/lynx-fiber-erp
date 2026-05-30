@@ -936,7 +936,8 @@ if routing_node in ["📊 Core Analytics Dashboard", "📊 Lynx Dashboard"]:
                 }
                 parsed_msg = parse_wa_template(t_dict.get(t_key, ""), ctx)
                 if len(wa_number) >= 10:
-                    wa_action_html = f'<a href="https://wa.me/{wa_number}?text={urllib.parse.quote(parsed_msg)}" target="_blank" class="btn-action btn-w">💬 WA</a>'
+                    wa_label = "💬 Arrears WA" if t_key in ["bill_reminder", "expired_warning"] else "💬 Payment WA"
+                    wa_action_html = f'<a href="https://wa.me/{wa_number}?text={urllib.parse.quote(parsed_msg)}" target="_blank" class="btn-action btn-w">{wa_label}</a>'
                 else:
                     wa_action_html = '<span class="btn-action btn-disabled">🚫 WA</span>'
                     
@@ -1056,46 +1057,70 @@ if routing_node in ["📊 Core Analytics Dashboard", "📊 Lynx Dashboard"]:
 # ==========================================
 elif routing_node == "📘 ISP Guide":
     st.markdown("<div class='main-title'>📘 ISP GUIDE & APP OVERVIEW</div>", unsafe_allow_html=True)
-    st.markdown("<div class='client-card'>", unsafe_allow_html=True)
-    st.markdown(
-        "<h3>یہ ایپ کیسے کام کرتی ہے</h3>"
-        "<p>یہ پورٹل نئے ISP اور سٹاف کو مکمل مالیاتی ریکارڈ، کسٹمر مینجمنٹ، اور بلنگ کنٹرول فراہم کرتا ہے۔ نیچے دی گئی تفصیلات سے ایک نئے صارف کو پوری ایپ سمجھ آ جانی چاہیے۔</p>"
-        "<h4>🔑 سسٹم ماڈیولز</h4>"
-        "<ul>"
-        "<li><b>ERP Dashboard:</b> مکمل خلاصہ، Active Accounts، Paid، Free، Unpaid، Suspended، اور Overview statistics دکھاتا ہے۔</li>"
-        "<li><b>Operational Billing Center:</b> بل کلیکشن، پے منٹس، ریورسل، نئے کنکشن، بلک امپورٹ، اور ٹرمینل ایڈیٹ کرنے کے لیے ہے۔</li>"
-        "<li><b>Lifetime Ledger History:</b> پورے ٹیننٹ کا مکمل ٹرانزیکشن لاگ اور پچھلے بلنگ ایکشنز دیکھنے کے لیے۔</li>"
-        "<li><b>System Access Control:</b> صرف Owner/Admin کے لیے۔ یہاں علاقے، پیکجز، اور صارف اجازتیں منظم ہوتی ہیں۔</li>"
-        "</ul>"
-        "<h4>📌 Overview summary کا مطلب</h4>"
-        "<ul>"
-        "<li><b>Free Subscribers in Overview:</b> وہ کسٹمر جو مفت ہیں؛ status FREE، billamount 0، یا package name میں 'free' ہو۔</li>"
-        "<li><b>Assigned Coverage:</b> آپ کے user کے ذمہ مخصوص علاقے میں کل active accounts۔</li>"
-        "<li><b>Paid Customers:</b> وہ accounts جن کا status PAID ہے اور bill clear ہیں۔</li>"
-        "<li><b>Defaulter Pool:</b> Unpaid، Partial، یا Suspended accounts کی تعداد۔</li>"
-        "</ul>"
-        "<h4>🧠 App logic کا خلاصہ</h4>"
-        "<p>ایپ پورا ڈیٹا پہلے database سے لیتی ہے اور پھر user کی permissions کے مطابق filter کرتی ہے۔ اس کے بعد dashboard summary، tables، اور actions قابلِ استعمال بنتے ہیں۔</p>"
-        "<ol>"
-        "<li>Login کے بعد، user کی role اور assigned_areas load ہوتی ہیں۔</li>"
-        "<li>Dashboard active users کا overview دکھاتا ہے۔</li>"
-        "<li>Operational Billing Center میں direct bill payment، arrears update، اور terminal profile edit ہوتا ہے۔</li>"
-        "<li>Free customer بنانا: Monthly Rate 0 کریں اور status 'FREE' منتخب کریں۔</li>"
-        "</ol>"
-        "<h4>🛠️ Important tip</h4>"
-        "<p>Overview ایک الگ information system ہے۔ یہ صرف summary ہے، حقیقی actions، billing، اور account updates آپریشن سنٹر میں ہوتے ہیں۔</p>"
-        "<p>اگر آپ نیا ISP ہیں، تو پہلے یہ تین جگہیں دیکھیں: Dashboard، Operational Billing Center، اور Lifetime Ledger History۔</p>"
-        "<h4>📘 شروع کرنے کا آسان طریقہ</h4>"
-        "<ol>"
-        "<li>Login کریں۔</li>"
-        "<li>Dashboard پر آ کر overview statistics دیکھیں۔</li>"
-        "<li>Operational Billing Center میں جا کر collection hub اور edit profile دیکھیں۔</li>"
-        "<li>Ledger history میں transactions verify کریں۔</li>"
-        "</ol>"
-        "<p>یہ گائیڈ ایپ کے بنیادی کام سمجھانے کے لیے ہے تاکہ نیا ISP خود بخود سسٹم کو پڑھ کر سمجھ جائے۔</p>",
-        unsafe_allow_html=True
-    )
-    st.markdown("</div>", unsafe_allow_html=True)
+    user_role = str(st.session_state.get('user_role', 'staff')).lower()
+    assigned_areas = st.session_state.get('assigned_areas', ['ALL'])
+    if user_role in ["owner", "admin"]:
+        st.markdown("<div class='client-card'>", unsafe_allow_html=True)
+        st.markdown(
+            "<h3>Owner / Admin Full Guide</h3>"
+            "<p>اس سیکشن میں آپ کو پورے سسٹم کی مکمل گائیڈ لائن ملے گی، جس میں اسٹاف، پرمیشنز، اور کنٹرول سیٹنگز شامل ہیں۔</p>"
+            "<h4>🔑 سسٹم ماڈیولز</h4>"
+            "<ul>"
+            "<li><b>ERP Dashboard:</b> مکمل خلاصہ، Active Accounts، Paid، Free، Unpaid، Suspended، اور Overview statistics دکھاتا ہے۔</li>"
+            "<li><b>Operational Billing Center:</b> بل کلیکشن، پے منٹس، ریورسل، نئے کنکشن، بلک امپورٹ، اور ٹرمینل ایڈیٹ کرنے کے لیے ہے۔</li>"
+            "<li><b>Lifetime Ledger History:</b> پورے ٹیننٹ کا مکمل ٹرانزیکشن لاگ اور پچھلے بلنگ ایکشنز دیکھنے کے لیے۔</li>"
+            "<li><b>System Access Control:</b> خود Owner/Admin کے لیے۔ یہاں علاقے، پیکجز، اور صارف اجازتیں منظم ہوتی ہیں۔</li>"
+            "</ul>"
+            "<h4>🧠 App logic کا خلاصہ</h4>"
+            "<p>ایپ پہلے database سے ڈیٹا لیتی ہے، پھر user کی permissions اور assigned areas کے مطابق filter کرتی ہے۔ اس کے بعد dashboard summary، tables، اور actions بنائے جاتے ہیں۔</p>"
+            "<ol>"
+            "<li>Login کے بعد، user کی role اور assigned_areas load ہوتی ہیں۔</li>"
+            "<li>Dashboard active users کا overview دکھاتا ہے۔</li>"
+            "<li>Operational Billing Center میں direct bill payment، arrears update، اور terminal profile edit ہوتا ہے۔</li>"
+            "<li>Free customer بنانے کے لیے Monthly Rate 0 کریں اور status 'FREE' منتخب کریں۔</li>"
+            "</ol>"
+            "<h4>🛠️ Owner/Admin کے لیے اہم نوٹس</h4>"
+            "<ul>"
+            "<li>Staff permissions کا مینجمنٹ Owner/Admin کے پاس ہے۔</li>"
+            "<li>Owner/Admin کو تمام assigned areas یا 'ALL' areas دیکھنے کی full authority ہے۔</li>"
+            "<li>یہ رول billing، arrears، اور customer statuses کو درست رکھنے کے لیے ذمہ دار ہے۔</li>"
+            "</ul>"
+            "<p>Owner/Admin کے پاس پورے سسٹم کی مکمل گائیڈ لائن ہے، staff کی training، اور software configuration تک مکمل رسائی ہے۔</p>"
+            "<h4>📘 شروع کرنے کا آسان طریقہ</h4>"
+            "<ol>"
+            "<li>Login کریں۔</li>"
+            "<li>Dashboard پر overview statistics دیکھیں۔</li>"
+            "<li>Operational Billing Center میں جا کر collection hub اور edit profile دیکھیں۔</li>"
+            "<li>Ledger history میں transactions verify کریں۔</li>"
+            "</ol>"
+            "<p>یہ گائیڈ آپ کو owner/admin کے طور پر پورے پورٹل کا مکمل کنٹرول سمجھنے میں مدد دے گی۔</p>",
+            unsafe_allow_html=True
+        )
+        st.markdown("</div>", unsafe_allow_html=True)
+    else:
+        st.markdown("<div class='client-card'>", unsafe_allow_html=True)
+        st.markdown(
+            f"<h3>Staff Guide & Limited Access Info</h3>"
+            f"<p>آپ کا رول: <b>{html.escape(str(st.session_state.get('user_role', 'Staff')).upper())}</b></p>"
+            f"<p>Assigned Areas: <b>{html.escape(', '.join(assigned_areas))}</b></p>"
+            "<p>Staff users کو یہ چیزیں دیکھنی اور manage کرنی ہیں:</p>"
+            "<ul>"
+            "<li>Dashboard میں اپنے assigned areas کے accounts دیکھیں۔</li>"
+            "<li>Operational Billing Center میں customer bill اور arrears manage کریں۔</li>"
+            "<li>Unpaid/Partial/Suspended accounts پر arrears reminder WA بھیجیں۔</li>"
+            "<li>Free accounts کو package یا billamount 0 کے ساتھ manage کریں۔</li>"
+            "</ul>"
+            "<p>آپ کے پاس system settings یا staff permissions edit کرنے کی authority نہیں ہے۔ یہ exclusive Owner/Admin کے لیے محفوظ ہے۔</p>"
+            "<p>اس guide میں بتایا گیا ہے کہ آپ کو اپنے روزمرہ کام کہاں ملیں گے:</p>"
+            "<ol>"
+            "<li>Dashboard: summary اور arrears overview دیکھیں۔</li>"
+            "<li>Operational Billing Center: bill payment، arrears update، اور customer info edit کریں۔</li>"
+            "<li>Ledger History: transactions دیکھیں اور payment records verify کریں۔</li>"
+            "</ol>"
+            "<p>یہ guide staff کو یہ سمجھنے میں مدد دیتی ہے کہ ان کو کون سا حصہ استعمال کرنا ہے اور owner/admin والا full control انہیں کیوں نہیں ملتا۔</p>",
+            unsafe_allow_html=True
+        )
+        st.markdown("</div>", unsafe_allow_html=True)
 
 elif routing_node == "👥 Operational Billing Center":
     st.markdown("<div class='main-title'>👥 TRANSACTION & TERMINAL OPERATIONS</div>", unsafe_allow_html=True)
