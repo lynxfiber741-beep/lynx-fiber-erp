@@ -961,7 +961,10 @@ if routing_node in ["📊 Core Analytics Dashboard", "📊 Lynx Dashboard"]:
                 unpaid_map = {}
                 for _, row in base_df.iterrows():
                     uid = str(row.get('username', '')).strip()
-                    label = f"[{uid}] {row.get('customername', '')} — Rs. {int(float(str(row.get('balanceshift', 0)))):,}"
+                    name = row.get('customername', '')
+                    addr = str(row.get('address', '')).strip()
+                    display_addr = (addr[:60] + '...') if len(addr) > 60 else addr
+                    label = f"[{uid}] {name} — {display_addr} — Rs. {int(float(str(row.get('balanceshift', 0)))):,}"
                     unpaid_labels.append(label)
                     unpaid_map[label] = uid
                 selected_unpaid_label = st.selectbox("Choose unpaid subscriber to pay now", unpaid_labels, key="dashboard_unpaid_pay_select")
@@ -1179,7 +1182,10 @@ elif routing_node == "👥 Operational Billing Center":
             row_dict = row_series.to_dict()
             uid = row_dict.get('username')
             if uid:
-                sub_map[f"[{uid}] - {row_dict.get('customername', '')}"] = uid
+                name = row_dict.get('customername', '')
+                addr = str(row_dict.get('address', '')).strip()
+                display_addr = (addr[:60] + '...') if len(addr) > 60 else addr
+                sub_map[f"[{uid}] - {name} — {display_addr}"] = uid
                 
     with tab_col:
         if not sub_map:
