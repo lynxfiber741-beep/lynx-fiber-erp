@@ -703,6 +703,9 @@ if st.session_state['authenticated'] and not st.session_state['portal_mode']:
         if st.button("📜 Lifetime Ledger History", use_container_width=True):
             st.session_state['current_node'] = "📜 Lifetime Ledger History"
             st.rerun()
+        if st.button("📘 ISP Guide", use_container_width=True):
+            st.session_state['current_node'] = "📘 ISP Guide"
+            st.rerun()
             
         if str(st.session_state.get('user_role', '')).lower() in ["owner", "admin"]:
             if st.button("🔐 System Access Control", use_container_width=True):
@@ -1015,6 +1018,49 @@ if routing_node in ["📊 Core Analytics Dashboard", "📊 Lynx Dashboard"]:
 # ==========================================
 # VIEW 2: OPERATIONS CENTER (LIVE CALCULATIONS)
 # ==========================================
+elif routing_node == "📘 ISP Guide":
+    st.markdown("<div class='main-title'>📘 ISP GUIDE & APP OVERVIEW</div>", unsafe_allow_html=True)
+    st.markdown("<div class='client-card'>", unsafe_allow_html=True)
+    st.markdown(
+        "<h3>یہ ایپ کیسے کام کرتی ہے</h3>"
+        "<p>یہ پورٹل نئے ISP اور سٹاف کو مکمل مالیاتی ریکارڈ، کسٹمر مینجمنٹ، اور بلنگ کنٹرول فراہم کرتا ہے۔ نیچے دی گئی تفصیلات سے ایک نئے صارف کو پوری ایپ سمجھ آ جانی چاہیے۔</p>"
+        "<h4>🔑 سسٹم ماڈیولز</h4>"
+        "<ul>"
+        "<li><b>ERP Dashboard:</b> مکمل خلاصہ، Active Accounts، Paid، Free، Unpaid، Suspended، اور Overview statistics دکھاتا ہے۔</li>"
+        "<li><b>Operational Billing Center:</b> بل کلیکشن، پے منٹس، ریورسل، نئے کنکشن، بلک امپورٹ، اور ٹرمینل ایڈیٹ کرنے کے لیے ہے۔</li>"
+        "<li><b>Lifetime Ledger History:</b> پورے ٹیننٹ کا مکمل ٹرانزیکشن لاگ اور پچھلے بلنگ ایکشنز دیکھنے کے لیے۔</li>"
+        "<li><b>System Access Control:</b> صرف Owner/Admin کے لیے۔ یہاں علاقے، پیکجز، اور صارف اجازتیں منظم ہوتی ہیں۔</li>"
+        "</ul>"
+        "<h4>📌 Overview summary کا مطلب</h4>"
+        "<ul>"
+        "<li><b>Free Subscribers in Overview:</b> وہ کسٹمر جو مفت ہیں؛ status FREE، billamount 0، یا package name میں 'free' ہو۔</li>"
+        "<li><b>Assigned Coverage:</b> آپ کے user کے ذمہ مخصوص علاقے میں کل active accounts۔</li>"
+        "<li><b>Paid Customers:</b> وہ accounts جن کا status PAID ہے اور bill clear ہیں۔</li>"
+        "<li><b>Defaulter Pool:</b> Unpaid، Partial، یا Suspended accounts کی تعداد۔</li>"
+        "</ul>"
+        "<h4>🧠 App logic کا خلاصہ</h4>"
+        "<p>ایپ پورا ڈیٹا پہلے database سے لیتی ہے اور پھر user کی permissions کے مطابق filter کرتی ہے۔ اس کے بعد dashboard summary، tables، اور actions قابلِ استعمال بنتے ہیں۔</p>"
+        "<ol>"
+        "<li>Login کے بعد، user کی role اور assigned_areas load ہوتی ہیں۔</li>"
+        "<li>Dashboard active users کا overview دکھاتا ہے۔</li>"
+        "<li>Operational Billing Center میں direct bill payment، arrears update، اور terminal profile edit ہوتا ہے۔</li>"
+        "<li>Free customer بنانا: Monthly Rate 0 کریں اور status 'FREE' منتخب کریں۔</li>"
+        "</ol>"
+        "<h4>🛠️ Important tip</h4>"
+        "<p>Overview ایک الگ information system ہے۔ یہ صرف summary ہے، حقیقی actions، billing، اور account updates آپریشن سنٹر میں ہوتے ہیں۔</p>"
+        "<p>اگر آپ نیا ISP ہیں، تو پہلے یہ تین جگہیں دیکھیں: Dashboard، Operational Billing Center، اور Lifetime Ledger History۔</p>"
+        "<h4>📘 شروع کرنے کا آسان طریقہ</h4>"
+        "<ol>"
+        "<li>Login کریں۔</li>"
+        "<li>Dashboard پر آ کر overview statistics دیکھیں۔</li>"
+        "<li>Operational Billing Center میں جا کر collection hub اور edit profile دیکھیں۔</li>"
+        "<li>Ledger history میں transactions verify کریں۔</li>"
+        "</ol>"
+        "<p>یہ گائیڈ ایپ کے بنیادی کام سمجھانے کے لیے ہے تاکہ نیا ISP خود بخود سسٹم کو پڑھ کر سمجھ جائے۔</p>",
+        unsafe_allow_html=True
+    )
+    st.markdown("</div>", unsafe_allow_html=True)
+
 elif routing_node == "👥 Operational Billing Center":
     st.markdown("<div class='main-title'>👥 TRANSACTION & TERMINAL OPERATIONS</div>", unsafe_allow_html=True)
     df_matrix = fetch_isolated_matrix(st.session_state['tenant_id'])
