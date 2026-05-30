@@ -140,7 +140,13 @@ def insert_activity_log(tenant_id, username, action_type, description):
 
 
 def restore_login_from_query_params():
-    query_params = st.experimental_get_query_params()
+    if not hasattr(st, "experimental_get_query_params"):
+        return False
+    try:
+        query_params = st.experimental_get_query_params()
+    except Exception:
+        return False
+
     auth_flag = query_params.get("auth", [""])[0]
     tenant = query_params.get("tenant", [""])[0].strip().lower()
     user_key = query_params.get("user", [""])[0].strip().lower()
@@ -629,7 +635,8 @@ else:
                                     st.session_state['assigned_areas'] = [a.strip() for a in raw_areas.split(",") if a.strip()]
                                 st.session_state['current_node'] = "📊 Lynx Dashboard"
                                 insert_activity_log(input_tenant, st.session_state['username'], "LOGIN", "System initialized successfully via secure portal node.")
-                                st.experimental_set_query_params(auth='1', tenant=input_tenant, user=st.session_state['username'])
+                                if hasattr(st, 'experimental_set_query_params'):
+                                    st.experimental_set_query_params(auth='1', tenant=input_tenant, user=st.session_state['username'])
                                 st.cache_data.clear()
                                 st.rerun()
                         else:
@@ -716,7 +723,8 @@ if st.session_state['authenticated'] and not st.session_state['portal_mode']:
         if st.button("🔒 Logout System", use_container_width=True):
             insert_activity_log(st.session_state['tenant_id'], st.session_state['username'], "LOGOUT", "User terminated application session manually.")
             st.session_state['authenticated'] = False
-            st.experimental_set_query_params()
+            if hasattr(st, 'experimental_set_query_params'):
+                st.experimental_set_query_params()
             st.rerun()
 
 # ==========================================
