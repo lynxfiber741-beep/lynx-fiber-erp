@@ -1052,68 +1052,106 @@ if routing_node in ["📊 Core Analytics Dashboard", "📊 Lynx Dashboard"]:
 # VIEW 2: OPERATIONS CENTER (LIVE CALCULATIONS)
 # ==========================================
 elif routing_node == "📘 ISP Guide":
-    st.markdown("<div class='main-title'>📘 ISP GUIDE & APP OVERVIEW</div>", unsafe_allow_html=True)
+    st.markdown("<div class='main-title'>📘 ISP GUIDE / آئی ایس پی گائیڈ</div>", unsafe_allow_html=True)
     user_role = str(st.session_state.get('user_role', 'staff')).lower()
     assigned_areas = st.session_state.get('assigned_areas', ['ALL'])
+
+    # Owner / Admin bilingual guide
     if user_role in ["owner", "admin"]:
         st.markdown("<div class='client-card'>", unsafe_allow_html=True)
         st.markdown(
-            "<h3>Owner / Admin Full Guide</h3>"
-            "<p>اس سیکشن میں آپ کو پورے سسٹم کی مکمل گائیڈ لائن ملے گی، جس میں اسٹاف، پرمیشنز، اور کنٹرول سیٹنگز شامل ہیں۔</p>"
-            "<h4>🔑 سسٹم ماڈیولز</h4>"
+            "<h3>Owner / Admin Full Guide — English</h3>"
+            "<p>This section contains the complete system guide for Owner/Admin, including staff management, permissions, and configuration.</p>"
+            "<h4>🔑 System Modules</h4>"
             "<ul>"
-            "<li><b>ERP Dashboard:</b> مکمل خلاصہ، Active Accounts، Paid، Free، Unpaid، Suspended، اور Overview statistics دکھاتا ہے۔</li>"
-            "<li><b>Operational Billing Center:</b> بل کلیکشن، پے منٹس، ریورسل، نئے کنکشن، بلک امپورٹ، اور ٹرمینل ایڈیٹ کرنے کے لیے ہے۔</li>"
-            "<li><b>Lifetime Ledger History:</b> پورے ٹیننٹ کا مکمل ٹرانزیکشن لاگ اور پچھلے بلنگ ایکشنز دیکھنے کے لیے۔</li>"
-            "<li><b>System Access Control:</b> خود Owner/Admin کے لیے۔ یہاں علاقے، پیکجز، اور صارف اجازتیں منظم ہوتی ہیں۔</li>"
+            "<li><b>ERP Dashboard:</b> Provides summary counts, Active/Paid/Free/Unpaid/Suspended metrics and quick filters.</li>"
+            "<li><b>Operational Billing Center:</b> Handles collection, payments, reversals, provisioning, bulk import and terminal edits.</li>"
+            "<li><b>Lifetime Ledger History:</b> Full transaction log for tenant auditing and invoice reversal.</li>"
+            "<li><b>System Access Control:</b> Owner/Admin-only area for managing areas, packages and staff permissions.</li>"
             "</ul>"
-            "<h4>🧠 App logic کا خلاصہ</h4>"
-            "<p>ایپ پہلے database سے ڈیٹا لیتی ہے، پھر user کی permissions اور assigned areas کے مطابق filter کرتی ہے۔ اس کے بعد dashboard summary، tables، اور actions بنائے جاتے ہیں۔</p>"
+            "<h4>🧠 App Logic Summary</h4>"
+            "<p>The app fetches data from the database, applies user permissions and assigned area filters, and then renders dashboard summaries, tables, and actionable operations.</p>"
             "<ol>"
-            "<li>Login کے بعد، user کی role اور assigned_areas load ہوتی ہیں۔</li>"
-            "<li>Dashboard active users کا overview دکھاتا ہے۔</li>"
-            "<li>Operational Billing Center میں direct bill payment، arrears update، اور terminal profile edit ہوتا ہے۔</li>"
-            "<li>Free customer بنانے کے لیے Monthly Rate 0 کریں اور status 'FREE' منتخب کریں۔</li>"
+            "<li>After login, the user's role and assigned areas are loaded.</li>"
+            "<li>Dashboard shows overview and arrears summaries.</li>"
+            "<li>Operational Billing Center enables recording payments, updating arrears and editing customer profiles.</li>"
+            "<li>To mark a customer as free, set Monthly Rate to 0 and Status to 'FREE'.</li>"
             "</ol>"
-            "<h4>🛠️ Owner/Admin کے لیے اہم نوٹس</h4>"
+            "<h4>🛠️ Owner/Admin Notes</h4>"
             "<ul>"
-            "<li>Staff permissions کا مینجمنٹ Owner/Admin کے پاس ہے۔</li>"
-            "<li>Owner/Admin کو تمام assigned areas یا 'ALL' areas دیکھنے کی full authority ہے۔</li>"
-            "<li>یہ رول billing، arrears، اور customer statuses کو درست رکھنے کے لیے ذمہ دار ہے۔</li>"
+            "<li>Owner/Admin can manage staff permissions and tenant-wide settings.</li>"
+            "<li>Owner/Admin has full access to view all assigned areas or 'ALL'.</li>"
+            "<li>This role is responsible for maintaining billing accuracy and customer statuses.</li>"
             "</ul>"
-            "<p>Owner/Admin کے پاس پورے سسٹم کی مکمل گائیڈ لائن ہے، staff کی training، اور software configuration تک مکمل رسائی ہے۔</p>"
-            "<h4>📘 شروع کرنے کا آسان طریقہ</h4>"
-            "<ol>"
-            "<li>Login کریں۔</li>"
-            "<li>Dashboard پر overview statistics دیکھیں۔</li>"
-            "<li>Operational Billing Center میں جا کر collection hub اور edit profile دیکھیں۔</li>"
-            "<li>Ledger history میں transactions verify کریں۔</li>"
-            "</ol>"
-            "<p>یہ گائیڈ آپ کو owner/admin کے طور پر پورے پورٹل کا مکمل کنٹرول سمجھنے میں مدد دے گی۔</p>",
+            "<p>Use Dashboard, Operational Billing Center and Ledger History for full operational control.</p>",
             unsafe_allow_html=True
         )
         st.markdown("</div>", unsafe_allow_html=True)
+
+        st.markdown("<div class='client-card'>", unsafe_allow_html=True)
+        st.markdown(
+            "<h3>Owner / Admin مکمل گائیڈ — اردو</h3>"
+            "<p>یہ سیکشن Owner/Admin کے لیے مکمل سسٹم گائیڈ ہے، جس میں اسٹاف مینجمنٹ، پرمیشنز، اور کنفیگریشن شامل ہیں۔</p>"
+            "<h4>🔑 سسٹم ماڈیولز</h4>"
+            "<ul>"
+            "<li><b>ERP Dashboard:</b> خلاصہ، Active/Paid/Free/Unpaid/Suspended میٹرکس اور فوری فلٹرز دکھاتا ہے۔</li>"
+            "<li><b>Operational Billing Center:</b> کلیکشن، ادائیگیاں، ریورسل، نئے کنکشن، بلک امپورٹ اور ٹرمینل ایڈیٹ کے لیے ہے۔</li>"
+            "<li><b>Lifetime Ledger History:</b> مکمل ٹرانزیکشن لاگ برائے آڈٹ اور انوائس ریورسلز۔</li>"
+            "<li><b>System Access Control:</b> Owner/Admin کے لیے مخصوص؛ علاقے، پیکجز اور اسٹاف پرمیشنز یہاں مینج ہوتی ہیں۔</li>"
+            "</ul>"
+            "<h4>🧠 ایپ لاجک کا خلاصہ</h4>"
+            "<p>ایپ پہلے database سے ڈیٹا لیتی ہے، پھر user کی پرمیشنز اور assigned areas کے مطابق فلٹر کرکے dashboard اور actions دکھاتی ہے۔</p>"
+            "<ol>"
+            "<li>Login کے بعد user کی role اور assigned_areas لوڈ ہوتی ہیں۔</li>"
+            "<li>Dashboard میں اوور ویو اور arrears خلاصہ دکھایا جاتا ہے۔</li>"
+            "<li>Operational Billing Center میں پیمنٹس ریکارڈ کریں، arrears اپ ڈیٹ کریں اور پروفائل ایڈیٹ کریں۔</li>"
+            "<li>کسی صارف کو مفت قرار دینے کے لیے Monthly Rate 0 اور Status 'FREE' کریں۔</li>"
+            "</ol>"
+            "<h4>🛠️ Owner/Admin کے نوٹس</h4>"
+            "<ul>"
+            "<li>Owner/Admin اسٹاف پرمیشنز اور ٹیننٹ سیٹنگز مینیج کرسکتا ہے۔</li>"
+            "<li>Owner/Admin کو تمام assigned areas یا 'ALL' دیکھنے کی مکمل اجازت ہے۔</li>"
+            "<li>یہ رول billing اور customer statuses کی درستگی کا ذمہ دار ہے۔</li>"
+            "</ul>"
+            "<p>پوری آپریشنل کنٹرول کے لیے Dashboard، Operational Billing Center اور Ledger History استعمال کریں۔</p>",
+            unsafe_allow_html=True
+        )
+        st.markdown("</div>", unsafe_allow_html=True)
+
+    # Staff bilingual guide
     else:
         st.markdown("<div class='client-card'>", unsafe_allow_html=True)
         st.markdown(
-            f"<h3>Staff Guide & Limited Access Info</h3>"
+            f"<h3>Staff Guide — English</h3>"
+            f"<p>Your role: <b>{html.escape(str(st.session_state.get('user_role', 'Staff')).upper())}</b></p>"
+            f"<p>Assigned Areas: <b>{html.escape(', '.join(assigned_areas))}</b></p>"
+            "<p>Staff users should focus on these areas:</p>"
+            "<ul>"
+            "<li>View accounts in your assigned areas via the Dashboard.</li>"
+            "<li>Manage customer bills and arrears in the Operational Billing Center.</li>"
+            "<li>Send arrears reminder via WhatsApp from the subscriber row actions.</li>"
+            "<li>Manage free accounts by setting package or billamount to 0.</li>"
+            "</ul>"
+            "<p>You cannot edit system settings or staff permissions; those are Owner/Admin responsibilities.</p>"
+            "<p>Where to find daily tasks: Dashboard → Operational Billing Center → Ledger History.</p>",
+            unsafe_allow_html=True
+        )
+        st.markdown("</div>", unsafe_allow_html=True)
+
+        st.markdown("<div class='client-card'>", unsafe_allow_html=True)
+        st.markdown(
+            f"<h3>Staff Guide & Limited Access Info — اردو</h3>"
             f"<p>آپ کا رول: <b>{html.escape(str(st.session_state.get('user_role', 'Staff')).upper())}</b></p>"
             f"<p>Assigned Areas: <b>{html.escape(', '.join(assigned_areas))}</b></p>"
-            "<p>Staff users کو یہ چیزیں دیکھنی اور manage کرنی ہیں:</p>"
+            "<p>Staff صارفین کو ذیل کے حصے استعمال کرنے چاہئیں:</p>"
             "<ul>"
             "<li>Dashboard میں اپنے assigned areas کے accounts دیکھیں۔</li>"
-            "<li>Operational Billing Center میں customer bill اور arrears manage کریں۔</li>"
-            "<li>Unpaid/Partial/Suspended accounts پر arrears reminder WA بھیجیں۔</li>"
-            "<li>Free accounts کو package یا billamount 0 کے ساتھ manage کریں۔</li>"
+            "<li>Operational Billing Center میں کسٹمر بل اور arrears کا انتظام کریں۔</li>"
+            "<li>سبسکرائبر رو پر WhatsApp سے arrears reminder بھیجیں۔</li>"
+            "<li>Free accounts کو package یا billamount 0 کے ذریعے manage کریں۔</li>"
             "</ul>"
-            "<p>آپ کے پاس system settings یا staff permissions edit کرنے کی authority نہیں ہے۔ یہ exclusive Owner/Admin کے لیے محفوظ ہے۔</p>"
-            "<p>اس guide میں بتایا گیا ہے کہ آپ کو اپنے روزمرہ کام کہاں ملیں گے:</p>"
-            "<ol>"
-            "<li>Dashboard: summary اور arrears overview دیکھیں۔</li>"
-            "<li>Operational Billing Center: bill payment، arrears update، اور customer info edit کریں۔</li>"
-            "<li>Ledger History: transactions دیکھیں اور payment records verify کریں۔</li>"
-            "</ol>"
-            "<p>یہ guide staff کو یہ سمجھنے میں مدد دیتی ہے کہ ان کو کون سا حصہ استعمال کرنا ہے اور owner/admin والا full control انہیں کیوں نہیں ملتا۔</p>",
+            "<p>System settings یا staff permissions edit کرنے کی اجازت نہیں ہے؛ یہ Owner/Admin کے لیے مخصوص ہے۔</p>"
+            "<p>روزمرہ کام کے لیے: Dashboard → Operational Billing Center → Ledger History استعمال کریں۔</p>",
             unsafe_allow_html=True
         )
         st.markdown("</div>", unsafe_allow_html=True)
