@@ -209,6 +209,10 @@ def validate_session():
     if not st.session_state.get('authenticated', False):
         return False
     
+    # Skip validation if password_changed_at is not set in session (backward compatibility)
+    if 'password_changed_at' not in st.session_state or not st.session_state.get('password_changed_at'):
+        return True
+    
     try:
         with get_db_connection() as conn:
             with conn.cursor() as cursor:
@@ -223,7 +227,8 @@ def validate_session():
                     session_password_changed_at = st.session_state.get('password_changed_at', '')
                     
                     # If password has been changed since login, invalidate session
-                    if current_password_changed_at != session_password_changed_at:
+                    # Only validate if both timestamps are non-empty
+                    if current_password_changed_at and session_password_changed_at and current_password_changed_at != session_password_changed_at:
                         logger.warning(f"Session invalidated for user {st.session_state.get('username')} - password changed")
                         st.session_state['authenticated'] = False
                         st.session_state['username'] = ''
@@ -238,7 +243,7 @@ def validate_session():
                 return True
     except Exception as e:
         logger.error(f"Session validation error: {e}")
-        return False
+        return True  # Don't block login on validation errors
 
 
 def restore_login_from_query_params():
