@@ -679,14 +679,21 @@ def fetch_isolated_packages(tenant_id):
 @st.cache_data(ttl=3)
 def fetch_isolated_billing_summary(tenant_id):
     try:
+        current_month_str = datetime.now().strftime("%Y-%m")
         with get_db_connection() as conn:
             with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-                # Get all payments (not just current month) to calculate total received
-                cur.execute("SELECT LOWER(TRIM(customerid)) as customerid, amountpaid FROM billing_history WHERE tenant_id = %s AND transactiontype = 'BILL_PAYMENT'", (tenant_id,))
+                # Get latest payment for each user in current month (not sum of all payments)
+                cur.execute("""
+                    SELECT LOWER(TRIM(customerid)) as customerid, amountpaid 
+                    FROM billing_history 
+                    WHERE tenant_id = %s AND transactiontype = 'BILL_PAYMENT' AND datetimestamp LIKE %s
+                    ORDER BY datetimestamp DESC
+                """, (tenant_id, current_month_str + '%'))
                 rows = cur.fetchall()
                 if rows:
                     df = pd.DataFrame(rows)
-                    return df.groupby('customerid')['amountpaid'].sum().to_dict()
+                    # Only keep the first (latest) payment for each user
+                    return df.drop_duplicates(subset='customerid', keep='first').set_index('customerid')['amountpaid'].to_dict()
     except Exception as e:
         logger.error(f"Error fetching billing summary: {e}")
     return {}
@@ -1314,7 +1321,9 @@ if routing_node in ["📊 Core Analytics Dashboard", "📊 Lynx Dashboard"]:
                         (segment['package'].astype(str).str.contains('free', case=False, na=False))
                     ])
                     hub_uids = [str(x).lower().strip() for x in segment['username'].tolist() if x]
-                    hub_collected = sum(collection_map.get(uid, 0) for uid in hub_uids)
+                    # Only sum payments for users who are currently marked as PAID
+                    paid_uids = [str(x).lower().strip() for x in segment[segment['status'] == 'PAID']['username'].tolist() if x]
+                    hub_collected = sum(collection_map.get(uid, 0) for uid in paid_uids)
                     b_color = active_theme['heading'] if (i+j)%2 == 0 else active_theme['accent']
                     with cols[j]:
                         st.markdown(f"""
