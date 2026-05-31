@@ -1542,6 +1542,22 @@ if routing_node in ["📊 Core Analytics Dashboard", "📊 Lynx Dashboard"]:
                     </div>
                     """, unsafe_allow_html=True)
 
+                    # Customer Details Confirmation
+                    st.markdown("---")
+                    st.markdown("### 👤 Customer Details Confirmation")
+                    st.markdown(f"""
+                    <div style='background: {active_theme['background']}; padding: 15px; border-radius: 8px; border: 1px solid {active_theme['border']};'>
+                        <p><b>🆔 Username:</b> {selected_uid}</p>
+                        <p><b>👤 Customer Name:</b> {selected_row.get('customername', '')}</p>
+                        <p><b>📱 Phone:</b> {selected_row.get('phone', '')}</p>
+                        <p><b>📍 Area:</b> {selected_row.get('area', '')}</p>
+                        <p><b>📦 Package:</b> {selected_row.get('package', '')}</p>
+                        <p><b>💰 Bill Amount:</b> Rs. {dp_base_bill:,}</p>
+                        <p><b>📅 Current Expiry:</b> {selected_row.get('expirydate', '')}</p>
+                    </div>
+                    """, unsafe_allow_html=True)
+                    st.warning("⚠️ Please verify the customer details above before proceeding with payment.")
+
                     if st.button("💳 SETTLE THIS UNPAID ACCOUNT", key=f"dashboard_pay_{selected_uid}", use_container_width=True):
                         # Check if already paid this month
                         current_month = datetime.now().strftime("%Y-%m")
@@ -2245,6 +2261,22 @@ elif routing_node == "👥 Operational Billing Center":
                         <p>💾 <b>New Balanceshift/Arrears Log:</b> Rs. {future_shift:,}</p>
                     </div>
                     """, unsafe_allow_html=True)
+
+                    # Customer Details Confirmation
+                    st.markdown("---")
+                    st.markdown("### 👤 Customer Details Confirmation")
+                    st.markdown(f"""
+                    <div style='background: {active_theme['background']}; padding: 15px; border-radius: 8px; border: 1px solid {active_theme['border']};'>
+                        <p><b>🆔 Username:</b> {resolved_uid}</p>
+                        <p><b>👤 Customer Name:</b> {node_row_dict.get('customername', '')}</p>
+                        <p><b>📱 Phone:</b> {node_row_dict.get('phone', '')}</p>
+                        <p><b>📍 Area:</b> {node_row_dict.get('area', '')}</p>
+                        <p><b>📦 Package:</b> {node_row_dict.get('package', '')}</p>
+                        <p><b>💰 Bill Amount:</b> Rs. {base_bill:,}</p>
+                        <p><b>📅 Current Expiry:</b> {node_row_dict.get('expirydate', '')}</p>
+                    </div>
+                    """, unsafe_allow_html=True)
+                    st.warning("⚠️ Please verify the customer details above before proceeding with payment.")
                     
                     if st.button("💳 POST TRANSACTION & EXTEND LINE", use_container_width=True):
                         # Check if already paid this month
