@@ -1220,7 +1220,25 @@ if st.session_state['authenticated'] and not st.session_state['portal_mode']:
         st.markdown(f"📱 **Install App**")
         st.caption("Install as mobile app")
         if st.button("📲 Install PWA App", use_container_width=True, key="pwa_install"):
-            st.info("To install this app:\n\n1. Tap 'Share' button in your browser\n2. Select 'Add to Home Screen'\n3. Follow the prompts\n\nThis will install the app on your phone for offline use.")
+            st.markdown("""
+            ### 📲 How to Install This App
+            
+            **For Android (Chrome):**
+            1. Tap the three dots (⋮) menu in Chrome
+            2. Select "Add to Home Screen" or "Install App"
+            3. Tap "Add" or "Install"
+            
+            **For iPhone (Safari):**
+            1. Tap the Share button (box with arrow)
+            2. Scroll down and tap "Add to Home Screen"
+            3. Tap "Add" in the top right
+            
+            **For Desktop (Chrome/Edge):**
+            1. Click the install icon (⊕) in the address bar
+            2. Click "Install"
+            
+            **Note:** If you don't see these options, your browser may not support PWA installation. Try using Chrome or Safari.
+            """)
         
         # Manual Sync Button
         st.markdown(f"🔄 **Sync Data**")
