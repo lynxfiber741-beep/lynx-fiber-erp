@@ -2433,18 +2433,23 @@ elif routing_node == "👥 Operational Billing Center":
                         inserted_rows = 0
                         skipped_duplicates = 0
                         failed_rows = 0
+                        skipped_list = []
+                        failed_list = []
                         with st.spinner("Processing Matrix Data..."):
                             with get_db_connection() as conn:
                                 with conn.cursor() as cursor:
                                     for idx, row in df_upload.iterrows():
                                         try:
                                             clean_id = str(row.get('username', '')).strip().lower()
+                                            c_name = str(row.get('customername', '')).strip()
                                             if clean_id == 'nan' or not clean_id:
                                                 failed_rows += 1
+                                                failed_list.append(f"Row {idx+1}: Username missing or blank (Name: {c_name})")
                                                 continue
                                             cursor.execute("SELECT COUNT(*) FROM customers WHERE username = %s AND tenant_id = %s", (clean_id, st.session_state['tenant_id']))
                                             if cursor.fetchone()[0] > 0:
                                                 skipped_duplicates += 1
+                                                skipped_list.append(f"Row {idx+1}: {clean_id} - {c_name} (Already exists)")
                                                 continue
                                             c_name = str(row.get('customername', 'Unknown')).strip()
                                             if c_name.lower() == 'nan': c_name = 'Unknown'
@@ -2485,11 +2490,29 @@ elif routing_node == "👥 Operational Billing Center":
                                                 VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, 0, 'UNPAID', %s, %s)
                                             """, (clean_id, c_name, c_phone, c_cnic, c_pkg, bill_amt, c_area, c_addr, c_onu, default_expiry, st.session_state['tenant_id']))
                                             inserted_rows += 1
-                                        except Exception:
+                                        except Exception as e:
                                             failed_rows += 1
+                                            failed_list.append(f"Row {idx+1}: {clean_id} - {c_name} (Error: {str(e)[:50]})")
                         insert_activity_log(st.session_state['tenant_id'], st.session_state['username'], "BULK_IMPORT", f"Bulk processing - Inserted: {inserted_rows}, Skipped: {skipped_duplicates}, Failures: {failed_rows}")
                         st.success(f"🚀 Matrix Processed Successfully!")
                         st.info(f"📊 Results: {inserted_rows} Added | {skipped_duplicates} Duplicates Skipped | {failed_rows} Blanks Ignored.")
+                        
+                        # Show skipped users list
+                        if skipped_list:
+                            st.markdown("---")
+                            st.markdown("### ⚠️ Skipped (Duplicates)")
+                            with st.expander(f"View {len(skipped_list)} skipped users"):
+                                for item in skipped_list:
+                                    st.text(f"• {item}")
+                        
+                        # Show failed users list
+                        if failed_list:
+                            st.markdown("---")
+                            st.markdown("### ❌ Failed (Errors/Blanks)")
+                            with st.expander(f"View {len(failed_list)} failed users"):
+                                for item in failed_list:
+                                    st.text(f"• {item}")
+                        
                         st.cache_data.clear()
                 except Exception as ex:
                     st.error(f"Critical Upload Error: {ex}")
