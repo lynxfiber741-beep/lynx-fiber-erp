@@ -538,6 +538,8 @@ def run_live_migrations():
                 cursor.execute("ALTER TABLE system_tenants ADD COLUMN IF NOT EXISTS whatsapp_token TEXT DEFAULT '';")
                 cursor.execute("ALTER TABLE system_tenants ADD COLUMN IF NOT EXISTS whatsapp_enabled BOOLEAN DEFAULT FALSE;")
                 cursor.execute("ALTER TABLE system_tenants ADD COLUMN IF NOT EXISTS whatsapp_templates TEXT DEFAULT '';")
+                # Add password_changed_at column to users table for session security
+                cursor.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS password_changed_at TEXT DEFAULT '';")
         logger.info("Database migrations completed successfully")
     except Exception as exc:
         logger.error(f"Migration Error: {exc}")
