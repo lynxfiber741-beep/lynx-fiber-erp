@@ -165,6 +165,7 @@ def verify_password(password: str, hashed_password: str) -> bool:
 
 def insert_activity_log(tenant_id, username, action_type, description):
     if not tenant_id or not username or not action_type:
+        logger.warning(f"Activity log skipped - missing parameters: tenant_id={tenant_id}, username={username}, action_type={action_type}")
         return False
 
     try:
@@ -172,20 +173,31 @@ def insert_activity_log(tenant_id, username, action_type, description):
         ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         with get_db_connection() as conn:
             with conn.cursor() as cursor:
+                # Only create table if it doesn't exist (check first to avoid redundant operations)
                 cursor.execute("""
-                    CREATE TABLE IF NOT EXISTS activity_logs (
-                        log_id TEXT PRIMARY KEY,
-                        tenant_id TEXT NOT NULL,
-                        username TEXT NOT NULL,
-                        action_type TEXT NOT NULL,
-                        description TEXT NOT NULL,
-                        timestamp TEXT NOT NULL DEFAULT ''
+                    SELECT EXISTS (
+                        SELECT FROM information_schema.tables 
+                        WHERE table_name = 'activity_logs'
                     )
                 """)
+                table_exists = cursor.fetchone()[0]
+                if not table_exists:
+                    cursor.execute("""
+                        CREATE TABLE activity_logs (
+                            log_id TEXT PRIMARY KEY,
+                            tenant_id TEXT NOT NULL,
+                            username TEXT NOT NULL,
+                            action_type TEXT NOT NULL,
+                            description TEXT NOT NULL,
+                            timestamp TEXT NOT NULL DEFAULT ''
+                        )
+                    """)
+                    logger.info("Created activity_logs table")
                 cursor.execute("""
                     INSERT INTO activity_logs (log_id, tenant_id, username, action_type, description, timestamp)
                     VALUES (%s, %s, %s, %s, %s, %s)
                 """, (log_id, tenant_id, username, action_type, description, ts))
+        logger.info(f"Activity log inserted: {action_type} by {username}")
         return True
     except Exception as exc:
         logger.error(f"Activity log error: {exc}")
@@ -475,13 +487,15 @@ def run_live_migrations():
     try:
         with get_db_connection() as conn:
             with conn.cursor() as cursor:
-                cursor.execute("ALTER TABLE activity_logs ADD COLUMN IF NOT EXISTS timestamp TEXT NOT NULL DEFAULT '';")
-                cursor.execute("ALTER TABLE activity_logs ADD COLUMN IF NOT EXISTS description TEXT NOT NULL DEFAULT '';")
+                # Remove redundant ALTER statements for activity_logs since columns already exist in CREATE TABLE
+                # cursor.execute("ALTER TABLE activity_logs ADD COLUMN IF NOT EXISTS timestamp TEXT NOT NULL DEFAULT '';")
+                # cursor.execute("ALTER TABLE activity_logs ADD COLUMN IF NOT EXISTS description TEXT NOT NULL DEFAULT '';")
                 cursor.execute("ALTER TABLE system_tenants ADD COLUMN IF NOT EXISTS staff_permissions TEXT DEFAULT '';")
                 cursor.execute("ALTER TABLE system_tenants ADD COLUMN IF NOT EXISTS whatsapp_instance_id TEXT DEFAULT '';")
                 cursor.execute("ALTER TABLE system_tenants ADD COLUMN IF NOT EXISTS whatsapp_token TEXT DEFAULT '';")
                 cursor.execute("ALTER TABLE system_tenants ADD COLUMN IF NOT EXISTS whatsapp_enabled BOOLEAN DEFAULT FALSE;")
                 cursor.execute("ALTER TABLE system_tenants ADD COLUMN IF NOT EXISTS whatsapp_templates TEXT DEFAULT '';")
+        logger.info("Database migrations completed successfully")
     except Exception as exc:
         logger.error(f"Migration Error: {exc}")
 
@@ -2139,17 +2153,6 @@ elif routing_node == "🔐 System Access Control":
             st.markdown("### 📋 System Activity & User Login Logs")
             try:
                 with get_db_connection() as conn:
-                    with conn.cursor() as cur:
-                        cur.execute("""
-                            CREATE TABLE IF NOT EXISTS activity_logs (
-                                log_id TEXT PRIMARY KEY,
-                                tenant_id TEXT NOT NULL,
-                                username TEXT NOT NULL,
-                                action_type TEXT NOT NULL,
-                                description TEXT NOT NULL,
-                                timestamp TEXT NOT NULL DEFAULT ''
-                            )
-                        """)
                     with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
                         if is_master_owner:
                             cur.execute("SELECT timestamp, tenant_id, username, action_type, description FROM activity_logs ORDER BY timestamp DESC LIMIT 500")
@@ -2161,6 +2164,7 @@ elif routing_node == "🔐 System Access Control":
                 else:
                     st.info("Abhi tak koi logs jama nahi huay. Agar activity logs tab missing ho, تو ایڈمن ڈیش بورڈ چیک کریں یا دوبارہ اپلیکیشن رنز کریں۔")
             except Exception as log_err:
+                logger.error(f"Logs pull karne mein masla aya: {log_err}")
                 st.error(f"Logs pull karne mein masla aya: {log_err}")
                 st.info("🔧 اگر یہ ایرر ٹیبل نہ ہونے کی وجہ سے ہو تو، صفحہ دوبارہ لوڈ کریں یا لاگ فنکشن دوبارہ initialize کریں۔")
 
