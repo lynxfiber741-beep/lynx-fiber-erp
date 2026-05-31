@@ -962,11 +962,10 @@ if st.session_state['authenticated'] and not st.session_state['portal_mode']:
         # AI Help Chat Interface (in sidebar)
         if st.session_state.get('show_ai_help', False):
             st.write("---")
-            st.markdown(f"<div style='background: {active_theme['card_bg']}; padding: 15px; border-radius: 8px; border: 2px solid {active_theme['accent']};'>", unsafe_allow_html=True)
-            st.markdown("<h4 style='margin-top:0;'>💬 AI Help / مددگار</h4>")
-            st.markdown("<p style='font-size:12px; margin-bottom:10px;'>Ask about billing, customers, payments, etc.</p>")
+            st.subheader("💬 AI Help / مددگار")
+            st.caption("Ask about billing, customers, payments, etc.")
             
-            user_question = st.text_input("Your question:", placeholder="e.g., How to record payment?", label_visibility="collapsed", key="ai_sidebar_input")
+            user_question = st.text_input("Your question:", placeholder="e.g., How to record payment?", key="ai_sidebar_input")
             
             if st.button("🤖 Ask", use_container_width=True, key="ai_sidebar_ask"):
                 if user_question and user_question.strip():
@@ -976,14 +975,12 @@ if st.session_state['authenticated'] and not st.session_state['portal_mode']:
                             st.session_state.get('user_role', 'staff'),
                             st.session_state.get('current_node', 'Dashboard')
                         )
-                    st.markdown(f"<div style='background: {active_theme['bg']}; padding: 10px; border-radius: 6px; margin-top:10px; font-size:12px;'>", unsafe_allow_html=True)
-                    st.markdown(f"<p style='margin:0;'>{ai_response}</p>", unsafe_allow_html=True)
-                    st.markdown("</div>", unsafe_allow_html=True)
+                    st.info(ai_response)
                 else:
                     st.warning("Please enter a question")
             
-            st.markdown("<hr style='margin: 10px 0;'>")
-            st.markdown("<p style='font-size:11px; margin-bottom:5px;'>Quick Questions:</p>")
+            st.write("---")
+            st.markdown("**Quick Questions:**")
             col_q1, col_q2 = st.columns(2)
             with col_q1:
                 if st.button("Payment", use_container_width=True, key="ai_q1"):
@@ -1002,12 +999,9 @@ if st.session_state['authenticated'] and not st.session_state['portal_mode']:
                         st.session_state.get('user_role', 'staff'),
                         st.session_state.get('current_node', 'Dashboard')
                     )
-                st.markdown(f"<div style='background: {active_theme['bg']}; padding: 10px; border-radius: 6px; margin-top:10px; font-size:12px;'>", unsafe_allow_html=True)
-                st.markdown(f"<p style='margin:0;'>{ai_response}</p>", unsafe_allow_html=True)
-                st.markdown("</div>", unsafe_allow_html=True)
+                st.info(ai_response)
                 del st.session_state['ai_quick_q']
             
-            st.markdown("</div>", unsafe_allow_html=True)
             st.write("---")
         else:
             st.write("---")
