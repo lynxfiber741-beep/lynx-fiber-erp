@@ -540,6 +540,12 @@ def run_live_migrations():
                 cursor.execute("ALTER TABLE system_tenants ADD COLUMN IF NOT EXISTS whatsapp_templates TEXT DEFAULT '';")
                 # Add password_changed_at column to users table for session security
                 cursor.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS password_changed_at TEXT DEFAULT '';")
+                # Migrate existing expiry dates to datetime format
+                cursor.execute("""
+                    UPDATE customers 
+                    SET expirydate = expirydate || ' 12:00:00' 
+                    WHERE expirydate NOT LIKE '%:%' AND expirydate != ''
+                """)
         logger.info("Database migrations completed successfully")
     except Exception as exc:
         logger.error(f"Migration Error: {exc}")
@@ -1481,11 +1487,17 @@ if routing_node in ["📊 Core Analytics Dashboard", "📊 Lynx Dashboard"]:
                         today_dt = datetime.now()
                         current_expiry_str = str(selected_row.get('expirydate', '')).strip()
                         try:
-                            dp_old_expiry = datetime.strptime(current_expiry_str, "%Y-%m-%d")
+                            # Try datetime format (YYYY-MM-DD HH:MM:SS)
+                            dp_old_expiry = datetime.strptime(current_expiry_str, "%Y-%m-%d %H:%M:%S")
                             dp_base_dt = today_dt if dp_old_expiry < today_dt else dp_old_expiry
                         except Exception:
-                            dp_base_dt = today_dt
-                        dp_new_expiry = (dp_base_dt + relativedelta(months=dp_months)).strftime("%Y-%m-%d")
+                            try:
+                                # Try date format (YYYY-MM-DD)
+                                dp_old_expiry = datetime.strptime(current_expiry_str, "%Y-%m-%d")
+                                dp_base_dt = today_dt if dp_old_expiry < today_dt else dp_old_expiry
+                            except Exception:
+                                dp_base_dt = today_dt
+                        dp_new_expiry = (dp_base_dt + relativedelta(months=dp_months)).strftime("%Y-%m-%d %H:%M:%S")
                         dp_invoice_uuid = f"INV-{uuid.uuid4().hex[:10].upper()}"
                         with get_db_connection() as conn:
                             with conn.cursor() as cursor:
@@ -2156,11 +2168,17 @@ elif routing_node == "👥 Operational Billing Center":
                     today_dt = datetime.now()
                     current_expiry_str = str(node_row_dict.get('expirydate', '')).strip()
                     try:
-                        old_expiry_dt = datetime.strptime(current_expiry_str, "%Y-%m-%d")
+                        # Try datetime format (YYYY-MM-DD HH:MM:SS)
+                        old_expiry_dt = datetime.strptime(current_expiry_str, "%Y-%m-%d %H:%M:%S")
                         base_dt = today_dt if old_expiry_dt < today_dt else old_expiry_dt
                     except Exception:
-                        base_dt = today_dt
-                    new_expiry = (base_dt + relativedelta(months=billing_months)).strftime("%Y-%m-%d")
+                        try:
+                            # Try date format (YYYY-MM-DD)
+                            old_expiry_dt = datetime.strptime(current_expiry_str, "%Y-%m-%d")
+                            base_dt = today_dt if old_expiry_dt < today_dt else old_expiry_dt
+                        except Exception:
+                            base_dt = today_dt
+                    new_expiry = (base_dt + relativedelta(months=billing_months)).strftime("%Y-%m-%d %H:%M:%S")
                     invoice_uuid = f"INV-{uuid.uuid4().hex[:10].upper()}"
                     
                     with get_db_connection() as conn:
@@ -2284,10 +2302,16 @@ elif routing_node == "👥 Operational Billing Center":
                                     
                                 current_exp_str = str(node_sr.get('expirydate', '')).strip()
                                 try:
-                                    current_exp_dt = datetime.strptime(current_exp_str, "%Y-%m-%d")
-                                    restored_expiry = (current_exp_dt - relativedelta(months=est_months)).strftime("%Y-%m-%d")
+                                    # Try datetime format (YYYY-MM-DD HH:MM:SS)
+                                    current_exp_dt = datetime.strptime(current_exp_str, "%Y-%m-%d %H:%M:%S")
+                                    restored_expiry = (current_exp_dt - relativedelta(months=est_months)).strftime("%Y-%m-%d %H:%M:%S")
                                 except:
-                                    restored_expiry = (datetime.now()).strftime("%Y-%m-%d")
+                                    try:
+                                        # Try date format (YYYY-MM-DD)
+                                        current_exp_dt = datetime.strptime(current_exp_str, "%Y-%m-%d")
+                                        restored_expiry = (current_exp_dt - relativedelta(months=est_months)).strftime("%Y-%m-%d 12:00:00")
+                                    except:
+                                        restored_expiry = (datetime.now()).strftime("%Y-%m-%d 12:00:00")
                                     
                                 cursor.execute("""
                                     UPDATE customers SET balanceshift = %s, status = 'UNPAID', expirydate = %s WHERE username = %s AND tenant_id = %s
@@ -2341,7 +2365,7 @@ elif routing_node == "👥 Operational Billing Center":
                                 if cursor.fetchone()[0] > 0:
                                     st.error("❌ Identity Key / Username duplicate inside logs.")
                                 else:
-                                    default_expiry = (datetime.now() + relativedelta(months=1)).strftime("%Y-%m-%d")
+                                    default_expiry = (datetime.now() + relativedelta(months=1)).strftime("%Y-%m-%d 12:00:00")
                                     cursor.execute("""
                                         INSERT INTO customers (username, customername, phone, cnic, package, billamount, area, address, onuserialnumber, balanceshift, status, expirydate, tenant_id)
                                         VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, 0, 'UNPAID', %s, %s)
@@ -2409,13 +2433,18 @@ elif routing_node == "👥 Operational Billing Center":
                                             csv_expiry = str(row.get('expirydate', '')).strip()
                                             if csv_expiry and csv_expiry.lower() != 'nan':
                                                 try:
-                                                    # Validate date format
-                                                    datetime.strptime(csv_expiry, "%Y-%m-%d")
+                                                    # Try datetime format (YYYY-MM-DD HH:MM:SS)
+                                                    datetime.strptime(csv_expiry, "%Y-%m-%d %H:%M:%S")
                                                     default_expiry = csv_expiry
                                                 except:
-                                                    default_expiry = (datetime.now() + relativedelta(months=1)).strftime("%Y-%m-%d")
+                                                    try:
+                                                        # Try date format (YYYY-MM-DD) - add default time 12:00:00
+                                                        datetime.strptime(csv_expiry, "%Y-%m-%d")
+                                                        default_expiry = csv_expiry + " 12:00:00"
+                                                    except:
+                                                        default_expiry = (datetime.now() + relativedelta(months=1)).strftime("%Y-%m-%d 12:00:00")
                                             else:
-                                                default_expiry = (datetime.now() + relativedelta(months=1)).strftime("%Y-%m-%d")
+                                                default_expiry = (datetime.now() + relativedelta(months=1)).strftime("%Y-%m-%d 12:00:00")
                                             cursor.execute("""
                                                 INSERT INTO customers (username, customername, phone, cnic, package, billamount, area, address, onuserialnumber, balanceshift, status, expirydate, tenant_id)
                                                 VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, 0, 'UNPAID', %s, %s)
