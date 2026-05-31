@@ -688,7 +688,78 @@ def validate_email(email_str: str) -> bool:
     return bool(re.match(email_pattern, str(email_str).strip()))
 
 # ==========================================
-# 4.5. THEME ENGINE & CSS GENERATOR
+# 4.5. AI HELP ASSISTANT KNOWLEDGE BASE
+# ==========================================
+AI_KNOWLEDGE_BASE = {
+    # English questions
+    "billing": "To record payment: Go to Operational Billing Center → Select customer → Enter amount → Click Pay. You can also use the Quick Pay feature in Dashboard.",
+    "payment": "To record payment: Go to Operational Billing Center → Select customer → Enter amount → Click Pay. You can also use the Quick Pay feature in Dashboard.",
+    "customer": "To add new customer: Go to Operational Billing Center → Provision New Client → Fill details (username, name, phone, package, area) → Click Save.",
+    "add customer": "To add new customer: Go to Operational Billing Center → Provision New Client → Fill details (username, name, phone, package, area) → Click Save.",
+    "login": "Login credentials: Tenant ID, Username, and Password. Contact your admin if you forgot your password.",
+    "password": "To reset password: Contact your admin or owner. Staff cannot reset their own passwords for security.",
+    "package": "To change package: Go to Operational Billing Center → Edit Terminal Profile → Update package and rate → Save changes.",
+    "suspend": "To suspend line: Go to Operational Billing Center → Status & Reversal Control → Select customer → Click Suspend Line.",
+    "activate": "To activate line: Go to Operational Billing Center → Status & Reversal Control → Select customer → Click Activate Line.",
+    "arrears": "Arrears are unpaid dues. To clear arrears: Record payment with amount greater than monthly rate. The excess will reduce arrears.",
+    "reverse": "To reverse payment: Go to Operational Billing Center → Status & Reversal Control → Select customer → Click Reverse Last Payment.",
+    "bulk import": "To bulk import: Go to Operational Billing Center → Bulk Import → Upload Excel file with customer data → Click Import.",
+    "whatsapp": "To enable WhatsApp: Go to System Access Control → Branding & WhatsApp Controls → Enter Green-API credentials → Enable WhatsApp.",
+    "backup": "To backup data: Go to System Access Control → Data Backup Vault → Select backup scope → Click Generate Backup → Download JSON file.",
+    "staff": "To add staff: Go to System Access Control → Access Accounts Management → Create new staff account → Set role and permissions.",
+    "area": "To add area: Go to System Access Control → Dynamic Area Hubs Sector → Add new area → Save.",
+    "license": "To check license: Look at the sidebar for Account Life status. Contact Master Owner if license is expired.",
+    "guide": "For complete guide: Click on ISP Guide in the sidebar. It has detailed instructions in English and Urdu.",
+    "help": "I'm here to help! Ask me about billing, customers, payments, packages, or any other feature.",
+    
+    # Urdu questions
+    "بلنگ": "پیمنٹ ریکارڈ کرنے کے لیے: Operational Billing Center جائیں → کسٹمر منتخب کریں → amount درج کریں → Pay پر کلک کریں۔ Dashboard میں Quick Pay بھی استعمال کر سکتے ہیں۔",
+    "پیمنٹ": "پیمنٹ ریکارڈ کرنے کے لیے: Operational Billing Center جائیں → کسٹمر منتخب کریں → amount درج کریں → Pay پر کلک کریں۔ Dashboard میں Quick Pay بھی استعمال کر سکتے ہیں۔",
+    "کسٹمر": "نئے کسٹمر شامل کرنے کے لیے: Operational Billing Center جائیں → Provision New Client → تفصیلات بھریں (username, name, phone, package, area) → Save پر کلک کریں۔",
+    "لاگ ان": "لاگ ان کریڈینشلز: Tenant ID، Username، اور Password۔ پاس ورڈ بھول گئے ہوں تو اپنے admin سے رابطہ کریں۔",
+    "پاس ورڈ": "پاس ورڈ ری سیٹ کرنے کے لیے: اپنے admin یا owner سے رابطہ کریں۔ سیکیورٹی کی وجہ سے staff اپنا پاس ورڈ خود ری سیٹ نہیں کر سکتے۔",
+    "پیکج": "پیکج تبدیل کرنے کے لیے: Operational Billing Center جائیں → Edit Terminal Profile → package اور rate اپ ڈیٹ کریں → تبدیلیاں محفوظ کریں۔",
+    "سسپینڈ": "لائن سسپینڈ کرنے کے لیے: Operational Billing Center جائیں → Status & Reversal Control → کسٹمر منتخب کریں → Suspend Line پر کلک کریں۔",
+    "ایکٹیویٹ": "لائن ایکٹیویٹ کرنے کے لیے: Operational Billing Center جائیں → Status & Reversal Control → کسٹمر منتخب کریں → Activate Line پر کلک کریں۔",
+    "اریرز": "اریرز ادا نہ کی گئی رقم ہیں۔ اریرز صاف کرنے کے لیے: ماہانہ rate سے زیادہ amount کے ساتھ پیمنٹ ریکارڈ کریں۔ زیادہ رقم اریرز کم کر دے گی۔",
+    "ریورس": "پیمنٹ ریورس کرنے کے لیے: Operational Billing Center جائیں → Status & Reversal Control → کسٹمر منتخب کریں → Reverse Last Payment پر کلک کریں۔",
+    "بلک امپورٹ": "بلک امپورٹ کرنے کے لیے: Operational Billing Center جائیں → Bulk Import → Excel فائل اپ لوڈ کریں → Import پر کلک کریں۔",
+    "واٹس ایپ": "WhatsApp فعال کرنے کے لیے: System Access Control جائیں → Branding & WhatsApp Controls → Green-API کریڈینشلز درج کریں → WhatsApp فعال کریں۔",
+    "بیک اپ": "ڈیٹا بیک اپ کرنے کے لیے: System Access Control جائیں → Data Backup Vault → backup scope منتخب کریں → Generate Backup پر کلک کریں → JSON فائل ڈاؤن لوڈ کریں۔",
+    "اسٹاف": "اسٹاف شامل کرنے کے لیے: System Access Control جائیں → Access Accounts Management → نئا staff اکاؤنٹ بنائیں → role اور permissions سیٹ کریں۔",
+    "علاقہ": "علاقہ شامل کرنے کے لیے: System Access Control جائیں → Dynamic Area Hubs Sector → نئا علاقہ شامل کریں → محفوظ کریں۔",
+    "لائسنس": "لائسنس چیک کرنے کے لیے: sidebar میں Account Life status دیکھیں۔ لائسنس expired ہو تو Master Owner سے رابطہ کریں۔",
+    "گائیڈ": "مکمل گائیڈ کے لیے: sidebar میں ISP Guide پر کلک کریں۔ اس میں English اور Urdu میں تفصیلی ہدایات ہیں۔",
+    "مدد": "میں مدد کے لیے حاضر ہوں! مجھ سے بلنگ، کسٹمرز، پیمنٹس، پیکجز، یا کسی بھی فیچر کے بارے میں پوچھیں۔",
+}
+
+def get_ai_help(question: str, user_role: str, current_page: str) -> str:
+    """Get AI help response based on question"""
+    if not question or not question.strip():
+        return "Please ask a question about the app. / براہ کرم ایپ کے بارے میں کوئی سوال پوچھیں۔"
+    
+    question_lower = question.lower().strip()
+    
+    # Check for keywords in knowledge base
+    for keyword, answer in AI_KNOWLEDGE_BASE.items():
+        if keyword in question_lower:
+            return answer
+    
+    # Context-aware responses
+    if "dashboard" in question_lower or "ڈیش بورڈ" in question_lower:
+        return "Dashboard shows overview of all customers, their status, and quick payment options. Use filters to view specific areas or statuses. / Dashboard تمام کسٹمرز کا خلاصہ، ان کی status، اور فوری پیمنٹ آپشنز دکھاتا ہے۔ مخصوص علاقوں یا status دیکھنے کے لیے فلٹرز استعمال کریں۔"
+    
+    if "ledger" in question_lower or "history" in question_lower or "لاگر" in question_lower:
+        return "Lifetime Ledger History shows all payment transactions. You can filter by date and export reports. / Lifetime Ledger History تمام پیمنٹ ٹرانزیکشنز دکھاتا ہے۔ آپ تاریخ کے ذریعے فلٹر کر سکتے ہیں اور رپورٹس ایکسپورٹ کر سکتے ہیں۔"
+    
+    if "admin" in question_lower or "owner" in question_lower:
+        return "System Access Control is only for Owner and Admin roles. It manages staff, packages, areas, and system settings. / System Access Control صرف Owner اور Admin roles کے لیے ہے۔ یہ staff، packages، areas، اور system settings مینج کرتا ہے۔"
+    
+    # Default response
+    return "I didn't understand that question. Try asking about billing, customers, payments, packages, or use the ISP Guide for detailed help. / میں اس سوال کو نہیں سمجھا۔ بلنگ، کسٹمرز، پیمنٹس، پیکجز کے بارے میں پوچھنے کی کوشش کریں، یا تفصیلی مدد کے لیے ISP Guide استعمال کریں۔"
+
+# ==========================================
+# 4.6. THEME ENGINE & CSS GENERATOR
 # ==========================================
 THEMES = {
     "Dark Nebula (Default)": {
@@ -880,6 +951,14 @@ if st.session_state['authenticated'] and not st.session_state['portal_mode']:
                 st.session_state['current_node'] = "🔐 System Access Control"
                 st.rerun()
         st.write("---")
+        
+        # AI Help Assistant Button
+        if 'show_ai_help' not in st.session_state:
+            st.session_state['show_ai_help'] = False
+        if st.button("🤖 AI Help Assistant", use_container_width=True):
+            st.session_state['show_ai_help'] = not st.session_state['show_ai_help']
+            st.rerun()
+        st.write("---")
         st.markdown(f"🎨 **Personalize Theme**")
         selected_theme = st.selectbox(
             "Select UI Theme", list(THEMES.keys()), index=list(THEMES.keys()).index(st.session_state['app_theme']), label_visibility="collapsed"
@@ -902,6 +981,71 @@ if st.session_state['authenticated'] and not st.session_state['portal_mode']:
                 if hasattr(st, 'experimental_set_query_params'):
                     st.experimental_set_query_params()
             st.rerun()
+
+# ==========================================
+# AI HELP ASSISTANT POPUP
+# ==========================================
+if st.session_state.get('show_ai_help', False) and st.session_state.get('authenticated', False):
+    st.markdown("---")
+    with st.expander("🤖 AI Help Assistant / مددگار", expanded=True):
+        st.markdown(f"<div class='client-card' style='border: 2px solid {active_theme['accent']};'>", unsafe_allow_html=True)
+        st.markdown("<h4>💬 Ask me anything about the app / ایپ کے بارے میں کچھ بھی پوچھیں</h4>")
+        st.markdown("<p><b>Topics I can help with:</b> Billing, Payments, Customers, Packages, Login, WhatsApp, Backup, and more.</p>")
+        st.markdown("<p><b>مجھ سے پوچھ سکتے ہیں:</b> بلنگ، پیمنٹس، کسٹمرز، پیکجز، لاگ ان، واٹس ایپ، بیک اپ، اور مزید۔</p>")
+        
+        user_question = st.text_input("Type your question here / اپنا سوال یہاں لکھیں:", placeholder="e.g., How to record payment? / پیمنٹ کیسے ریکارڈ کریں؟")
+        
+        if st.button("🤖 Ask AI / AI سے پوچھیں", use_container_width=True):
+            if user_question and user_question.strip():
+                with st.spinner("AI thinking... / AI سوچ رہا ہے..."):
+                    ai_response = get_ai_help(
+                        user_question,
+                        st.session_state.get('user_role', 'staff'),
+                        st.session_state.get('current_node', 'Dashboard')
+                    )
+                st.markdown(f"<div style='background: {active_theme['card_bg']}; padding: 15px; border-radius: 8px; border-left: 4px solid {active_theme['accent']}; margin: 10px 0;'>", unsafe_allow_html=True)
+                st.markdown(f"<p style='color: {active_theme['text']};'><b>🤖 AI Answer:</b></p>", unsafe_allow_html=True)
+                st.markdown(f"<p style='color: {active_theme['text']};'>{ai_response}</p>", unsafe_allow_html=True)
+                st.markdown("</div>", unsafe_allow_html=True)
+            else:
+                st.warning("Please enter a question / براہ کرم سوال درج کریں")
+        
+        st.markdown("<hr>")
+        st.markdown("<h5>📝 Quick Questions / فوری سوالات</h5>")
+        col_q1, col_q2 = st.columns(2)
+        with col_q1:
+            if st.button("How to record payment?", use_container_width=True):
+                st.session_state['ai_quick_question'] = "How to record payment?"
+                st.rerun()
+            if st.button("How to add customer?", use_container_width=True):
+                st.session_state['ai_quick_question'] = "How to add customer?"
+                st.rerun()
+        with col_q2:
+            if st.button("پیمنٹ کیسے ریکارڈ کریں؟", use_container_width=True):
+                st.session_state['ai_quick_question'] = "پیمنٹ کیسے ریکارڈ کریں؟"
+                st.rerun()
+            if st.button("کسٹمر کیسے شامل کریں؟", use_container_width=True):
+                st.session_state['ai_quick_question'] = "کسٹمر کیسے شامل کریں؟"
+                st.rerun()
+        
+        # Handle quick question
+        if 'ai_quick_question' in st.session_state:
+            quick_q = st.session_state['ai_quick_question']
+            st.markdown(f"<p><b>Question:</b> {quick_q}</p>", unsafe_allow_html=True)
+            with st.spinner("AI thinking... / AI سوچ رہا ہے..."):
+                ai_response = get_ai_help(
+                    quick_q,
+                    st.session_state.get('user_role', 'staff'),
+                    st.session_state.get('current_node', 'Dashboard')
+                )
+            st.markdown(f"<div style='background: {active_theme['card_bg']}; padding: 15px; border-radius: 8px; border-left: 4px solid {active_theme['accent']}; margin: 10px 0;'>", unsafe_allow_html=True)
+            st.markdown(f"<p style='color: {active_theme['text']};'><b>🤖 AI Answer:</b></p>", unsafe_allow_html=True)
+            st.markdown(f"<p style='color: {active_theme['text']};'>{ai_response}</p>", unsafe_allow_html=True)
+            st.markdown("</div>", unsafe_allow_html=True)
+            del st.session_state['ai_quick_question']
+        
+        st.markdown("</div>", unsafe_allow_html=True)
+    st.markdown("---")
 
 # ==========================================
 # VIEW 1: LYNX DASHBOARD
