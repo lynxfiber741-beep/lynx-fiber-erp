@@ -10,6 +10,8 @@ import re
 import io
 import json
 import requests
+import os
+import logging
 from datetime import datetime
 from contextlib import contextmanager
 from dateutil.relativedelta import relativedelta
@@ -21,6 +23,40 @@ import bcrypt
 DISTRIBUTOR_NAME = "Lynx Fiber Internet"
 MASTER_NOTIFY_NUMBERS = ["03215943786", "03118808741"]
 GENERIC_TEXT = "Lynx Fiber Internet"
+
+# Configure logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
+
+# ==========================================
+# RATE LIMITING FOR LOGIN ATTEMPTS
+# ==========================================
+from collections import defaultdict
+from datetime import datetime, timedelta
+
+# Simple in-memory rate limiter (for production, use Redis or database)
+login_attempts = defaultdict(list)
+MAX_LOGIN_ATTEMPTS = 5
+LOCKOUT_DURATION_MINUTES = 15
+
+def is_account_locked(identifier: str) -> bool:
+    """Check if account is locked due to too many failed attempts"""
+    now = datetime.now()
+    attempts = login_attempts[identifier]
+    # Remove attempts older than lockout duration
+    login_attempts[identifier] = [attempt for attempt in attempts if now - attempt < timedelta(minutes=LOCKOUT_DURATION_MINUTES)]
+    
+    if len(login_attempts[identifier]) >= MAX_LOGIN_ATTEMPTS:
+        return True
+    return False
+
+def record_login_attempt(identifier: str, success: bool = False):
+    """Record a login attempt"""
+    if success:
+        # Clear failed attempts on successful login
+        login_attempts[identifier].clear()
+    else:
+        login_attempts[identifier].append(datetime.now())
 
 DEFAULT_STAFF_PERMS = {
     "customername": True,
@@ -123,7 +159,8 @@ def hash_password(password: str) -> str:
 def verify_password(password: str, hashed_password: str) -> bool:
     try:
         return bcrypt.checkpw(password.encode('utf-8'), hashed_password.encode('utf-8'))
-    except Exception:
+    except Exception as e:
+        logger.error(f"Password verification error: {e}")
         return False
 
 def insert_activity_log(tenant_id, username, action_type, description):
@@ -151,24 +188,32 @@ def insert_activity_log(tenant_id, username, action_type, description):
                 """, (log_id, tenant_id, username, action_type, description, ts))
         return True
     except Exception as exc:
-        try:
-            print(f"[ActivityLogError] {exc}")
-        except Exception:
-            pass
+        logger.error(f"Activity log error: {exc}")
         return False
 
 
 def restore_login_from_query_params():
-    if not hasattr(st, "experimental_get_query_params"):
-        return False
     try:
-        query_params = st.experimental_get_query_params()
-    except Exception:
-        return False
+        # Use st.query_params instead of deprecated experimental_get_query_params
+        query_params = st.query_params
+    except AttributeError:
+        # Fallback for older Streamlit versions
+        if not hasattr(st, "experimental_get_query_params"):
+            return False
+        try:
+            query_params = st.experimental_get_query_params()
+        except Exception as e:
+            logger.error(f"Error getting query params: {e}")
+            return False
 
-    auth_flag = query_params.get("auth", [""])[0]
-    tenant = query_params.get("tenant", [""])[0].strip().lower()
-    user_key = query_params.get("user", [""])[0].strip().lower()
+    auth_flag = query_params.get("auth", [""])[0] if isinstance(query_params.get("auth"), list) else query_params.get("auth", "")
+    tenant = query_params.get("tenant", [""])[0] if isinstance(query_params.get("tenant"), list) else query_params.get("tenant", "")
+    user_key = query_params.get("user", [""])[0] if isinstance(query_params.get("user"), list) else query_params.get("user", "")
+
+    if isinstance(tenant, str):
+        tenant = tenant.strip().lower()
+    if isinstance(user_key, str):
+        user_key = user_key.strip().lower()
 
     if auth_flag != "1" or st.session_state.get("authenticated", False):
         return False
@@ -205,7 +250,8 @@ def restore_login_from_query_params():
                 insert_activity_log(tenant, st.session_state["username"], "LOGIN", "System restored from browser refresh via persistent auth parameters.")
                 return True
 
-    except Exception:
+    except Exception as e:
+        logger.error(f"Error restoring login from query params: {e}")
         return False
 
     return False
@@ -230,7 +276,7 @@ def send_tenant_whatsapp(tenant_metadata, phone_number, template_key, context_da
         try:
             templates.update(json.loads(tenant_metadata["wa_templates"]))
         except Exception as exc:
-            print(f"[WA Template Parse Error] {exc}")
+            logger.error(f"WA Template Parse Error: {exc}")
 
     raw_message = templates.get(template_key, DEFAULT_WA_TEMPLATES.get(template_key, ""))
     if not raw_message:
@@ -261,10 +307,10 @@ def send_tenant_whatsapp(tenant_metadata, phone_number, template_key, context_da
         response = requests.post(url, json=payload, headers={'Content-Type': 'application/json'}, timeout=5)
         return response.ok
     except requests.exceptions.RequestException as exc:
-        print(f"[WA Send Error] {exc}")
+        logger.error(f"WA Send Error: {exc}")
         return False
     except Exception as exc:
-        print(f"[WA Unexpected Error] {exc}")
+        logger.error(f"WA Unexpected Error: {exc}")
         return False
 
 def generate_receipt_pdf(company_name, phone_ref, inv_id, c_id, c_name, area, package, paid, arrears, method):
@@ -280,7 +326,8 @@ def generate_receipt_pdf(company_name, phone_ref, inv_id, c_id, c_name, area, pa
     try:
         paid_val = int(float(str(paid)))
         arrears_val = int(float(str(arrears)))
-    except Exception:
+    except Exception as e:
+        logger.error(f"Error converting paid/arrears values: {e}")
         paid_val = 0
         arrears_val = 0
         
@@ -412,10 +459,17 @@ def build_database_schema():
                 """, (datetime.now().strftime("%Y-%m-%d"), json.dumps(DEFAULT_WA_TEMPLATES)))
             cursor.execute("SELECT COUNT(*) FROM users WHERE username = 'owner' AND tenant_id = 'lynx'")
             if cursor.fetchone()[0] == 0:
+                # Use environment variable for default password, or generate a secure random password
+                default_owner_pass = os.getenv('DEFAULT_OWNER_PASSWORD', None)
+                if not default_owner_pass:
+                    # Generate secure random password if not provided
+                    import secrets
+                    default_owner_pass = secrets.token_urlsafe(16)
+                    logger.warning(f"Generated secure default password for owner: {default_owner_pass}. Please change it immediately after first login.")
                 cursor.execute("""
                     INSERT INTO users (username, password, role, assignedarea, tenant_id)
                     VALUES ('owner', %s, 'Owner', 'ALL', 'lynx')
-                """, (hash_password('lynxowner123'),))
+                """, (hash_password(default_owner_pass),))
 
 def run_live_migrations():
     try:
@@ -429,7 +483,7 @@ def run_live_migrations():
                 cursor.execute("ALTER TABLE system_tenants ADD COLUMN IF NOT EXISTS whatsapp_enabled BOOLEAN DEFAULT FALSE;")
                 cursor.execute("ALTER TABLE system_tenants ADD COLUMN IF NOT EXISTS whatsapp_templates TEXT DEFAULT '';")
     except Exception as exc:
-        print(f"[MigrationError] {exc}")
+        logger.error(f"Migration Error: {exc}")
 
 @st.cache_resource
 def initialize_application_database():
@@ -453,8 +507,8 @@ def fetch_active_tenant_metadata(tenant_id):
                     if res.get("staff_permissions"):
                         try:
                             perms.update(json.loads(res["staff_permissions"]))
-                        except Exception:
-                            pass
+                        except Exception as e:
+                            logger.error(f"Error parsing staff permissions: {e}")
                     wa_templates_raw = res.get("whatsapp_templates", "")
                     if not wa_templates_raw or wa_templates_raw.strip() == "":
                         wa_templates_raw = json.dumps(DEFAULT_WA_TEMPLATES)
@@ -470,7 +524,8 @@ def fetch_active_tenant_metadata(tenant_id):
                         "wa_templates": wa_templates_raw
                     }
                 return {"name": "Lynx Fiber Pvt Ltd", "phone": "03135776263", "active": True, "expiry_date": "", "staff_permissions": DEFAULT_STAFF_PERMS, "wa_instance_id": "", "wa_token": "", "wa_enabled": False, "wa_templates": json.dumps(DEFAULT_WA_TEMPLATES)}
-    except Exception:
+    except Exception as e:
+        logger.error(f"Error fetching tenant metadata: {e}")
         return {"name": "Lynx Fiber Pvt Ltd", "phone": "03135776263", "active": True, "expiry_date": "", "staff_permissions": DEFAULT_STAFF_PERMS, "wa_instance_id": "", "wa_token": "", "wa_enabled": False, "wa_templates": json.dumps(DEFAULT_WA_TEMPLATES)}
 
 def calculate_license_days(expiry_str):
@@ -490,7 +545,8 @@ def calculate_license_days(expiry_str):
             hours = int(time_diff.total_seconds() // 3600)
             minutes = int((time_diff.total_seconds() % 3600) // 60)
             return f"Last Day! ({hours}h {minutes}m remaining)", True
-    except Exception:
+    except Exception as e:
+        logger.error(f"Error calculating license days: {e}")
         return "Invalid Expiry Mapping", False
 
 restore_login_from_query_params()
@@ -522,7 +578,8 @@ def fetch_isolated_matrix(tenant_id):
                     extended_cols = GLOBAL_TARGET_ORDER + [c for c in df.columns if c not in GLOBAL_TARGET_ORDER]
                     return df.reindex(columns=extended_cols)
                 return pd.DataFrame(columns=GLOBAL_TARGET_ORDER + ['balanceshift', 'status', 'expirydate', 'tenant_id'])
-    except Exception:
+    except Exception as e:
+        logger.error(f"Error fetching isolated matrix: {e}")
         return pd.DataFrame()
 
 @st.cache_data(ttl=3)
@@ -533,7 +590,8 @@ def fetch_isolated_areas(tenant_id):
                 cur.execute("SELECT areaname FROM areas WHERE tenant_id = %s ORDER BY areaname ASC", (tenant_id,))
                 rows = cur.fetchall()
                 return [r[0] for r in rows] if rows else []
-    except Exception:
+    except Exception as e:
+        logger.error(f"Error fetching isolated areas: {e}")
         return []
 
 @st.cache_data(ttl=3)
@@ -543,7 +601,8 @@ def fetch_isolated_packages(tenant_id):
             with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
                 cur.execute("SELECT packagename, areaname, packagerate FROM packages WHERE tenant_id = %s ORDER BY packagename ASC, areaname ASC", (tenant_id,))
                 return cur.fetchall()
-    except Exception:
+    except Exception as e:
+        logger.error(f"Error fetching isolated packages: {e}")
         return []
 
 @st.cache_data(ttl=3)
@@ -557,8 +616,8 @@ def fetch_isolated_billing_summary(tenant_id):
                 if rows:
                     df = pd.DataFrame(rows)
                     return df.groupby('customerid')['amountpaid'].sum().to_dict()
-    except Exception:
-        pass
+    except Exception as e:
+        logger.error(f"Error fetching billing summary: {e}")
     return {}
 
 def clean_and_validate_phone(phone_str: str) -> str:
@@ -573,6 +632,46 @@ def clean_and_validate_phone(phone_str: str) -> str:
     if len(cleaned) == 10 and cleaned.startswith("3"):
         cleaned = "0" + cleaned
     return cleaned
+
+def validate_phone_number(phone_str: str) -> bool:
+    """Validate Pakistani phone number format"""
+    if not phone_str:
+        return False
+    cleaned = clean_and_validate_phone(phone_str)
+    # Pakistani mobile numbers: 10-11 digits starting with 0 or 12 digits starting with 92
+    if len(cleaned) == 10 and cleaned.startswith("3"):
+        return True
+    if len(cleaned) == 11 and cleaned.startswith("0"):
+        return True
+    if len(cleaned) == 12 and cleaned.startswith("92"):
+        return True
+    return False
+
+def validate_cnic(cnic_str: str) -> bool:
+    """Validate Pakistani CNIC format (XXXXX-XXXXXXX-X)"""
+    if not cnic_str:
+        return True  # CNIC is optional
+    cleaned = str(cnic_str).strip()
+    # Allow formats: XXXXX-XXXXXXX-X, XXXXX XXXXXXX X, or without dashes
+    cnic_pattern = r'^\d{5}[-\s]?\d{7}[-\s]?\d$'
+    return bool(re.match(cnic_pattern, cleaned))
+
+def validate_username(username_str: str) -> bool:
+    """Validate username format"""
+    if not username_str:
+        return False
+    cleaned = str(username_str).strip().lower()
+    # Username should be 3-20 characters, alphanumeric and underscores only
+    if len(cleaned) < 3 or len(cleaned) > 20:
+        return False
+    return bool(re.match(r'^[a-z0-9_]+$', cleaned))
+
+def validate_email(email_str: str) -> bool:
+    """Validate email format"""
+    if not email_str:
+        return True  # Email is optional
+    email_pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
+    return bool(re.match(email_pattern, str(email_str).strip()))
 
 # ==========================================
 # 4.5. THEME ENGINE & CSS GENERATOR
@@ -646,33 +745,52 @@ else:
             user_input = (st.text_input("Username Key", key="front_user") or "").strip().lower()
             pass_input = st.text_input("Security Password", type="password", key="front_pass")
             if st.button("🚀 Authorize & Launch Dashboard", use_container_width=True):
-                with get_db_connection() as conn:
-                    with conn.cursor() as cursor:
-                        cursor.execute("SELECT role, username, assignedarea, password FROM users WHERE LOWER(username) = %s AND tenant_id = %s", (user_input, input_tenant))
-                        user_match = cursor.fetchone()
-                        if user_match and verify_password(pass_input, user_match[3]):
-                            t_meta = fetch_active_tenant_metadata(input_tenant)
-                            _, valid_chk = calculate_license_days(t_meta.get("expiry_date", ""))
-                            if not t_meta["active"] or not valid_chk:
-                                st.error("⚠️ This system access instance is locked or license has expired.")
-                            else:
-                                st.session_state['authenticated'] = True
-                                st.session_state['user_role'] = user_match[0] if user_match[0] else "Staff"
-                                st.session_state['username'] = user_match[1] if user_match[1] else user_input
-                                st.session_state['tenant_id'] = input_tenant
-                                raw_areas = user_match[2] if user_match[2] else "ALL"
-                                if str(user_match[0]).lower() in ["owner", "admin"] or raw_areas == "ALL":
-                                    st.session_state['assigned_areas'] = ["ALL"]
+                # Validate inputs
+                if not validate_username(input_tenant):
+                    st.error("❌ Invalid tenant ID format. Use 3-20 alphanumeric characters.")
+                elif not validate_username(user_input):
+                    st.error("❌ Invalid username format. Use 3-20 alphanumeric characters.")
+                elif len(pass_input) < 6:
+                    st.error("❌ Password must be at least 6 characters.")
+                elif is_account_locked(f"{input_tenant}:{user_input}"):
+                    st.error(f"⚠️ Account locked due to too many failed attempts. Please try again in {LOCKOUT_DURATION_MINUTES} minutes.")
+                else:
+                    with get_db_connection() as conn:
+                        with conn.cursor() as cursor:
+                            cursor.execute("SELECT role, username, assignedarea, password FROM users WHERE LOWER(username) = %s AND tenant_id = %s", (user_input, input_tenant))
+                            user_match = cursor.fetchone()
+                            if user_match and verify_password(pass_input, user_match[3]):
+                                record_login_attempt(f"{input_tenant}:{user_input}", success=True)
+                                t_meta = fetch_active_tenant_metadata(input_tenant)
+                                _, valid_chk = calculate_license_days(t_meta.get("expiry_date", ""))
+                                if not t_meta["active"] or not valid_chk:
+                                    st.error("⚠️ This system access instance is locked or license has expired.")
                                 else:
-                                    st.session_state['assigned_areas'] = [a.strip() for a in raw_areas.split(",") if a.strip()]
-                                st.session_state['current_node'] = "📊 Lynx Dashboard"
-                                insert_activity_log(input_tenant, st.session_state['username'], "LOGIN", "System initialized successfully via secure portal node.")
-                                if hasattr(st, 'experimental_set_query_params'):
-                                    st.experimental_set_query_params(auth='1', tenant=input_tenant, user=st.session_state['username'])
-                                st.cache_data.clear()
-                                st.rerun()
-                        else:
-                            st.error("❌ Invalid Tenant, Username, or Password Variant.")
+                                    st.session_state['authenticated'] = True
+                                    st.session_state['user_role'] = user_match[0] if user_match[0] else "Staff"
+                                    st.session_state['username'] = user_match[1] if user_match[1] else user_input
+                                    st.session_state['tenant_id'] = input_tenant
+                                    raw_areas = user_match[2] if user_match[2] else "ALL"
+                                    if str(user_match[0]).lower() in ["owner", "admin"] or raw_areas == "ALL":
+                                        st.session_state['assigned_areas'] = ["ALL"]
+                                    else:
+                                        st.session_state['assigned_areas'] = [a.strip() for a in raw_areas.split(",") if a.strip()]
+                                    st.session_state['current_node'] = "📊 Lynx Dashboard"
+                                    insert_activity_log(input_tenant, st.session_state['username'], "LOGIN", "System initialized successfully via secure portal node.")
+                                    # Use st.query_params instead of deprecated experimental_set_query_params
+                                    try:
+                                        st.query_params['auth'] = '1'
+                                        st.query_params['tenant'] = input_tenant
+                                        st.query_params['user'] = st.session_state['username']
+                                    except AttributeError:
+                                        # Fallback for older Streamlit versions
+                                        if hasattr(st, 'experimental_set_query_params'):
+                                            st.experimental_set_query_params(auth='1', tenant=input_tenant, user=st.session_state['username'])
+                                    st.cache_data.clear()
+                                    st.rerun()
+                            else:
+                                record_login_attempt(f"{input_tenant}:{user_input}", success=False)
+                                st.error("❌ Invalid Tenant, Username, or Password Variant.")
         with register_tab:
             st.markdown(f"<h3 style='text-align:center; color:{active_theme['accent']};'>SaaS Tenant Onboarding</h3>", unsafe_allow_html=True)
             with st.form("saas_tenant_registration_form"):
@@ -684,8 +802,12 @@ else:
                 if st.form_submit_button("➕ SUBMIT ACTIVATION APP PROPOSAL"):
                     if not reg_tenant_id or not reg_company_name or not reg_owner_user or not reg_owner_pass:
                         st.error("❌ Mandatory registration input fields are empty.")
-                    elif len(reg_tenant_id) < 3:
-                        st.error("❌ Tenant Code must be at least 3 characters long.")
+                    elif not validate_username(reg_tenant_id):
+                        st.error("❌ Tenant Code must be 3-20 alphanumeric characters.")
+                    elif not validate_username(reg_owner_user):
+                        st.error("❌ Username must be 3-20 alphanumeric characters.")
+                    elif not validate_phone_number(reg_support_phone):
+                        st.error("❌ Invalid Pakistani phone number format.")
                     elif len(reg_owner_pass) < 6:
                         st.error("❌ Password string must consist of at least 6 characters.")
                     else:
@@ -758,8 +880,13 @@ if st.session_state['authenticated'] and not st.session_state['portal_mode']:
         if st.button("🔒 Logout System", use_container_width=True):
             insert_activity_log(st.session_state['tenant_id'], st.session_state['username'], "LOGOUT", "User terminated application session manually.")
             st.session_state['authenticated'] = False
-            if hasattr(st, 'experimental_set_query_params'):
-                st.experimental_set_query_params()
+            # Use st.query_params instead of deprecated experimental_set_query_params
+            try:
+                st.query_params.clear()
+            except AttributeError:
+                # Fallback for older Streamlit versions
+                if hasattr(st, 'experimental_set_query_params'):
+                    st.experimental_set_query_params()
             st.rerun()
 
 # ==========================================
@@ -1474,6 +1601,12 @@ elif routing_node == "👥 Operational Billing Center":
                     norm_p = clean_and_validate_phone(in_phone)
                     if not in_id or not in_name or not norm_p:
                         st.error("❌ Structural matching items missing. Customer Name, Username and Phone are required.")
+                    elif not validate_username(in_id):
+                        st.error("❌ Invalid username format. Use 3-20 alphanumeric characters.")
+                    elif not validate_phone_number(in_phone):
+                        st.error("❌ Invalid Pakistani phone number format.")
+                    elif not validate_cnic(in_cnic):
+                        st.error("❌ Invalid CNIC format. Use XXXXX-XXXXXXX-X format.")
                     else:
                         with get_db_connection() as conn:
                             with conn.cursor() as cursor:
@@ -2042,11 +2175,13 @@ elif routing_node == "🔐 System Access Control":
                         tables = ['system_tenants', 'users', 'customers', 'areas', 'packages', 'billing_history', 'activity_logs']
                         with get_db_connection() as conn:
                             for t_name in tables:
-                                q = f"SELECT * FROM {t_name}"
-                                params = []
+                                # Use parameterized query to prevent SQL injection
                                 if backup_scope == "Tenant Isolated Backup" or not is_master_owner:
-                                    q += " WHERE tenant_id = %s"
-                                    params.append(st.session_state['tenant_id'])
+                                    q = "SELECT * FROM " + t_name + " WHERE tenant_id = %s"
+                                    params = [st.session_state['tenant_id']]
+                                else:
+                                    q = "SELECT * FROM " + t_name
+                                    params = []
                                 with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as b_cur:
                                     b_cur.execute(q, params)
                                     bak_rows = b_cur.fetchall()
