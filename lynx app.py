@@ -1277,7 +1277,7 @@ if routing_node in ["📊 Core Analytics Dashboard", "📊 Lynx Dashboard"]:
         collection_map = fetch_isolated_billing_summary(st.session_state['tenant_id'])
         filtered_matrix = df_matrix.copy()
         if not is_high_profile and "ALL" not in st.session_state['assigned_areas']:
-            filtered_matrix = filtered_matrix[filtered_matrix['area'].str.lower().isin([s.lower() for s in st.session_state['assigned_areas'])]
+            filtered_matrix = filtered_matrix[filtered_matrix['area'].str.lower().isin([s.lower() for s in st.session_state['assigned_areas']])]
         total_free_customers = len(filtered_matrix[
             (filtered_matrix['status'] == 'FREE') |
             (filtered_matrix['billamount'] == 0) |
