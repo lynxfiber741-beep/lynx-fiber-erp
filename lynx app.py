@@ -932,7 +932,6 @@ if routing_node in ["📊 Core Analytics Dashboard", "📊 Lynx Dashboard"]:
         ])
         total_free_customers = int(total_free_customers)
         st.markdown("### 🌐 Active System Node Overview")
-        st.markdown(f"<p style='font-size:16px; color:{active_theme['heading']}; margin-bottom:0.75rem;'>🆓 Free Subscribers in Overview: <b>{total_free_customers}</b></p>", unsafe_allow_html=True)
         for i in range(0, len(cards_display_areas), 2):
             cols = st.columns(2)
             for j in range(2):
