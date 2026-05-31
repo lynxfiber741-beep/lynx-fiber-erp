@@ -1202,6 +1202,221 @@ elif routing_node == "📘 ISP Guide":
 
     # Owner / Admin bilingual guide
     if user_role in ["owner", "admin"]:
+        is_master_owner = (user_role == "owner" and st.session_state.get('tenant_id') == 'lynx')
+        
+        # SaaS Master Owner Guide (only for lynx owner)
+        if is_master_owner:
+            st.markdown("<div class='client-card' style='border: 2px solid #10b981;'>", unsafe_allow_html=True)
+            st.markdown(
+                "<h2>👑 SaaS Master Owner Complete Guide — English</h2>"
+                "<p><b>You are the Master Owner of the entire SaaS platform.</b> This guide explains how to manage multiple ISP tenants and control the entire system.</p>"
+                
+                "<h4>🏢 What is Multi-Tenant SaaS?</h4>"
+                "<p>This system allows you to host multiple ISP companies on a single platform. Each ISP (tenant) has:</p>"
+                "<ul>"
+                "<li><b>Isolated Database:</b> Each tenant's data is completely separate from others</li>"
+                "<li><b>Independent Branding:</b> Each ISP can have their own company name, logo, and colors</li>"
+                "<li><b>Separate Users:</b> Each tenant has their own owner, admin, and staff accounts</li>"
+                "<li><b>Custom Pricing:</b> Each tenant can set their own package prices per area</li>"
+                "<li><b>WhatsApp Integration:</b> Each tenant can configure their own WhatsApp notifications</li>"
+                "</ul>"
+                
+                "<h4>📋 Managing Tenants (SaaS License Manager)</h4>"
+                "<p>Navigate to <b>System Access Control → SaaS Whitelabel License Manager</b></p>"
+                "<ol>"
+                "<li><b>View All Tenants:</b> See all registered ISP companies with their license status</li>"
+                "<li><b>Set License Expiry:</b> Control when each tenant's access expires</li>"
+                "<li><b>Activate/Deactivate:</b> Enable or disable tenant access instantly</li>"
+                "<li><b>Modify Tenant ID:</b> Change tenant codes (use with caution)</li>"
+                "<li><b>Full Server Backup:</b> Export data from ALL tenants at once</li>"
+                "</ol>"
+                
+                "<h4>👥 Managing Staff Users (Access Accounts Management)</h4>"
+                "<p>Navigate to <b>System Access Control → Access Accounts Management</b></p>"
+                "<ol>"
+                "<li><b>Create Staff Accounts:</b> Add new staff users with username and password</li>"
+                "<li><b>Assign Roles:</b> Set users as Admin or Staff</li>"
+                "<li><b>Assign Areas:</b> Restrict staff to specific areas or give 'ALL' access</li>"
+                "<li><b>Set Permissions:</b> Control what fields staff can edit (name, phone, bill amount, status, etc.)</li>"
+                "<li><b>Reset Passwords:</b> Change staff passwords when needed</li>"
+                "</ol>"
+                
+                "<h4>💰 Package Pricing Matrix</h4>"
+                "<p>Navigate to <b>System Access Control → Fixed Packages Pricing Matrix</b></p>"
+                "<ol>"
+                "<li><b>Add Packages:</b> Create new internet packages (e.g., 10Mbps, 20Mbps)</li>"
+                "<li><b>Set Area-Specific Rates:</b> Different prices for different areas</li>"
+                "<li><b>Update Prices:</b> Change rates when needed (affects new customers only)</li>"
+                "<li><b>Delete Packages:</b> Remove packages not in use</li>"
+                "</ol>"
+                
+                "<h4>🗺️ Area Hubs Management</h4>"
+                "<p>Navigate to <b>System Access Control → Dynamic Area Hubs Sector</b></p>"
+                "<ol>"
+                "<li><b>Add Areas:</b> Create new service areas (e.g., Gulshan, North Nazimabad)</li>"
+                "<li><b>Assign to Tenants:</b> Allocate areas to specific ISP tenants</li>"
+                "<li><b>Remove Areas:</b> Delete areas not in use</li>"
+                "</ol>"
+                
+                "<h4>📱 WhatsApp Configuration</h4>"
+                "<p>Navigate to <b>System Access Control → Branding & WhatsApp Controls</b></p>"
+                "<ol>"
+                "<li><b>Get Green-API Credentials:</b> Register at green-api.com</li>"
+                "<li><b>Enter Instance ID:</b> Your Green-API instance ID</li>"
+                "<li><b>Enter API Token:</b> Your Green-API token</li>"
+                "<li><b>Enable WhatsApp:</b> Turn on WhatsApp notifications</li>"
+                "<li><b>Customize Templates:</b> Edit message templates for different events</li>"
+                "</ol>"
+                
+                "<h4>📊 Activity Logs</h4>"
+                "<p>Navigate to <b>System Access Control → System Activity Logs</b></p>"
+                "<ul>"
+                "<li><b>View All Actions:</b> See every action taken by all users</li>"
+                "<li><b>Filter by Tenant:</b> View logs for specific ISP companies</li>"
+                "<li><b>Track Security:</b> Monitor login attempts and system changes</li>"
+                "<li><b>Audit Trail:</b> Complete history for compliance and debugging</li>"
+                "</ul>"
+                
+                "<h4>💾 Data Backup & Restore</h4>"
+                "<p>Navigate to <b>System Access Control → Data Backup Vault</b></p>"
+                "<ol>"
+                "<li><b>Tenant Backup:</b> Export single tenant data (JSON format)</li>"
+                "<li><b>Full Server Backup:</b> Export ALL tenant data at once</li>"
+                "<li><b>Download Backup:</b> Save backup file to your computer</li>"
+                "<li><b>Restore:</b> Contact technical support for restore assistance</li>"
+                "</ol>"
+                
+                "<h4>🗑️ Data Purge (Destructive)</h4>"
+                "<p>Navigate to <b>System Access Control → Core Structural Destruct Engine</b></p>"
+                "<div style='background: #fef2f2; padding: 10px; border-left: 4px solid #ef4444; margin: 10px 0;'>"
+                "<b>⚠️ WARNING:</b> This action is irreversible and will delete ALL data for a tenant."
+                "</div>"
+                "<ol>"
+                "<li><b>Enter Password:</b> Authenticate with your password</li>"
+                "<li><b>Select Tenant:</b> Choose which tenant to delete</li>"
+                "<li><b>Confirm:</b> This deletes customers, billing, areas, packages, users</li>"
+                "<li><b>Use Only:</b> When closing a customer's ISP business permanently</li>"
+                "</ol>"
+                
+                "<h4>🎯 Best Practices for Master Owner</h4>"
+                "<ul>"
+                "<li><b>Regular Backups:</b> Take full server backups weekly</li>"
+                "<li><b>Monitor Licenses:</b> Check tenant expiry dates monthly</li>"
+                "<li><b>Review Logs:</b> Check activity logs for suspicious activity</li>"
+                "<li><b>Support Staff:</b> Help tenants with technical issues</li>"
+                "<li><b>Security:</b> Change master password regularly</li>"
+                "<li><b>Documentation:</b> Keep records of tenant configurations</li>"
+                "</ul>",
+                unsafe_allow_html=True
+            )
+            st.markdown("</div>", unsafe_allow_html=True)
+            
+            st.markdown("<div class='client-card' style='border: 2px solid #10b981;'>", unsafe_allow_html=True)
+            st.markdown(
+                "<h2>👑 SaaS Master Owner مکمل گائیڈ — اردو</h2>"
+                "<p><b>آپ پورے SaaS پلیٹ فارم کے Master Owner ہیں۔</b> یہ گائیڈ بتاتی ہے کہ کیسے متعدد ISP ٹیننٹس مینج کریں اور پورے سسٹم پر کنٹرول کریں۔</p>"
+                
+                "<h4>🏢 Multi-Tenant SaaS کیا ہے؟</h4>"
+                "<p>یہ سسٹم آپ کو ایک ہی پلیٹ فارم پر متعدد ISP کمپنیاں ہوسٹ کرنے کی اجازت دیتی ہے۔ ہر ISP (ٹیننٹ) کے پاس:</p>"
+                "<ul>"
+                "<li><b>الگ ڈیٹا بیس:</b> ہر ٹیننٹ کا ڈیٹا دوسروں سے مکمل طور پر الگ ہے</li>"
+                "<li><b>آزاد برانڈنگ:</b> ہر ISP کا اپنا کمپنی کا نام، لوگو اور رنگ ہو سکتا ہے</li>"
+                "<li><b>الگ صارفین:</b> ہر ٹیننٹ کے اپنے owner، admin، اور staff accounts ہیں</li>"
+                "<li><b>کسٹم پرائسنگ:</b> ہر ٹیننٹ اپنے علاقوں کے لیے اپنے پیکج کی قیمتیں طے کر سکتا ہے</li>"
+                "<li><b>WhatsApp انضمام:</b> ہر ٹیننٹ اپنے WhatsApp نوٹیفیکیشنز کنفیگر کر سکتا ہے</li>"
+                "</ul>"
+                
+                "<h4>📋 ٹیننٹس کا انتظام (SaaS License Manager)</h4>"
+                "<p>جائیں <b>System Access Control → SaaS Whitelabel License Manager</b></p>"
+                "<ol>"
+                "<li><b>تمام ٹیننٹس دیکھیں:</b> رجسٹرڈ تمام ISP کمپنیاں اور ان کی لائسنس اسٹیٹس دیکھیں</li>"
+                "<li><b>لائسنس ایکسپائر سیٹ کریں:</b> کنٹرول کریں کہ ہر ٹیننٹ کی رسائی کب ختم ہوگی</li>"
+                "<li><b>ایکٹیویٹ/ڈی ایکٹیویٹ:</b> فوری طور پر ٹیننٹ کی رسائی کو فعال یا غیر فعال کریں</li>"
+                "<li><b>ٹیننٹ ID تبدیل کریں:</b> ٹیننٹ کوڈز تبدیل کریں (احتیاط سے استعمال کریں)</li>"
+                "<li><b>مکمل سرور بیک اپ:</b> ایک ہی وقت میں تمام ٹیننٹس کا ڈیٹا ایکسپورٹ کریں</li>"
+                "</ol>"
+                
+                "<h4>👥 اسٹاف صارفین کا انتظام (Access Accounts Management)</h4>"
+                "<p>جائیں <b>System Access Control → Access Accounts Management</b></p>"
+                "<ol>"
+                "<li><b>اسٹاف اکاؤنٹس بنائیں:</b> یوزرنیم اور پاس ورڈ کے ساتھ نئے اسٹاف صارفین شامل کریں</li>"
+                "<li><b>رولز تفویض کریں:</b> صارفین کو Admin یا Staff کے طور پر سیٹ کریں</li>"
+                "<li><b>علاقے تفویض کریں:</b> اسٹاف کو مخصوص علاقوں تک محدود کریں یا 'ALL' رسائی دیں</li>"
+                "<li><b>پرمیشنز سیٹ کریں:</b> کنٹرول کریں کہ اسٹاف کون سے فیلڈز ایڈٹ کر سکتا ہے (نام، فون، بل amount، status، وغیرہ)</li>"
+                "<li><b>پاس ورڈ ری سیٹ:</b> ضرورت پڑنے پر اسٹاف پاس ورڈز تبدیل کریں</li>"
+                "</ol>"
+                
+                "<h4>💰 پیکج پرائسنگ میٹرکس</h4>"
+                "<p>جائیں <b>System Access Control → Fixed Packages Pricing Matrix</b></p>"
+                "<ol>"
+                "<li><b>پیکجز شامل کریں:</b> نئے انٹرنیٹ پیکجز بنائیں (مثلاً 10Mbps، 20Mbps)</li>"
+                "<li><b>علاقے کے مطابق rates سیٹ کریں:</b> مختلف علاقوں کے لیے مختلف قیمتیں</li>"
+                "<li><b>قیمتیں اپ ڈیٹ کریں:</b> ضرورت پڑنے پر rates تبدیل کریں (صرف نئے صارفین پر اثر ڈالتا ہے)</li>"
+                "<li><b>پیکجز حذف کریں:</b> استعمال میں نہیں پیکجز ہٹا دیں</li>"
+                "</ol>"
+                
+                "<h4>🗺️ Area Hubs کا انتظام</h4>"
+                "<p>جائیں <b>System Access Control → Dynamic Area Hubs Sector</b></p>"
+                "<ol>"
+                "<li><b>علاقے شامل کریں:</b> نئے سروس علاقے بنائیں (مثلاً گلشن، نارتھ ناظم آباد)</li>"
+                "<li><b>ٹیننٹس کو تفویض کریں:</b> علاقوں کو مخصوص ISP ٹیننٹس کو تفویض کریں</li>"
+                "<li><b>علاقے ہٹا دیں:</b> استعمال میں نہیں علاقے حذف کریں</li>"
+                "</ol>"
+                
+                "<h4>📱 WhatsApp کنفیگریشن</h4>"
+                "<p>جائیں <b>System Access Control → Branding & WhatsApp Controls</b></p>"
+                "<ol>"
+                "<li><b>Green-API کریڈینشلز حاصل کریں:</b> green-api.com پر رجسٹر کریں</li>"
+                "<li><b>Instance ID درج کریں:</b> آپ کا Green-API instance ID</li>"
+                "<li><b>API Token درج کریں:</b> آپ کا Green-API token</li>"
+                "<li><b>WhatsApp فعال کریں:</b> WhatsApp نوٹیفیکیشنز آن کریں</li>"
+                "<li><b>ٹیمپلیٹس کسٹمائز کریں:</b> مختلف واقعات کے لیے میسج ٹیمپلیٹس ایڈٹ کریں</li>"
+                "</ol>"
+                
+                "<h4>📊 Activity Logs</h4>"
+                "<p>جائیں <b>System Access Control → System Activity Logs</b></p>"
+                "<ul>"
+                "<li><b>تمام ایکشنز دیکھیں:</b> تمام صارفین کے ذریعے کیے گئے ہر ایکشن دیکھیں</li>"
+                "<li><b>ٹیننٹ کے ذریعے فلٹر کریں:</b> مخصوص ISP کمپنیوں کے لیے logs دیکھیں</li>"
+                "<li><b>سیکورٹی ٹریک کریں:</b> لاگ ان کوششوں اور سسٹم تبدیلیوں کو مانیٹر کریں</li>"
+                "<li><b>آڈٹ ٹریل:</b> کامپلائنس اور ڈیبگنگ کے لیے مکمل تاریخ</li>"
+                "</ul>"
+                
+                "<h4>💾 ڈیٹا بیک اپ اور ریسٹور</h4>"
+                "<p>جائیں <b>System Access Control → Data Backup Vault</b></p>"
+                "<ol>"
+                "<li><b>ٹیننٹ بیک اپ:</b> سنگل ٹیننٹ ڈیٹا ایکسپورٹ کریں (JSON فارمیٹ)</li>"
+                "<li><b>مکمل سرور بیک اپ:</b> ایک ہی وقت میں تمام ٹیننٹس کا ڈیٹا ایکسپورٹ کریں</li>"
+                "<li><b>بیک اپ ڈاؤن لوڈ کریں:</b> بیک اپ فائل کو اپنے کمپیوٹر پر محفوظ کریں</li>"
+                "<li><b>ریسٹور:</b> ریسٹور اسسٹنس کے لیے ٹیکنیکل سپورٹ سے رابطہ کریں</li>"
+                "</ol>"
+                
+                "<h4>🗑️ ڈیٹا پرج (تخریبی)</h4>"
+                "<p>جائیں <b>System Access Control → Core Structural Destruct Engine</b></p>"
+                "<div style='background: #fef2f2; padding: 10px; border-left: 4px solid #ef4444; margin: 10px 0;'>"
+                "<b>⚠️ انتباہ:</b> یہ ایکشن غیر قابل واپسی ہے اور ٹیننٹ کا تمام ڈیٹا حذف کر دے گا۔"
+                "</div>"
+                "<ol>"
+                "<li><b>پاس ورڈ درج کریں:</b> اپنے پاس ورڈ کے ساتھ تصدیق کریں</li>"
+                "<li><b>ٹیننٹ منتخب کریں:</b> کون سا ٹیننٹ حذف کرنا ہے منتخب کریں</li>"
+                "<li><b>تصدیق کریں:</b> یہ صارفین، بلنگ، علاقے، پیکجز، صارفین حذف کر دیتا ہے</li>"
+                "<li><b>صرف استعمال کریں:</b> جب کسی کسٹمر کا ISP کاروبار مستقل طور پر بند کر رہے ہوں</li>"
+                "</ol>"
+                
+                "<h4>🎯 Master Owner کے لیے بہترین طریقے</h4>"
+                "<ul>"
+                "<li><b>باقاعدہ بیک اپ:</b> ہفتہ وار مکمل سرور بیک اپ لیں</li>"
+                "<li><b>لائسنس مانیٹر کریں:</h> ماہانہ ٹیننٹ ایکسپائر ڈیٹس چیک کریں</li>"
+                "<li><b>Logs جائزہ لیں:</h> شکوک و شبہات کی سرگرمی کے لیے activity logs چیک کریں</li>"
+                "<li><b>اسٹاف سپورٹ:</b> ٹیننٹس کو تکنیکی مسائل میں مدد کریں</li>"
+                "<li><b>سیکورٹی:</h> ماسٹر پاس ورڈ باقاعدہ تبدیل کریں</li>"
+                "<li><b>دستاویزی:</b> ٹیننٹ کنفیگریشنز کا ریکارڈ رکھیں</li>"
+                "</ul>",
+                unsafe_allow_html=True
+            )
+            st.markdown("</div>", unsafe_allow_html=True)
+        
+        # Regular Owner/Admin Guide
         st.markdown("<div class='client-card'>", unsafe_allow_html=True)
         st.markdown(
             "<h3>Owner / Admin Full Guide — English</h3>"
