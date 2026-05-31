@@ -1106,6 +1106,26 @@ if st.session_state['authenticated'] and not st.session_state['portal_mode']:
         st.markdown(f"<p style='text-align:center; font-size:11px;'>Instance: <b>{st.session_state.get('tenant_id', 'lynx')}</b></p>", unsafe_allow_html=True)
         st.markdown(f"<p style='text-align:center; font-size:12px; color:#f59e0b;'>⏳ Account Life: <br><b>{license_status_text}</b></p>", unsafe_allow_html=True)
         
+        # Area Filter Selector
+        st.write("---")
+        st.markdown("**📍 Area Filter / علاقہ فلٹر**")
+        available_areas = fetch_isolated_areas(st.session_state['tenant_id'])
+        if 'selected_area_filter' not in st.session_state:
+            st.session_state['selected_area_filter'] = 'ALL'
+        
+        area_options = ['ALL'] + available_areas
+        selected_area = st.selectbox("Select Area to Filter:", area_options, index=area_options.index(st.session_state['selected_area_filter']) if st.session_state['selected_area_filter'] in area_options else 0)
+        
+        if selected_area != st.session_state['selected_area_filter']:
+            st.session_state['selected_area_filter'] = selected_area
+            st.rerun()
+        
+        if selected_area == 'ALL':
+            st.info("Showing all areas")
+        else:
+            st.success(f"Filtering: {selected_area}")
+        st.write("---")
+        
         if st.button("📊 Lynx Dashboard", use_container_width=True):
             st.session_state['current_node'] = "📊 Lynx Dashboard"
             st.session_state['dashboard_status_filter'] = "ALL"
@@ -1239,6 +1259,12 @@ if routing_node in ["📊 Core Analytics Dashboard", "📊 Lynx Dashboard"]:
     all_system_areas = fetch_isolated_areas(st.session_state['tenant_id'])
     is_high_profile = (str(st.session_state.get('user_role', '')).lower() in ["owner", "admin"])
     
+    # Apply area filter if selected
+    selected_area_filter = st.session_state.get('selected_area_filter', 'ALL')
+    if selected_area_filter != 'ALL':
+        df_matrix = df_matrix[df_matrix['area'].str.lower() == selected_area_filter.lower()]
+        all_system_areas = [selected_area_filter] if selected_area_filter in all_system_areas else []
+    
     cards_display_areas = all_system_areas.copy()
     if not is_high_profile and "ALL" not in st.session_state['assigned_areas']:
         cards_display_areas = [a for a in all_system_areas if any(a.lower() == s.lower() for s in st.session_state['assigned_areas'])]
@@ -1251,7 +1277,7 @@ if routing_node in ["📊 Core Analytics Dashboard", "📊 Lynx Dashboard"]:
         collection_map = fetch_isolated_billing_summary(st.session_state['tenant_id'])
         filtered_matrix = df_matrix.copy()
         if not is_high_profile and "ALL" not in st.session_state['assigned_areas']:
-            filtered_matrix = filtered_matrix[filtered_matrix['area'].str.lower().isin([s.lower() for s in st.session_state['assigned_areas']])]
+            filtered_matrix = filtered_matrix[filtered_matrix['area'].str.lower().isin([s.lower() for s in st.session_state['assigned_areas'])]
         total_free_customers = len(filtered_matrix[
             (filtered_matrix['status'] == 'FREE') |
             (filtered_matrix['billamount'] == 0) |
@@ -2031,6 +2057,11 @@ elif routing_node == "👥 Operational Billing Center":
     all_system_areas = fetch_isolated_areas(st.session_state['tenant_id'])
     is_management = (str(st.session_state.get('user_role', '')).lower() in ["owner", "admin"])
     
+    # Apply area filter if selected
+    selected_area_filter = st.session_state.get('selected_area_filter', 'ALL')
+    if selected_area_filter != 'ALL':
+        df_matrix = df_matrix[df_matrix['area'].str.lower() == selected_area_filter.lower()]
+    
     if not is_management and "ALL" not in st.session_state['assigned_areas']:
         df_matrix = df_matrix[df_matrix['area'].str.lower().isin([s.lower() for s in st.session_state['assigned_areas']])]
         
@@ -2329,7 +2360,11 @@ elif routing_node == "👥 Operational Billing Center":
             if not all_system_areas:
                 st.error("❌ Register an Area Sector inside System Access Controls first.")
             else:
-                in_area = st.selectbox("Select Target Hub Location", all_system_areas)
+                # Pre-select filtered area if applicable
+                default_area_index = 0
+                if selected_area_filter != 'ALL' and selected_area_filter in all_system_areas:
+                    default_area_index = all_system_areas.index(selected_area_filter)
+                in_area = st.selectbox("Select Target Hub Location", all_system_areas, index=default_area_index)
                 with get_db_connection() as conn:
                     with conn.cursor() as cur:
                         cur.execute("SELECT packagename, packagerate FROM packages WHERE areaname = %s AND tenant_id = %s", (in_area, st.session_state['tenant_id']))
