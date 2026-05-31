@@ -806,7 +806,44 @@ div.stButton > button:hover, div.stFormSubmitButton > button:hover {{ background
 .saas-footer {{ text-align: center; font-size: 12px; color: {active_theme['text']}; opacity: 0.7; margin-top: 50px; padding: 15px; border-top: 1px solid {active_theme['border']}; }}
 .saas-footer b {{ color: {active_theme['accent']}; }}
 .live-calc-box {{ background-color: {active_theme['bg']}; border: 2px dashed {active_theme['heading']}; padding: 15px; border-radius: 10px; margin-bottom: 15px; }}
+
+/* Mobile Responsive CSS */
+@media (max-width: 768px) {{
+    .stApp .block-container {{ padding-top: 0.3rem !important; padding-bottom: 0.5rem !important; }}
+    .main-title {{ font-size: 20px !important; margin-bottom: 15px !important; }}
+    .premium-table th {{ font-size: 11px !important; padding: 8px !important; }}
+    .premium-table td {{ font-size: 11px !important; padding: 8px !important; }}
+    .client-card {{ padding: 15px !important; }}
+    .front-login-box {{ padding: 20px !important; margin: 20px auto !important; }}
+    div.stButton > button {{ font-size: 13px !important; padding: 12px !important; }}
+    [data-testid="stSidebar"] {{ width: 250px !important; }}
+}}
+
+@media (max-width: 480px) {{
+    .main-title {{ font-size: 18px !important; }}
+    .premium-table th {{ font-size: 10px !important; padding: 6px !important; }}
+    .premium-table td {{ font-size: 10px !important; padding: 6px !important; }}
+    .client-card {{ padding: 12px !important; }}
+    .front-login-box {{ padding: 15px !important; }}
+    div.stButton > button {{ font-size: 12px !important; padding: 10px !important; }}
+    [data-testid="stSidebar"] {{ width: 220px !important; }}
+}}
 </style>
+
+<!-- PWA Service Worker Registration -->
+<script>
+if ('serviceWorker' in navigator) {
+    window.addEventListener('load', function() {
+        navigator.serviceWorker.register('/sw.js')
+            .then(function(registration) {
+                console.log('Service Worker registered with scope:', registration.scope);
+            })
+            .catch(function(error) {
+                console.log('Service Worker registration failed:', error);
+            });
+    });
+}
+</script>
 """, unsafe_allow_html=True)
 
 # ==========================================
@@ -945,6 +982,9 @@ if st.session_state['authenticated'] and not st.session_state['portal_mode']:
         if st.button("📘 ISP Guide", use_container_width=True):
             st.session_state['current_node'] = "📘 ISP Guide"
             st.rerun()
+        if st.button("📊 Advanced Reports", use_container_width=True):
+            st.session_state['current_node'] = "📊 Advanced Reports"
+            st.rerun()
             
         if str(st.session_state.get('user_role', '')).lower() in ["owner", "admin"]:
             if st.button("🔐 System Access Control", use_container_width=True):
@@ -1005,6 +1045,14 @@ if st.session_state['authenticated'] and not st.session_state['portal_mode']:
             st.write("---")
         else:
             st.write("---")
+        
+        # PWA Install Button
+        st.markdown(f"📱 **Install App**")
+        st.caption("Install as mobile app")
+        if st.button("📲 Install PWA App", use_container_width=True, key="pwa_install"):
+            st.info("To install this app:\n\n1. Tap 'Share' button in your browser\n2. Select 'Add to Home Screen'\n3. Follow the prompts\n\nThis will install the app on your phone for offline use.")
+        st.write("---")
+        
         st.markdown(f"🎨 **Personalize Theme**")
         selected_theme = st.selectbox(
             "Select UI Theme", list(THEMES.keys()), index=list(THEMES.keys()).index(st.session_state['app_theme']), label_visibility="collapsed"
@@ -1638,6 +1686,184 @@ elif routing_node == "📘 ISP Guide":
             unsafe_allow_html=True
         )
         st.markdown("</div>", unsafe_allow_html=True)
+
+# ==========================================
+# VIEW 3: ADVANCED REPORTS
+# ==========================================
+elif routing_node == "📊 Advanced Reports":
+    st.markdown("<div class='main-title'>📊 ADVANCED ANALYTICS & REPORTS</div>", unsafe_allow_html=True)
+    
+    # Fetch data for reports
+    df_matrix = fetch_isolated_matrix(st.session_state['tenant_id'])
+    billing_summary = fetch_isolated_billing_summary(st.session_state['tenant_id'])
+    
+    # Report tabs
+    report_tabs = st.tabs(["💰 Monthly Revenue", "📉 Churn Rate", "💵 Collection Efficiency", "🗺️ Area Performance", "👥 Staff Performance"])
+    
+    with report_tabs[0]:
+        st.subheader("💰 Monthly Revenue Report")
+        st.markdown("---")
+        
+        if df_matrix.empty:
+            st.info("No customer data available for revenue analysis.")
+        else:
+            # Calculate monthly revenue
+            total_monthly_revenue = df_matrix['billamount'].sum()
+            total_customers = len(df_matrix)
+            avg_revenue_per_customer = total_monthly_revenue / total_customers if total_customers > 0 else 0
+            
+            col_rev1, col_rev2, col_rev3 = st.columns(3)
+            with col_rev1:
+                st.metric("Total Monthly Revenue", f"Rs. {int(total_monthly_revenue):,}")
+            with col_rev2:
+                st.metric("Total Customers", total_customers)
+            with col_rev3:
+                st.metric("Avg Revenue/Customer", f"Rs. {int(avg_revenue_per_customer):,}")
+            
+            # Revenue by package
+            st.markdown("### Revenue by Package")
+            package_revenue = df_matrix.groupby('package')['billamount'].sum().sort_values(ascending=False)
+            st.bar_chart(package_revenue)
+            
+            # Revenue by area
+            st.markdown("### Revenue by Area")
+            area_revenue = df_matrix.groupby('area')['billamount'].sum().sort_values(ascending=False)
+            st.bar_chart(area_revenue)
+    
+    with report_tabs[1]:
+        st.subheader("📉 Churn Rate Analysis")
+        st.markdown("---")
+        
+        if df_matrix.empty:
+            st.info("No customer data available for churn analysis.")
+        else:
+            # Calculate churn metrics
+            total_customers = len(df_matrix)
+            suspended_customers = len(df_matrix[df_matrix['status'] == 'SUSPENDED'])
+            churn_rate = (suspended_customers / total_customers * 100) if total_customers > 0 else 0
+            
+            col_churn1, col_churn2 = st.columns(2)
+            with col_churn1:
+                st.metric("Total Customers", total_customers)
+            with col_churn2:
+                st.metric("Suspended Customers", suspended_customers, delta=f"{churn_rate:.1f}% Churn Rate")
+            
+            # Churn by area
+            st.markdown("### Suspended Customers by Area")
+            area_churn = df_matrix[df_matrix['status'] == 'SUSPENDED'].groupby('area').size().sort_values(ascending=False)
+            if not area_churn.empty:
+                st.bar_chart(area_churn)
+            else:
+                st.info("No suspended customers found.")
+            
+            # Churn by package
+            st.markdown("### Suspended Customers by Package")
+            package_churn = df_matrix[df_matrix['status'] == 'SUSPENDED'].groupby('package').size().sort_values(ascending=False)
+            if not package_churn.empty:
+                st.bar_chart(package_churn)
+            else:
+                st.info("No suspended customers found.")
+    
+    with report_tabs[2]:
+        st.subheader("💵 Payment Collection Efficiency")
+        st.markdown("---")
+        
+        if df_matrix.empty:
+            st.info("No customer data available for collection analysis.")
+        else:
+            # Calculate collection metrics
+            total_customers = len(df_matrix)
+            paid_customers = len(df_matrix[df_matrix['status'] == 'PAID'])
+            unpaid_customers = len(df_matrix[df_matrix['status'] == 'UNPAID'])
+            partial_customers = len(df_matrix[df_matrix['status'] == 'PARTIAL'])
+            
+            collection_rate = (paid_customers / total_customers * 100) if total_customers > 0 else 0
+            
+            col_col1, col_col2, col_col3, col_col4 = st.columns(4)
+            with col_col1:
+                st.metric("Collection Rate", f"{collection_rate:.1f}%")
+            with col_col2:
+                st.metric("Paid Customers", paid_customers)
+            with col_col3:
+                st.metric("Unpaid Customers", unpaid_customers)
+            with col_col4:
+                st.metric("Partial Customers", partial_customers)
+            
+            # Collection by area
+            st.markdown("### Collection Status by Area")
+            area_collection = df_matrix.groupby(['area', 'status']).size().unstack(fill_value=0)
+            st.dataframe(area_collection)
+            
+            # Arrears analysis
+            st.markdown("### Arrears Analysis")
+            total_arrears = df_matrix['balanceshift'].sum()
+            customers_with_arrears = len(df_matrix[df_matrix['balanceshift'] > 0])
+            st.metric("Total Arrears", f"Rs. {int(total_arrears):,}")
+            st.metric("Customers with Arrears", customers_with_arrears)
+    
+    with report_tabs[3]:
+        st.subheader("🗺️ Area-wise Performance")
+        st.markdown("---")
+        
+        if df_matrix.empty:
+            st.info("No customer data available for area analysis.")
+        else:
+            # Performance metrics by area
+            area_stats = []
+            for area in df_matrix['area'].unique():
+                area_data = df_matrix[df_matrix['area'] == area]
+                total_customers = len(area_data)
+                paid_customers = len(area_data[area_data['status'] == 'PAID'])
+                revenue = area_data['billamount'].sum()
+                arrears = area_data['balanceshift'].sum()
+                collection_rate = (paid_customers / total_customers * 100) if total_customers > 0 else 0
+                
+                area_stats.append({
+                    'Area': area,
+                    'Customers': total_customers,
+                    'Paid': paid_customers,
+                    'Revenue': int(revenue),
+                    'Arrears': int(arrears),
+                    'Collection Rate': f"{collection_rate:.1f}%"
+                })
+            
+            area_df = pd.DataFrame(area_stats)
+            st.dataframe(area_df, use_container_width=True)
+            
+            # Best performing area
+            if not area_df.empty:
+                best_area = area_df.loc[area_df['Revenue'].idxmax()]
+                st.success(f"🏆 Best Performing Area: {best_area['Area']} with Rs. {best_area['Revenue']:,} revenue")
+    
+    with report_tabs[4]:
+        st.subheader("👥 Staff Performance Metrics")
+        st.markdown("---")
+        
+        st.info("📝 Staff performance tracking requires activity log analysis. This feature shows overall system performance metrics.")
+        
+        if df_matrix.empty:
+            st.info("No customer data available for staff analysis.")
+        else:
+            # Overall system performance
+            total_customers = len(df_matrix)
+            active_customers = len(df_matrix[df_matrix['status'] != 'SUSPENDED'])
+            total_revenue = df_matrix['billamount'].sum()
+            
+            col_staff1, col_staff2, col_staff3 = st.columns(3)
+            with col_staff1:
+                st.metric("Active Customers", active_customers)
+            with col_staff2:
+                st.metric("System Revenue", f"Rs. {int(total_revenue):,}")
+            with col_staff3:
+                st.metric("Customer Satisfaction", "N/A (Feedback system needed)")
+            
+            st.markdown("### Staff Performance Notes")
+            st.markdown("""
+            - To track individual staff performance, enable activity log analysis
+            - Metrics to track: payments collected, customers served, issues resolved
+            - Consider adding a feedback system for customer ratings
+            - Staff mobile app can provide real-time performance tracking
+            """)
 
 elif routing_node == "👥 Operational Billing Center":
     st.markdown("<div class='main-title'>👥 TRANSACTION & TERMINAL OPERATIONS</div>", unsafe_allow_html=True)
