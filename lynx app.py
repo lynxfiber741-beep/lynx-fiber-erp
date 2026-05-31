@@ -1545,8 +1545,9 @@ if routing_node in ["📊 Core Analytics Dashboard", "📊 Lynx Dashboard"]:
                     # Customer Details Confirmation
                     st.markdown("---")
                     st.markdown("### 👤 Customer Details Confirmation")
+                    theme = THEMES.get(st.session_state.get('app_theme', 'Dark Nebula (Default)'), THEMES["Dark Nebula (Default)"])
                     st.markdown(f"""
-                    <div style='background: {active_theme['background']}; padding: 15px; border-radius: 8px; border: 1px solid {active_theme['border']};'>
+                    <div style='background: {theme['background']}; padding: 15px; border-radius: 8px; border: 1px solid {theme['border']};'>
                         <p><b>🆔 Username:</b> {selected_uid}</p>
                         <p><b>👤 Customer Name:</b> {selected_row.get('customername', '')}</p>
                         <p><b>📱 Phone:</b> {selected_row.get('phone', '')}</p>
@@ -2265,8 +2266,9 @@ elif routing_node == "👥 Operational Billing Center":
                     # Customer Details Confirmation
                     st.markdown("---")
                     st.markdown("### 👤 Customer Details Confirmation")
+                    theme = THEMES.get(st.session_state.get('app_theme', 'Dark Nebula (Default)'), THEMES["Dark Nebula (Default)"])
                     st.markdown(f"""
-                    <div style='background: {active_theme['background']}; padding: 15px; border-radius: 8px; border: 1px solid {active_theme['border']};'>
+                    <div style='background: {theme['background']}; padding: 15px; border-radius: 8px; border: 1px solid {theme['border']};'>
                         <p><b>🆔 Username:</b> {resolved_uid}</p>
                         <p><b>👤 Customer Name:</b> {node_row_dict.get('customername', '')}</p>
                         <p><b>📱 Phone:</b> {node_row_dict.get('phone', '')}</p>
