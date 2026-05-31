@@ -204,6 +204,43 @@ def insert_activity_log(tenant_id, username, action_type, description):
         return False
 
 
+def validate_session():
+    """Validate session by checking if password has been changed since login"""
+    if not st.session_state.get('authenticated', False):
+        return False
+    
+    try:
+        with get_db_connection() as conn:
+            with conn.cursor() as cursor:
+                cursor.execute(
+                    "SELECT password_changed_at FROM users WHERE username = %s AND tenant_id = %s",
+                    (st.session_state.get('username', ''), st.session_state.get('tenant_id', ''))
+                )
+                result = cursor.fetchone()
+                
+                if result:
+                    current_password_changed_at = result[0] or ''
+                    session_password_changed_at = st.session_state.get('password_changed_at', '')
+                    
+                    # If password has been changed since login, invalidate session
+                    if current_password_changed_at != session_password_changed_at:
+                        logger.warning(f"Session invalidated for user {st.session_state.get('username')} - password changed")
+                        st.session_state['authenticated'] = False
+                        st.session_state['username'] = ''
+                        st.session_state['user_role'] = ''
+                        st.session_state['tenant_id'] = ''
+                        st.session_state['password_changed_at'] = ''
+                        st.session_state['assigned_areas'] = []
+                        st.error("🔒 Your password has been changed. Please login again.")
+                        st.rerun()
+                        return False
+                
+                return True
+    except Exception as e:
+        logger.error(f"Session validation error: {e}")
+        return False
+
+
 def restore_login_from_query_params():
     try:
         # Use st.query_params instead of deprecated experimental_get_query_params
@@ -399,6 +436,7 @@ def build_database_schema():
                     role TEXT NOT NULL,
                     assignedarea TEXT DEFAULT 'ALL',
                     tenant_id TEXT NOT NULL DEFAULT 'lynx',
+                    password_changed_at TEXT DEFAULT '',
                     PRIMARY KEY (username, tenant_id)
                 )
             """)
@@ -961,7 +999,7 @@ else:
                 else:
                     with get_db_connection() as conn:
                         with conn.cursor() as cursor:
-                            cursor.execute("SELECT role, username, assignedarea, password FROM users WHERE LOWER(username) = %s AND tenant_id = %s", (user_input, input_tenant))
+                            cursor.execute("SELECT role, username, assignedarea, password, password_changed_at FROM users WHERE LOWER(username) = %s AND tenant_id = %s", (user_input, input_tenant))
                             user_match = cursor.fetchone()
                             if user_match and verify_password(pass_input, user_match[3]):
                                 record_login_attempt(f"{input_tenant}:{user_input}", success=True)
@@ -974,6 +1012,7 @@ else:
                                     st.session_state['user_role'] = user_match[0] if user_match[0] else "Staff"
                                     st.session_state['username'] = user_match[1] if user_match[1] else user_input
                                     st.session_state['tenant_id'] = input_tenant
+                                    st.session_state['password_changed_at'] = user_match[4] if user_match[4] else ''
                                     raw_areas = user_match[2] if user_match[2] else "ALL"
                                     if str(user_match[0]).lower() in ["owner", "admin"] or raw_areas == "ALL":
                                         st.session_state['assigned_areas'] = ["ALL"]
@@ -1046,6 +1085,9 @@ else:
         routing_node = st.session_state['current_node']
 
 if st.session_state['authenticated'] and not st.session_state['portal_mode']:
+    # Validate session - check if password has been changed since login
+    validate_session()
+    
     with st.sidebar:
         st.markdown(f"<h2 style='color:{active_theme['heading']}; font-weight:900; text-align:center;'>{str(TENANT_COMPANY_NAME).upper()}</h2>", unsafe_allow_html=True)
         st.markdown(f"<p style='text-align:center; font-size:11px;'>Instance: <b>{st.session_state.get('tenant_id', 'lynx')}</b></p>", unsafe_allow_html=True)
@@ -2548,8 +2590,8 @@ elif routing_node == "🔐 System Access Control":
                                         if m_new_pass.strip():
                                             hashed_f = hash_password(m_new_pass.strip())
                                             cursor.execute("""
-                                                UPDATE users SET password = %s WHERE username = %s AND tenant_id = %s
-                                            """, (hashed_f, m_owner_username.strip().lower(), m_tenant_id.strip().lower()))
+                                                UPDATE users SET password = %s, password_changed_at = %s WHERE username = %s AND tenant_id = %s
+                                            """, (hashed_f, datetime.now().isoformat(), m_owner_username.strip().lower(), m_tenant_id.strip().lower()))
                                         if m_tenant_id.strip().lower() != chosen_target_tenant:
                                             cursor.execute("UPDATE users SET tenant_id = %s WHERE tenant_id = %s", (m_tenant_id.strip().lower(), chosen_target_tenant))
                                             cursor.execute("UPDATE customers SET tenant_id = %s WHERE tenant_id = %s", (m_tenant_id.strip().lower(), chosen_target_tenant))
@@ -2650,9 +2692,16 @@ elif routing_node == "🔐 System Access Control":
                                 cursor.execute("SELECT password FROM users WHERE username = %s AND tenant_id = %s", (st.session_state['username'], st.session_state['tenant_id']))
                                 current_pwd_row = cursor.fetchone()
                                 if current_pwd_row and verify_password(current_self_pass, current_pwd_row[0]):
-                                    cursor.execute("UPDATE users SET password = %s WHERE username = %s AND tenant_id = %s", (hash_password(new_self_pass), st.session_state['username'], st.session_state['tenant_id']))
+                                    cursor.execute("UPDATE users SET password = %s, password_changed_at = %s WHERE username = %s AND tenant_id = %s", (hash_password(new_self_pass), datetime.now().isoformat(), st.session_state['username'], st.session_state['tenant_id']))
                                     insert_activity_log(st.session_state['tenant_id'], st.session_state['username'], "CHANGE_PASSWORD", "System password updated.")
-                                    st.success("🎉 Your credentials updated successfully!")
+                                    st.success("🎉 Your credentials updated successfully! You will be logged out for security.")
+                                    # Force logout after password change
+                                    st.session_state['authenticated'] = False
+                                    st.session_state['username'] = ''
+                                    st.session_state['user_role'] = ''
+                                    st.session_state['tenant_id'] = ''
+                                    st.session_state['password_changed_at'] = ''
+                                    st.rerun()
                                 else: st.error("❌ Validation failed.")
             st.write("---")
             st.markdown("#### 🛠️ Configurable Staff Profile Editing Rules")
