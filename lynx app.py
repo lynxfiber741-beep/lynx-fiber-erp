@@ -2492,7 +2492,7 @@ elif routing_node == "👥 Operational Billing Center":
                                             inserted_rows += 1
                                         except Exception as e:
                                             failed_rows += 1
-                                            failed_list.append(f"Row {idx+1}: {clean_id} - {c_name} (Error: {str(e)[:50]})")
+                                            failed_list.append(f"Row {idx+1}: {clean_id} - {c_name} (Error: {str(e)[:100]})")
                         insert_activity_log(st.session_state['tenant_id'], st.session_state['username'], "BULK_IMPORT", f"Bulk processing - Inserted: {inserted_rows}, Skipped: {skipped_duplicates}, Failures: {failed_rows}")
                         st.success(f"🚀 Matrix Processed Successfully!")
                         st.info(f"📊 Results: {inserted_rows} Added | {skipped_duplicates} Duplicates Skipped | {failed_rows} Blanks Ignored.")
