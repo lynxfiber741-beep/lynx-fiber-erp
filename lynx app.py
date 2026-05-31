@@ -1568,8 +1568,8 @@ if routing_node in ["📊 Core Analytics Dashboard", "📊 Lynx Dashboard"]:
                                     WHERE customerid = %s 
                                     AND tenant_id = %s 
                                     AND transactiontype = 'BILL_PAYMENT'
-                                    AND TO_CHAR(datetimestamp, 'YYYY-MM') = %s
-                                """, (selected_uid, st.session_state['tenant_id'], current_month))
+                                    AND datetimestamp LIKE %s
+                                """, (selected_uid, st.session_state['tenant_id'], current_month + '%'))
                                 payment_count = cursor.fetchone()[0]
                         
                         if payment_count > 0:
@@ -2288,8 +2288,8 @@ elif routing_node == "👥 Operational Billing Center":
                                     WHERE customerid = %s 
                                     AND tenant_id = %s 
                                     AND transactiontype = 'BILL_PAYMENT'
-                                    AND TO_CHAR(datetimestamp, 'YYYY-MM') = %s
-                                """, (resolved_uid, st.session_state['tenant_id'], current_month))
+                                    AND datetimestamp LIKE %s
+                                """, (resolved_uid, st.session_state['tenant_id'], current_month + '%'))
                                 payment_count = cursor.fetchone()[0]
                         
                         if payment_count > 0:
