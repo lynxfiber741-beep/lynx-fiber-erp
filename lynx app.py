@@ -2405,7 +2405,17 @@ elif routing_node == "👥 Operational Billing Center":
                                             else:
                                                 try: bill_amt = int(float(raw_amt))
                                                 except: bill_amt = 1500
-                                            default_expiry = (datetime.now() + relativedelta(months=1)).strftime("%Y-%m-%d")
+                                            # Check if expirydate is provided in CSV
+                                            csv_expiry = str(row.get('expirydate', '')).strip()
+                                            if csv_expiry and csv_expiry.lower() != 'nan':
+                                                try:
+                                                    # Validate date format
+                                                    datetime.strptime(csv_expiry, "%Y-%m-%d")
+                                                    default_expiry = csv_expiry
+                                                except:
+                                                    default_expiry = (datetime.now() + relativedelta(months=1)).strftime("%Y-%m-%d")
+                                            else:
+                                                default_expiry = (datetime.now() + relativedelta(months=1)).strftime("%Y-%m-%d")
                                             cursor.execute("""
                                                 INSERT INTO customers (username, customername, phone, cnic, package, billamount, area, address, onuserialnumber, balanceshift, status, expirydate, tenant_id)
                                                 VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, 0, 'UNPAID', %s, %s)
