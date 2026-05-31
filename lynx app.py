@@ -546,6 +546,12 @@ def run_live_migrations():
                     SET expirydate = expirydate || ' 12:00:00' 
                     WHERE expirydate NOT LIKE '%:%' AND expirydate != ''
                 """)
+                # Remove unique constraint on phone if it exists (allow duplicate phone numbers)
+                try:
+                    cursor.execute("ALTER TABLE customers DROP CONSTRAINT IF EXISTS customers_phone_key")
+                    logger.info("Removed unique constraint on phone column")
+                except Exception as e:
+                    logger.info(f"No phone unique constraint to remove or error: {e}")
         logger.info("Database migrations completed successfully")
     except Exception as exc:
         logger.error(f"Migration Error: {exc}")
