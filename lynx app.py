@@ -843,7 +843,89 @@ if ('serviceWorker' in navigator) {{
             }});
     }});
 }}
+
+// Offline Detection
+window.addEventListener('online', function() {{
+    console.log('App is online');
+    document.body.classList.remove('offline-mode');
+    syncOfflineData();
+}});
+
+window.addEventListener('offline', function() {{
+    console.log('App is offline');
+    document.body.classList.add('offline-mode');
+}});
+
+// Check initial status
+if (!navigator.onLine) {{
+    document.body.classList.add('offline-mode');
+}}
+
+// Offline Queue System
+function addToOfflineQueue(operation) {{
+    let queue = JSON.parse(localStorage.getItem('offlineQueue') || '[]');
+    queue.push({{
+        id: Date.now(),
+        operation: operation,
+        timestamp: new Date().toISOString()
+    }});
+    localStorage.setItem('offlineQueue', JSON.stringify(queue));
+    console.log('Added to offline queue:', operation);
+}}
+
+// Sync Function
+async function syncOfflineData() {{
+    let queue = JSON.parse(localStorage.getItem('offlineQueue') || '[]');
+    if (queue.length === 0) {{
+        console.log('No offline data to sync');
+        return;
+    }}
+    
+    console.log('Syncing', queue.length, 'offline operations');
+    
+    try {{
+        // Call sync API endpoint
+        const response = await fetch('http://localhost:8000/api/sync/batch', {{
+            method: 'POST',
+            headers: {{
+                'Content-Type': 'application/json',
+            }},
+            body: JSON.stringify(queue)
+        }});
+        
+        if (response.ok) {{
+            const result = await response.json();
+            console.log('Sync successful:', result);
+            // Clear queue after successful sync
+            localStorage.setItem('offlineQueue', JSON.stringify([]));
+            alert('Sync completed successfully!');
+        }} else {{
+            console.error('Sync failed:', response.statusText);
+            alert('Sync failed. Please try again.');
+        }}
+    }} catch (error) {{
+        console.error('Sync error:', error);
+        alert('Sync error: Make sure sync API is running on port 8000');
+    }}
+}}
 </script>
+
+<!-- Offline Status Styles -->
+<style>
+.offline-mode::before {{
+    content: "⚠️ OFFLINE MODE - Changes will sync when online";
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    background: #f59e0b;
+    color: white;
+    padding: 10px;
+    text-align: center;
+    font-weight: bold;
+    z-index: 9999;
+}}
+</style>
 """, unsafe_allow_html=True)
 
 # ==========================================
@@ -1051,6 +1133,23 @@ if st.session_state['authenticated'] and not st.session_state['portal_mode']:
         st.caption("Install as mobile app")
         if st.button("📲 Install PWA App", use_container_width=True, key="pwa_install"):
             st.info("To install this app:\n\n1. Tap 'Share' button in your browser\n2. Select 'Add to Home Screen'\n3. Follow the prompts\n\nThis will install the app on your phone for offline use.")
+        
+        # Manual Sync Button
+        st.markdown(f"🔄 **Sync Data**")
+        st.caption("Sync offline changes")
+        if st.button("🔄 Sync Now", use_container_width=True, key="manual_sync"):
+            st.success("Sync triggered! Check console for details.")
+            st.caption("Note: Make sure sync_api.py is running on port 8000")
+            st.markdown("""
+            <script>
+            // Trigger sync manually
+            if (typeof syncOfflineData === 'function') {{
+                syncOfflineData();
+            }} else {{
+                console.error('syncOfflineData function not found');
+            }}
+            </script>
+            """, unsafe_allow_html=True)
         st.write("---")
         
         st.markdown(f"🎨 **Personalize Theme**")
