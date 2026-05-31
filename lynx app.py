@@ -2173,105 +2173,106 @@ elif routing_node == "👥 Operational Billing Center":
                     target_label = st.selectbox("Select Target Subscriber", list(display_map.keys()))
                     resolved_uid = display_map[target_label]
                     node_row_dict = df_matrix[df_matrix['username'] == resolved_uid].iloc[0].to_dict()
-                try:
-                    base_bill = int(float(str(node_row_dict.get('billamount', 0))))
-                    base_shift = int(float(str(node_row_dict.get('balanceshift', 0))))
-                except Exception:
-                    base_bill = 0
-                    base_shift = 0
-                st.info(f"📊 Plan Rate: Rs. {base_bill:,} | Outstanding Arrears: Rs. {base_shift:,} | Current Expiry: {node_row_dict.get('expirydate')}")
-                col_op1, col_op2, col_op3 = st.columns(3)
-                with col_op1:
-                    billing_months = st.selectbox("📅 Duration (Advance Months)", [1, 3, 6, 12], key="col_months")
-                with col_op2:
-                    pay_method = st.selectbox("Method Profile", ["CASH", "EASYPAISA", "JAZZCASH", "BANK_TRANSFER"])
-                with col_op3:
-                    discount = st.number_input("🎁 Discount Approved (Rs.)", min_value=0, value=0, step=50)
+                    try:
+                        base_bill = int(float(str(node_row_dict.get('billamount', 0))))
+                        base_shift = int(float(str(node_row_dict.get('balanceshift', 0))))
+                    except Exception:
+                        base_bill = 0
+                        base_shift = 0
+                    st.info(f"📊 Plan Rate: Rs. {base_bill:,} | Outstanding Arrears: Rs. {base_shift:,} | Current Expiry: {node_row_dict.get('expirydate')}")
                     
-                package_total_cost = base_bill * billing_months
-                net_payable = package_total_cost + base_shift
-                final_due = max(net_payable - discount, 0)
-                
-                st.markdown("### ⚡ Live Payment Overview Breakdown")
-                cash_in = st.number_input("Capital Received From Customer (Rs.)", min_value=0, max_value=final_due, value=final_due)
-                future_shift = max(0, int(final_due - cash_in))
-                
-                if future_shift <= 0:
-                    calculated_status = "PAID"
-                    status_color = "#10b981"
-                elif cash_in > 0:
-                    calculated_status = "PARTIAL"
-                    status_color = "#f59e0b"
-                else:
-                    calculated_status = "UNPAID"
-                    status_color = "#f43f5e"
-                    
-                st.markdown(f"""
-                <div class='live-calc-box'>
-                    <p>📦 <b>Package Extension Charges ({billing_months} Month(s)):</b> Rs. {package_total_cost:,}</p>
-                    <p>⏮️ <b>Past Arrears Covered:</b> Rs. {base_shift:,}</p>
-                    <p>🎁 <b>Discount Subtracted:</b> Rs. {discount:,}</p>
-                    <h4 style='color:{active_theme['accent']};'><b>Net Outstanding Due:</b> Rs. {final_due:,}</h4>
-                    <hr style='border:1px solid {active_theme['border']};'>
-                    <h4>🔮 <b>Auto Post Action State:</b> <span style='color:{status_color}; font-weight:bold;'>{calculated_status}</span></h4>
-                    <p>💾 <b>New Balanceshift/Arrears Log:</b> Rs. {future_shift:,}</p>
-                </div>
-                """, unsafe_allow_html=True)
-                
-                if st.button("💳 POST TRANSACTION & EXTEND LINE", use_container_width=True):
-                    # Check if already paid this month
-                    current_month = datetime.now().strftime("%Y-%m")
-                    with get_db_connection() as conn:
-                        with conn.cursor() as cursor:
-                            cursor.execute("""
-                                SELECT COUNT(*) FROM billing_history 
-                                WHERE customerid = %s 
-                                AND tenant_id = %s 
-                                AND transactiontype = 'BILL_PAYMENT'
-                                AND TO_CHAR(datetimestamp, 'YYYY-MM') = %s
-                            """, (resolved_uid, st.session_state['tenant_id'], current_month))
-                            payment_count = cursor.fetchone()[0]
-                    
-                    if payment_count > 0:
-                        st.error(f"⚠️ This customer has already been paid for {current_month}. Duplicate payment prevented.")
-                        st.info(f"Payment count this month: {payment_count}")
-                    else:
-                        today_dt = datetime.now()
-                        current_expiry_str = str(node_row_dict.get('expirydate', '')).strip()
-                        try:
-                            # Try datetime format (YYYY-MM-DD HH:MM:SS)
-                            old_expiry_dt = datetime.strptime(current_expiry_str, "%Y-%m-%d %H:%M:%S")
-                            base_dt = today_dt if old_expiry_dt < today_dt else old_expiry_dt
-                        except Exception:
-                            try:
-                                # Try date format (YYYY-MM-DD)
-                                old_expiry_dt = datetime.strptime(current_expiry_str, "%Y-%m-%d")
-                                base_dt = today_dt if old_expiry_dt < today_dt else old_expiry_dt
-                            except Exception:
-                                base_dt = today_dt
-                        new_expiry = (base_dt + relativedelta(months=billing_months)).strftime("%Y-%m-%d %H:%M:%S")
-                        invoice_uuid = f"INV-{uuid.uuid4().hex[:10].upper()}"
+                    col_op1, col_op2, col_op3 = st.columns(3)
+                    with col_op1:
+                        billing_months = st.selectbox("📅 Duration (Advance Months)", [1, 3, 6, 12], key="col_months")
+                    with col_op2:
+                        pay_method = st.selectbox("Method Profile", ["CASH", "EASYPAISA", "JAZZCASH", "BANK_TRANSFER"])
+                    with col_op3:
+                        discount = st.number_input("🎁 Discount Approved (Rs.)", min_value=0, value=0, step=50)
                         
+                    package_total_cost = base_bill * billing_months
+                    net_payable = package_total_cost + base_shift
+                    final_due = max(net_payable - discount, 0)
+                    
+                    st.markdown("### ⚡ Live Payment Overview Breakdown")
+                    cash_in = st.number_input("Capital Received From Customer (Rs.)", min_value=0, max_value=final_due, value=final_due)
+                    future_shift = max(0, int(final_due - cash_in))
+                    
+                    if future_shift <= 0:
+                        calculated_status = "PAID"
+                        status_color = "#10b981"
+                    elif cash_in > 0:
+                        calculated_status = "PARTIAL"
+                        status_color = "#f59e0b"
+                    else:
+                        calculated_status = "UNPAID"
+                        status_color = "#f43f5e"
+                        
+                    st.markdown(f"""
+                    <div class='live-calc-box'>
+                        <p>📦 <b>Package Extension Charges ({billing_months} Month(s)):</b> Rs. {package_total_cost:,}</p>
+                        <p>⏮️ <b>Past Arrears Covered:</b> Rs. {base_shift:,}</p>
+                        <p>🎁 <b>Discount Subtracted:</b> Rs. {discount:,}</p>
+                        <h4 style='color:{active_theme['accent']};'><b>Net Outstanding Due:</b> Rs. {final_due:,}</h4>
+                        <hr style='border:1px solid {active_theme['border']};'>
+                        <h4>🔮 <b>Auto Post Action State:</b> <span style='color:{status_color}; font-weight:bold;'>{calculated_status}</span></h4>
+                        <p>💾 <b>New Balanceshift/Arrears Log:</b> Rs. {future_shift:,}</p>
+                    </div>
+                    """, unsafe_allow_html=True)
+                    
+                    if st.button("💳 POST TRANSACTION & EXTEND LINE", use_container_width=True):
+                        # Check if already paid this month
+                        current_month = datetime.now().strftime("%Y-%m")
                         with get_db_connection() as conn:
                             with conn.cursor() as cursor:
                                 cursor.execute("""
-                                    UPDATE customers SET balanceshift = %s, status = %s, expirydate = %s WHERE username = %s AND tenant_id = %s
-                                """, (future_shift, calculated_status, new_expiry, resolved_uid, st.session_state['tenant_id']))
-                                cursor.execute("""
-                                    INSERT INTO billing_history (invoiceid, customerid, customername, area, phone, datetimestamp, currentpackage, amountpaid, remainingarrears, transactiontype, paymentmethod, discountgiven, tenant_id)
-                                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, 'BILL_PAYMENT', %s, %s, %s)
-                                """, (invoice_uuid, resolved_uid, node_row_dict.get('customername'), node_row_dict.get('area'), node_row_dict.get('phone'), datetime.now().strftime("%Y-%m-%d %H:%M:%S"), node_row_dict.get('package'), int(cash_in), future_shift, pay_method, int(discount), st.session_state['tenant_id']))
-                                insert_activity_log(st.session_state['tenant_id'], st.session_state['username'], "BILL_PAYMENT", f"Staff posted Rs. {cash_in} for user {resolved_uid}. Status updated to {calculated_status}, Arrears set to Rs. {future_shift}, Expiry to {new_expiry}.")
-                                
-                        st.success(f"🎉 Collection Recorded Cleanly! System Class Status: {calculated_status} | Extended To: {new_expiry}")
-                        wa_context = {
-                            "name": node_row_dict.get('customername', ''), "username": resolved_uid, "package": node_row_dict.get('package', ''), "paid": int(cash_in), "arrears": future_shift, "expiry": new_expiry, "method": pay_method
-                        }
-                        send_tenant_whatsapp(tenant_meta, node_row_dict.get('phone'), "bill_paid", wa_context)
-                        st.session_state['recent_pdf_bytes'] = generate_receipt_pdf(TENANT_COMPANY_NAME, TENANT_SUPPORT_PHONE, invoice_uuid, resolved_uid, node_row_dict.get('customername'), node_row_dict.get('area'), node_row_dict.get('package'), cash_in, future_shift, pay_method)
-                        st.session_state['recent_invoice_uuid'] = invoice_uuid
-                        st.cache_data.clear()
-                        st.rerun()
+                                    SELECT COUNT(*) FROM billing_history 
+                                    WHERE customerid = %s 
+                                    AND tenant_id = %s 
+                                    AND transactiontype = 'BILL_PAYMENT'
+                                    AND TO_CHAR(datetimestamp, 'YYYY-MM') = %s
+                                """, (resolved_uid, st.session_state['tenant_id'], current_month))
+                                payment_count = cursor.fetchone()[0]
+                        
+                        if payment_count > 0:
+                            st.error(f"⚠️ This customer has already been paid for {current_month}. Duplicate payment prevented.")
+                            st.info(f"Payment count this month: {payment_count}")
+                        else:
+                            today_dt = datetime.now()
+                            current_expiry_str = str(node_row_dict.get('expirydate', '')).strip()
+                            try:
+                                # Try datetime format (YYYY-MM-DD HH:MM:SS)
+                                old_expiry_dt = datetime.strptime(current_expiry_str, "%Y-%m-%d %H:%M:%S")
+                                base_dt = today_dt if old_expiry_dt < today_dt else old_expiry_dt
+                            except Exception:
+                                try:
+                                    # Try date format (YYYY-MM-DD)
+                                    old_expiry_dt = datetime.strptime(current_expiry_str, "%Y-%m-%d")
+                                    base_dt = today_dt if old_expiry_dt < today_dt else old_expiry_dt
+                                except Exception:
+                                    base_dt = today_dt
+                            new_expiry = (base_dt + relativedelta(months=billing_months)).strftime("%Y-%m-%d %H:%M:%S")
+                            invoice_uuid = f"INV-{uuid.uuid4().hex[:10].upper()}"
+                            
+                            with get_db_connection() as conn:
+                                with conn.cursor() as cursor:
+                                    cursor.execute("""
+                                        UPDATE customers SET balanceshift = %s, status = %s, expirydate = %s WHERE username = %s AND tenant_id = %s
+                                    """, (future_shift, calculated_status, new_expiry, resolved_uid, st.session_state['tenant_id']))
+                                    cursor.execute("""
+                                        INSERT INTO billing_history (invoiceid, customerid, customername, area, phone, datetimestamp, currentpackage, amountpaid, remainingarrears, transactiontype, paymentmethod, discountgiven, tenant_id)
+                                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, 'BILL_PAYMENT', %s, %s, %s)
+                                    """, (invoice_uuid, resolved_uid, node_row_dict.get('customername'), node_row_dict.get('area'), node_row_dict.get('phone'), datetime.now().strftime("%Y-%m-%d %H:%M:%S"), node_row_dict.get('package'), int(cash_in), future_shift, pay_method, int(discount), st.session_state['tenant_id']))
+                                    insert_activity_log(st.session_state['tenant_id'], st.session_state['username'], "BILL_PAYMENT", f"Staff posted Rs. {cash_in} for user {resolved_uid}. Status updated to {calculated_status}, Arrears set to Rs. {future_shift}, Expiry to {new_expiry}.")
+                                    
+                            st.success(f"🎉 Collection Recorded Cleanly! System Class Status: {calculated_status} | Extended To: {new_expiry}")
+                            wa_context = {
+                                "name": node_row_dict.get('customername', ''), "username": resolved_uid, "package": node_row_dict.get('package', ''), "paid": int(cash_in), "arrears": future_shift, "expiry": new_expiry, "method": pay_method
+                            }
+                            send_tenant_whatsapp(tenant_meta, node_row_dict.get('phone'), "bill_paid", wa_context)
+                            st.session_state['recent_pdf_bytes'] = generate_receipt_pdf(TENANT_COMPANY_NAME, TENANT_SUPPORT_PHONE, invoice_uuid, resolved_uid, node_row_dict.get('customername'), node_row_dict.get('area'), node_row_dict.get('package'), cash_in, future_shift, pay_method)
+                            st.session_state['recent_invoice_uuid'] = invoice_uuid
+                            st.cache_data.clear()
+                            st.rerun()
                 
                 if 'recent_pdf_bytes' in st.session_state:
                             st.download_button("📥 Download Generated PDF Receipt", data=st.session_state['recent_pdf_bytes'], file_name=f"Receipt_{st.session_state.get('recent_invoice_uuid', 'INV')}.pdf", mime="application/pdf", use_container_width=True)
