@@ -1516,40 +1516,57 @@ if routing_node in ["📊 Core Analytics Dashboard", "📊 Lynx Dashboard"]:
                     """, unsafe_allow_html=True)
 
                     if st.button("💳 SETTLE THIS UNPAID ACCOUNT", key=f"dashboard_pay_{selected_uid}", use_container_width=True):
-                        today_dt = datetime.now()
-                        current_expiry_str = str(selected_row.get('expirydate', '')).strip()
-                        try:
-                            # Try datetime format (YYYY-MM-DD HH:MM:SS)
-                            dp_old_expiry = datetime.strptime(current_expiry_str, "%Y-%m-%d %H:%M:%S")
-                            dp_base_dt = today_dt if dp_old_expiry < today_dt else dp_old_expiry
-                        except Exception:
-                            try:
-                                # Try date format (YYYY-MM-DD)
-                                dp_old_expiry = datetime.strptime(current_expiry_str, "%Y-%m-%d")
-                                dp_base_dt = today_dt if dp_old_expiry < today_dt else dp_old_expiry
-                            except Exception:
-                                dp_base_dt = today_dt
-                        dp_new_expiry = (dp_base_dt + relativedelta(months=dp_months)).strftime("%Y-%m-%d %H:%M:%S")
-                        dp_invoice_uuid = f"INV-{uuid.uuid4().hex[:10].upper()}"
+                        # Check if already paid this month
+                        current_month = datetime.now().strftime("%Y-%m")
                         with get_db_connection() as conn:
                             with conn.cursor() as cursor:
                                 cursor.execute("""
-                                    UPDATE customers SET balanceshift = %s, status = %s, expirydate = %s WHERE username = %s AND tenant_id = %s
-                                """, (dp_future_shift, dp_status, dp_new_expiry, selected_uid, st.session_state['tenant_id']))
-                                cursor.execute("""
-                                    INSERT INTO billing_history (invoiceid, customerid, customername, area, phone, datetimestamp, currentpackage, amountpaid, remainingarrears, transactiontype, paymentmethod, discountgiven, tenant_id)
-                                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, 'BILL_PAYMENT', %s, %s, %s)
-                                """, (dp_invoice_uuid, selected_uid, selected_row.get('customername'), selected_row.get('area'), selected_row.get('phone'), datetime.now().strftime("%Y-%m-%d %H:%M:%S"), selected_row.get('package'), int(dp_cash_in), dp_future_shift, dp_method, int(dp_discount), st.session_state['tenant_id']))
-                                insert_activity_log(st.session_state['tenant_id'], st.session_state['username'], "BILL_PAYMENT", f"Quick dashboard payment Rs. {dp_cash_in} for user {selected_uid}. Status {dp_status}, Arrears {dp_future_shift}, Expiry {dp_new_expiry}.")
-                        st.success(f"✅ Payment recorded for {selected_uid}! Status: {dp_status} | New Expiry: {dp_new_expiry}")
-                        wa_context = {
-                            "name": selected_row.get('customername', ''), "username": selected_uid, "package": selected_row.get('package', ''), "paid": int(dp_cash_in), "arrears": dp_future_shift, "expiry": dp_new_expiry, "method": dp_method
-                        }
-                        send_tenant_whatsapp(tenant_meta, selected_row.get('phone'), "bill_paid", wa_context)
-                        st.session_state['recent_pdf_bytes'] = generate_receipt_pdf(TENANT_COMPANY_NAME, TENANT_SUPPORT_PHONE, dp_invoice_uuid, selected_uid, selected_row.get('customername'), selected_row.get('area'), selected_row.get('package'), dp_cash_in, dp_future_shift, dp_method)
-                        st.session_state['recent_invoice_uuid'] = dp_invoice_uuid
-                        st.cache_data.clear()
-                        st.rerun()
+                                    SELECT COUNT(*) FROM billing_history 
+                                    WHERE customerid = %s 
+                                    AND tenant_id = %s 
+                                    AND transactiontype = 'BILL_PAYMENT'
+                                    AND TO_CHAR(datetimestamp, 'YYYY-MM') = %s
+                                """, (selected_uid, st.session_state['tenant_id'], current_month))
+                                payment_count = cursor.fetchone()[0]
+                        
+                        if payment_count > 0:
+                            st.error(f"⚠️ This customer has already been paid for {current_month}. Duplicate payment prevented.")
+                            st.info(f"Payment count this month: {payment_count}")
+                        else:
+                            today_dt = datetime.now()
+                            current_expiry_str = str(selected_row.get('expirydate', '')).strip()
+                            try:
+                                # Try datetime format (YYYY-MM-DD HH:MM:SS)
+                                dp_old_expiry = datetime.strptime(current_expiry_str, "%Y-%m-%d %H:%M:%S")
+                                dp_base_dt = today_dt if dp_old_expiry < today_dt else dp_old_expiry
+                            except Exception:
+                                try:
+                                    # Try date format (YYYY-MM-DD)
+                                    dp_old_expiry = datetime.strptime(current_expiry_str, "%Y-%m-%d")
+                                    dp_base_dt = today_dt if dp_old_expiry < today_dt else dp_old_expiry
+                                except Exception:
+                                    dp_base_dt = today_dt
+                            dp_new_expiry = (dp_base_dt + relativedelta(months=dp_months)).strftime("%Y-%m-%d %H:%M:%S")
+                            dp_invoice_uuid = f"INV-{uuid.uuid4().hex[:10].upper()}"
+                            with get_db_connection() as conn:
+                                with conn.cursor() as cursor:
+                                    cursor.execute("""
+                                        UPDATE customers SET balanceshift = %s, status = %s, expirydate = %s WHERE username = %s AND tenant_id = %s
+                                    """, (dp_future_shift, dp_status, dp_new_expiry, selected_uid, st.session_state['tenant_id']))
+                                    cursor.execute("""
+                                        INSERT INTO billing_history (invoiceid, customerid, customername, area, phone, datetimestamp, currentpackage, amountpaid, remainingarrears, transactiontype, paymentmethod, discountgiven, tenant_id)
+                                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, 'BILL_PAYMENT', %s, %s, %s)
+                                    """, (dp_invoice_uuid, selected_uid, selected_row.get('customername'), selected_row.get('area'), selected_row.get('phone'), datetime.now().strftime("%Y-%m-%d %H:%M:%S"), selected_row.get('package'), int(dp_cash_in), dp_future_shift, dp_method, int(dp_discount), st.session_state['tenant_id']))
+                                    insert_activity_log(st.session_state['tenant_id'], st.session_state['username'], "BILL_PAYMENT", f"Quick dashboard payment Rs. {dp_cash_in} for user {selected_uid}. Status {dp_status}, Arrears {dp_future_shift}, Expiry {dp_new_expiry}.")
+                            st.success(f"✅ Payment recorded for {selected_uid}! Status: {dp_status} | New Expiry: {dp_new_expiry}")
+                            wa_context = {
+                                "name": selected_row.get('customername', ''), "username": selected_uid, "package": selected_row.get('package', ''), "paid": int(dp_cash_in), "arrears": dp_future_shift, "expiry": dp_new_expiry, "method": dp_method
+                            }
+                            send_tenant_whatsapp(tenant_meta, selected_row.get('phone'), "bill_paid", wa_context)
+                            st.session_state['recent_pdf_bytes'] = generate_receipt_pdf(TENANT_COMPANY_NAME, TENANT_SUPPORT_PHONE, dp_invoice_uuid, selected_uid, selected_row.get('customername'), selected_row.get('area'), selected_row.get('package'), dp_cash_in, dp_future_shift, dp_method)
+                            st.session_state['recent_invoice_uuid'] = dp_invoice_uuid
+                            st.cache_data.clear()
+                            st.rerun()
 
                     if 'recent_pdf_bytes' in st.session_state:
                         st.download_button("📥 Download Generated PDF Receipt", data=st.session_state['recent_pdf_bytes'], file_name=f"Receipt_{st.session_state.get('recent_invoice_uuid', 'INV')}.pdf", mime="application/pdf", use_container_width=True)
@@ -2202,42 +2219,59 @@ elif routing_node == "👥 Operational Billing Center":
                 """, unsafe_allow_html=True)
                 
                 if st.button("💳 POST TRANSACTION & EXTEND LINE", use_container_width=True):
-                    today_dt = datetime.now()
-                    current_expiry_str = str(node_row_dict.get('expirydate', '')).strip()
-                    try:
-                        # Try datetime format (YYYY-MM-DD HH:MM:SS)
-                        old_expiry_dt = datetime.strptime(current_expiry_str, "%Y-%m-%d %H:%M:%S")
-                        base_dt = today_dt if old_expiry_dt < today_dt else old_expiry_dt
-                    except Exception:
-                        try:
-                            # Try date format (YYYY-MM-DD)
-                            old_expiry_dt = datetime.strptime(current_expiry_str, "%Y-%m-%d")
-                            base_dt = today_dt if old_expiry_dt < today_dt else old_expiry_dt
-                        except Exception:
-                            base_dt = today_dt
-                    new_expiry = (base_dt + relativedelta(months=billing_months)).strftime("%Y-%m-%d %H:%M:%S")
-                    invoice_uuid = f"INV-{uuid.uuid4().hex[:10].upper()}"
-                    
+                    # Check if already paid this month
+                    current_month = datetime.now().strftime("%Y-%m")
                     with get_db_connection() as conn:
                         with conn.cursor() as cursor:
                             cursor.execute("""
-                                UPDATE customers SET balanceshift = %s, status = %s, expirydate = %s WHERE username = %s AND tenant_id = %s
-                            """, (future_shift, calculated_status, new_expiry, resolved_uid, st.session_state['tenant_id']))
-                            cursor.execute("""
-                                INSERT INTO billing_history (invoiceid, customerid, customername, area, phone, datetimestamp, currentpackage, amountpaid, remainingarrears, transactiontype, paymentmethod, discountgiven, tenant_id)
-                                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, 'BILL_PAYMENT', %s, %s, %s)
-                            """, (invoice_uuid, resolved_uid, node_row_dict.get('customername'), node_row_dict.get('area'), node_row_dict.get('phone'), datetime.now().strftime("%Y-%m-%d %H:%M:%S"), node_row_dict.get('package'), int(cash_in), future_shift, pay_method, int(discount), st.session_state['tenant_id']))
-                            insert_activity_log(st.session_state['tenant_id'], st.session_state['username'], "BILL_PAYMENT", f"Staff posted Rs. {cash_in} for user {resolved_uid}. Status updated to {calculated_status}, Arrears set to Rs. {future_shift}, Expiry to {new_expiry}.")
-                            
-                    st.success(f"🎉 Collection Recorded Cleanly! System Class Status: {calculated_status} | Extended To: {new_expiry}")
-                    wa_context = {
-                        "name": node_row_dict.get('customername', ''), "username": resolved_uid, "package": node_row_dict.get('package', ''), "paid": int(cash_in), "arrears": future_shift, "expiry": new_expiry, "method": pay_method
-                    }
-                    send_tenant_whatsapp(tenant_meta, node_row_dict.get('phone'), "bill_paid", wa_context)
-                    st.session_state['recent_pdf_bytes'] = generate_receipt_pdf(TENANT_COMPANY_NAME, TENANT_SUPPORT_PHONE, invoice_uuid, resolved_uid, node_row_dict.get('customername'), node_row_dict.get('area'), node_row_dict.get('package'), cash_in, future_shift, pay_method)
-                    st.session_state['recent_invoice_uuid'] = invoice_uuid
-                    st.cache_data.clear()
-                    st.rerun()
+                                SELECT COUNT(*) FROM billing_history 
+                                WHERE customerid = %s 
+                                AND tenant_id = %s 
+                                AND transactiontype = 'BILL_PAYMENT'
+                                AND TO_CHAR(datetimestamp, 'YYYY-MM') = %s
+                            """, (resolved_uid, st.session_state['tenant_id'], current_month))
+                            payment_count = cursor.fetchone()[0]
+                    
+                    if payment_count > 0:
+                        st.error(f"⚠️ This customer has already been paid for {current_month}. Duplicate payment prevented.")
+                        st.info(f"Payment count this month: {payment_count}")
+                    else:
+                        today_dt = datetime.now()
+                        current_expiry_str = str(node_row_dict.get('expirydate', '')).strip()
+                        try:
+                            # Try datetime format (YYYY-MM-DD HH:MM:SS)
+                            old_expiry_dt = datetime.strptime(current_expiry_str, "%Y-%m-%d %H:%M:%S")
+                            base_dt = today_dt if old_expiry_dt < today_dt else old_expiry_dt
+                        except Exception:
+                            try:
+                                # Try date format (YYYY-MM-DD)
+                                old_expiry_dt = datetime.strptime(current_expiry_str, "%Y-%m-%d")
+                                base_dt = today_dt if old_expiry_dt < today_dt else old_expiry_dt
+                            except Exception:
+                                base_dt = today_dt
+                        new_expiry = (base_dt + relativedelta(months=billing_months)).strftime("%Y-%m-%d %H:%M:%S")
+                        invoice_uuid = f"INV-{uuid.uuid4().hex[:10].upper()}"
+                        
+                        with get_db_connection() as conn:
+                            with conn.cursor() as cursor:
+                                cursor.execute("""
+                                    UPDATE customers SET balanceshift = %s, status = %s, expirydate = %s WHERE username = %s AND tenant_id = %s
+                                """, (future_shift, calculated_status, new_expiry, resolved_uid, st.session_state['tenant_id']))
+                                cursor.execute("""
+                                    INSERT INTO billing_history (invoiceid, customerid, customername, area, phone, datetimestamp, currentpackage, amountpaid, remainingarrears, transactiontype, paymentmethod, discountgiven, tenant_id)
+                                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, 'BILL_PAYMENT', %s, %s, %s)
+                                """, (invoice_uuid, resolved_uid, node_row_dict.get('customername'), node_row_dict.get('area'), node_row_dict.get('phone'), datetime.now().strftime("%Y-%m-%d %H:%M:%S"), node_row_dict.get('package'), int(cash_in), future_shift, pay_method, int(discount), st.session_state['tenant_id']))
+                                insert_activity_log(st.session_state['tenant_id'], st.session_state['username'], "BILL_PAYMENT", f"Staff posted Rs. {cash_in} for user {resolved_uid}. Status updated to {calculated_status}, Arrears set to Rs. {future_shift}, Expiry to {new_expiry}.")
+                                
+                        st.success(f"🎉 Collection Recorded Cleanly! System Class Status: {calculated_status} | Extended To: {new_expiry}")
+                        wa_context = {
+                            "name": node_row_dict.get('customername', ''), "username": resolved_uid, "package": node_row_dict.get('package', ''), "paid": int(cash_in), "arrears": future_shift, "expiry": new_expiry, "method": pay_method
+                        }
+                        send_tenant_whatsapp(tenant_meta, node_row_dict.get('phone'), "bill_paid", wa_context)
+                        st.session_state['recent_pdf_bytes'] = generate_receipt_pdf(TENANT_COMPANY_NAME, TENANT_SUPPORT_PHONE, invoice_uuid, resolved_uid, node_row_dict.get('customername'), node_row_dict.get('area'), node_row_dict.get('package'), cash_in, future_shift, pay_method)
+                        st.session_state['recent_invoice_uuid'] = invoice_uuid
+                        st.cache_data.clear()
+                        st.rerun()
                 
                 if 'recent_pdf_bytes' in st.session_state:
                             st.download_button("📥 Download Generated PDF Receipt", data=st.session_state['recent_pdf_bytes'], file_name=f"Receipt_{st.session_state.get('recent_invoice_uuid', 'INV')}.pdf", mime="application/pdf", use_container_width=True)
