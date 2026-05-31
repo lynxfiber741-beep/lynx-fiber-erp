@@ -679,10 +679,10 @@ def fetch_isolated_packages(tenant_id):
 @st.cache_data(ttl=3)
 def fetch_isolated_billing_summary(tenant_id):
     try:
-        current_month_str = datetime.now().strftime("%Y-%m")
         with get_db_connection() as conn:
             with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-                cur.execute("SELECT LOWER(TRIM(customerid)) as customerid, amountpaid FROM billing_history WHERE tenant_id = %s AND datetimestamp LIKE %s", (tenant_id, current_month_str + '%'))
+                # Get all payments (not just current month) to calculate total received
+                cur.execute("SELECT LOWER(TRIM(customerid)) as customerid, amountpaid FROM billing_history WHERE tenant_id = %s AND transactiontype = 'BILL_PAYMENT'", (tenant_id,))
                 rows = cur.fetchall()
                 if rows:
                     df = pd.DataFrame(rows)
