@@ -2066,12 +2066,12 @@ elif routing_node == "👥 Operational Billing Center":
         df_matrix = df_matrix[df_matrix['area'].str.lower().isin([s.lower() for s in st.session_state['assigned_areas']])]
         
     if is_management:
-        tabs = st.tabs(["💳 Capital Collection Hub", "🔄 Status & Reversal Control", "➕ Provision New Client", "📥 Bulk Import Excel/CSV", "🛠️ Edit Terminal Profile", "🗑️ Remove Subscriber"])
-        tab_col, tab_status_rev, tab_prov, tab_bulk, tab_edit, tab_del = tabs
+        tabs = st.tabs(["💳 Capital Collection Hub", "🔄 Status & Reversal Control", "➕ Provision New Client", "📥 Bulk Import Excel/CSV", "🔍 Missing Users Check", "🛠️ Edit Terminal Profile", "🗑️ Remove Subscriber"])
+        tab_col, tab_status_rev, tab_prov, tab_bulk, tab_missing, tab_edit, tab_del = tabs
     else:
         tabs = st.tabs(["💳 Capital Collection Hub", "🛠️ Edit Terminal Profile"])
         tab_col, tab_edit = tabs
-        tab_status_rev = tab_prov = tab_bulk = tab_del = None
+        tab_status_rev = tab_prov = tab_bulk = tab_missing = tab_del = None
         
     sub_map = {}
     if not df_matrix.empty:
@@ -2493,6 +2493,78 @@ elif routing_node == "👥 Operational Billing Center":
                         st.cache_data.clear()
                 except Exception as ex:
                     st.error(f"Critical Upload Error: {ex}")
+
+    if tab_missing:
+        with tab_missing:
+            st.markdown("#### 🔍 Missing Users Check / غیر موجود صارفین کی جانچ")
+            st.markdown("Upload a CSV file with usernames to check which users are missing from the system.")
+            st.markdown("**CSV Format:** The CSV should have a `username` column.")
+            
+            uploaded_file = st.file_uploader("Upload CSV file", type=['csv', 'xlsx'], key="missing_users_upload")
+            
+            if uploaded_file:
+                try:
+                    df_check = pd.read_csv(uploaded_file) if uploaded_file.name.endswith('.csv') else pd.read_excel(uploaded_file)
+                    df_check.columns = [str(c).lower().replace(" ", "").strip() for c in df_check.columns]
+                    
+                    if 'username' not in df_check.columns:
+                        st.error("❌ CSV must have a 'username' column.")
+                    else:
+                        csv_usernames = set(df_check['username'].astype(str).str.lower().str.strip())
+                        
+                        # Get existing usernames from database
+                        with get_db_connection() as conn:
+                            with conn.cursor() as cursor:
+                                cursor.execute("SELECT username FROM customers WHERE tenant_id = %s", (st.session_state['tenant_id'],))
+                                existing_usernames = set(row[0].lower() for row in cursor.fetchall())
+                        
+                        # Find missing users
+                        missing_usernames = csv_usernames - existing_usernames
+                        existing_in_csv = csv_usernames & existing_usernames
+                        
+                        st.markdown("---")
+                        st.markdown("### 📊 Check Results")
+                        
+                        col1, col2, col3 = st.columns(3)
+                        with col1:
+                            st.metric("Total in CSV", len(csv_usernames))
+                        with col2:
+                            st.metric("✅ Found in System", len(existing_in_csv))
+                        with col3:
+                            st.metric("❌ Missing from System", len(missing_usernames))
+                        
+                        if missing_usernames:
+                            st.markdown("---")
+                            st.markdown("### ❌ Missing Users")
+                            st.warning(f"Found {len(missing_usernames)} users in CSV that are not in the system:")
+                            
+                            missing_df = pd.DataFrame({'username': sorted(missing_usernames)})
+                            st.dataframe(missing_df, use_container_width=True)
+                            
+                            # Option to download missing users list
+                            csv_missing = missing_df.to_csv(index=False).encode('utf-8')
+                            st.download_button(
+                                "📥 Download Missing Users List",
+                                csv_missing,
+                                "missing_users.csv",
+                                "text/csv",
+                                key="download_missing"
+                            )
+                        else:
+                            st.success("✅ All users from CSV are found in the system!")
+                        
+                        if existing_in_csv:
+                            st.markdown("---")
+                            st.markdown("### ✅ Users Found in System")
+                            st.info(f"Found {len(existing_in_csv)} users from CSV in the system:")
+                            
+                            existing_df = pd.DataFrame({'username': sorted(existing_in_csv)})
+                            st.dataframe(existing_df, use_container_width=True)
+                        
+                        insert_activity_log(st.session_state['tenant_id'], st.session_state['username'], "MISSING_USERS_CHECK", f"Checked {len(csv_usernames)} users - Missing: {len(missing_usernames)}, Found: {len(existing_in_csv)}")
+                        
+                except Exception as ex:
+                    st.error(f"Error processing file: {ex}")
 
     if tab_edit:
         with tab_edit:
