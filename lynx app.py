@@ -121,60 +121,76 @@ GLOBAL_TARGET_ORDER = [
 # ==========================================
 # 2. SECURE POOLED DATABASE REGISTRY
 # ==========================================
+def get_db_connect_kwargs():
+    """Build psycopg2 kwargs from [database] in secrets or DB_URL."""
+    if "database" in st.secrets:
+        db = st.secrets["database"]
+        return {
+            "host": db["host"],
+            "port": int(db.get("port", 5432)),
+            "dbname": db.get("dbname", "postgres"),
+            "user": db["user"],
+            "password": db["password"],
+            "sslmode": db.get("sslmode", "require"),
+        }
+
+    db_url = st.secrets["DB_URL"]
+    parsed = urllib.parse.urlparse(db_url)
+    query = urllib.parse.parse_qs(parsed.query)
+    kwargs = {
+        "host": parsed.hostname,
+        "port": parsed.port or 5432,
+        "dbname": (parsed.path or "/postgres").lstrip("/") or "postgres",
+        "user": urllib.parse.unquote(parsed.username) if parsed.username else None,
+        "password": urllib.parse.unquote(parsed.password) if parsed.password else None,
+    }
+    if "sslmode" in query:
+        kwargs["sslmode"] = query["sslmode"][0]
+    elif parsed.hostname and "supabase.co" in parsed.hostname.lower():
+        kwargs["sslmode"] = "require"
+    return {k: v for k, v in kwargs.items() if v is not None}
+
+
 try:
-    DB_URL = st.secrets["DB_URL"]
-except Exception as exc:
-    st.error("🔴 Critical Configuration Error: 'DB_URL' is missing from Streamlit Secrets!")
-    st.error("Please create a Streamlit secrets file at .streamlit/secrets.toml with a DB_URL entry.")
+    if "database" not in st.secrets and "DB_URL" not in st.secrets:
+        raise KeyError("database or DB_URL")
+except Exception:
+    st.error("🔴 Critical Configuration Error: database settings missing from Streamlit Secrets!")
+    st.error("Add a `[database]` section or `DB_URL` in `.streamlit/secrets.toml`.")
     st.stop()
 
 @st.cache_resource
 def init_connection_pool():
     try:
-        # Add SSL mode for Supabase compatibility
-        if 'supabase.co' in DB_URL.lower():
-            # Supabase requires SSL
-            if 'sslmode' not in DB_URL.lower():
-                DB_URL_SSL = DB_URL + '?sslmode=require'
-            else:
-                DB_URL_SSL = DB_URL
-            return SimpleConnectionPool(1, 20, dsn=DB_URL_SSL, connect_timeout=30)
-        else:
-            return SimpleConnectionPool(1, 20, dsn=DB_URL, connect_timeout=10)
+        kwargs = get_db_connect_kwargs()
+        host = str(kwargs.get("host", "")).lower()
+        timeout = 30 if "supabase.co" in host else 10
+        return SimpleConnectionPool(1, 20, connect_timeout=timeout, **kwargs)
     except Exception as e:
         st.error(f"🔴 Critical Pool Init Error: {e}")
         st.error("❌ Database Connection Failed")
+        err = str(e).lower()
+        if "password authentication failed" in err:
+            st.warning(
+                "**Supabase password galat hai.** Dashboard → **Project Settings** → **Database** → "
+                "**Reset database password**, phir naya password `.streamlit/secrets.toml` ke "
+                "`[database].password` mein likhein. Pooler ke liye user: `postgres.hvnqenuoyaefojzshvik`"
+            )
         st.markdown("""
         ### Troubleshooting Steps:
         
-        1. **Check Database URL in secrets.toml**
-           - **Local PostgreSQL**: `postgresql://user:password@localhost:5432/database`
-           - **Supabase**: `postgresql://postgres:[YOUR-PASSWORD]@db.[PROJECT-REF].supabase.co:5432/postgres`
+        1. **Supabase credentials (`.streamlit/secrets.toml`)**
+           - `[database]` section: `host`, `port`, `user`, `password`, `dbname`, `sslmode`
+           - Pooler user: `postgres.<project-ref>` (e.g. `postgres.hvnqenuoyaefojzshvik`)
+           - Password: **Database password** from Supabase (Connect → URI), not anon/service keys
         
-        2. **For Supabase Users:**
-           - Get connection string from Supabase Dashboard → Settings → Database
-           - Use the "URI" format (not "Connection string")
-           - Ensure SSL is enabled (automatic for Supabase)
-           - Project reference is in your Supabase URL
+        2. **Ports**
+           - Session pooler (recommended for this app): port **5432**
+           - Transaction pooler: port **6543**
         
-        3. **Verify Database Server is Running**
-           - Check if PostgreSQL service is running (local)
-           - Verify Supabase project is active (Supabase)
+        3. **Reset password** if auth fails: Supabase Dashboard → Settings → Database → Reset database password
         
-        4. **Check Network Connectivity**
-           - Ensure you can reach the database server
-           - Check firewall settings
-           - For Supabase: No firewall needed (cloud)
-        
-        5. **Verify Credentials**
-           - Username and password are correct
-           - User has necessary permissions
-           - For Supabase: Use the postgres user and password from dashboard
-        
-        6. **Check Database Exists**
-           - Database name in URL should exist
-           - User has access to the database
-           - For Supabase: Database name is usually "postgres"
+        4. **Local PostgreSQL**: `host=localhost`, `user`/`password` as configured on your machine
         """)
         st.stop()
 
