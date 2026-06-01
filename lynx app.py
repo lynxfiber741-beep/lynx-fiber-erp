@@ -508,6 +508,108 @@ def apply_schema_migrations(cursor):
         )
 
 
+LYNX_USERS_REQUIRED_COLUMNS = frozenset({
+    "username", "password", "role", "tenant_id", "assignedarea",
+})
+
+
+def _get_public_table_columns(cursor, table_name):
+    cursor.execute(
+        """
+        SELECT column_name FROM information_schema.columns
+        WHERE table_schema = 'public' AND table_name = %s
+        """,
+        (table_name,),
+    )
+    return {row[0] for row in cursor.fetchall()}
+
+
+def ensure_users_table(cursor):
+    """Use Lynx ERP users schema; rename foreign/incompatible public.users tables."""
+    cols = _get_public_table_columns(cursor, "users")
+    incompatible = False
+    if cols:
+        if not LYNX_USERS_REQUIRED_COLUMNS.issubset(cols):
+            incompatible = True
+        else:
+            cursor.execute("""
+                SELECT column_name FROM information_schema.columns
+                WHERE table_schema = 'public' AND table_name = 'users'
+                  AND is_nullable = 'NO' AND column_default IS NULL
+            """)
+            strict_not_null = {row[0] for row in cursor.fetchall()}
+            insertable = {"username", "password", "role", "tenant_id", "assignedarea"}
+            if strict_not_null - insertable:
+                incompatible = True
+    if incompatible:
+        legacy_name = "users_legacy_backup"
+        cursor.execute(
+            "SELECT 1 FROM information_schema.tables "
+            "WHERE table_schema = 'public' AND table_name = %s",
+            (legacy_name,),
+        )
+        if cursor.fetchone():
+            legacy_name = f"users_legacy_{uuid.uuid4().hex[:8]}"
+        logger.warning(
+            "Renaming incompatible public.users (%s) to %s",
+            sorted(cols),
+            legacy_name,
+        )
+        cursor.execute(f"ALTER TABLE users RENAME TO {legacy_name}")
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS users (
+            username TEXT NOT NULL,
+            password TEXT NOT NULL,
+            role TEXT NOT NULL,
+            assignedarea TEXT DEFAULT 'ALL',
+            tenant_id TEXT NOT NULL DEFAULT 'lynx',
+            password_changed_at TEXT DEFAULT '',
+            PRIMARY KEY (username, tenant_id)
+        )
+    """)
+
+
+def seed_default_owner(cursor):
+    cursor.execute(
+        "UPDATE users SET tenant_id = 'lynx' "
+        "WHERE username = 'owner' AND (tenant_id IS NULL OR tenant_id = '')"
+    )
+    cursor.execute(
+        "SELECT COUNT(*) FROM users WHERE username = %s AND tenant_id = %s",
+        ("owner", "lynx"),
+    )
+    if cursor.fetchone()[0] > 0:
+        return
+    cursor.execute("SELECT COUNT(*) FROM users WHERE username = %s", ("owner",))
+    if cursor.fetchone()[0] > 0:
+        cursor.execute("""
+            UPDATE users
+            SET tenant_id = 'lynx',
+                role = COALESCE(NULLIF(role, ''), 'Owner'),
+                assignedarea = COALESCE(NULLIF(assignedarea, ''), 'ALL')
+            WHERE username = 'owner'
+        """)
+        return
+    default_owner_pass = os.getenv("DEFAULT_OWNER_PASSWORD")
+    if not default_owner_pass:
+        import secrets
+        default_owner_pass = secrets.token_urlsafe(16)
+        logger.warning(
+            "Generated secure default password for owner: %s. Change it after first login.",
+            default_owner_pass,
+        )
+    try:
+        cursor.execute(
+            """
+            INSERT INTO users (username, password, role, assignedarea, tenant_id)
+            VALUES ('owner', %s, 'Owner', 'ALL', 'lynx')
+            """,
+            (hash_password(default_owner_pass),),
+        )
+    except psycopg2.errors.UniqueViolation:
+        logger.info("Default owner row already present; insert skipped.")
+
+
 def build_database_schema():
     with get_db_connection() as conn:
         with conn.cursor() as cursor:
@@ -527,17 +629,7 @@ def build_database_schema():
                     whatsapp_templates TEXT DEFAULT ''
                 )
             """)
-            cursor.execute("""
-                CREATE TABLE IF NOT EXISTS users (
-                    username TEXT NOT NULL,
-                    password TEXT NOT NULL,
-                    role TEXT NOT NULL,
-                    assignedarea TEXT DEFAULT 'ALL',
-                    tenant_id TEXT NOT NULL DEFAULT 'lynx',
-                    password_changed_at TEXT DEFAULT '',
-                    PRIMARY KEY (username, tenant_id)
-                )
-            """)
+            ensure_users_table(cursor)
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS customers (
                     username TEXT NOT NULL,
@@ -606,19 +698,7 @@ def build_database_schema():
                     INSERT INTO system_tenants (tenant_id, company_name, support_phone, owner_username, license_active, registration_date, license_expiry_date, staff_permissions, whatsapp_templates)
                     VALUES ('lynx', 'Lynx Fiber Pvt Ltd', '03135776263', 'owner', TRUE, %s, '', '', %s)
                 """, (datetime.now().strftime("%Y-%m-%d"), json.dumps(DEFAULT_WA_TEMPLATES)))
-            cursor.execute("SELECT COUNT(*) FROM users WHERE username = 'owner' AND tenant_id = 'lynx'")
-            if cursor.fetchone()[0] == 0:
-                # Use environment variable for default password, or generate a secure random password
-                default_owner_pass = os.getenv('DEFAULT_OWNER_PASSWORD', None)
-                if not default_owner_pass:
-                    # Generate secure random password if not provided
-                    import secrets
-                    default_owner_pass = secrets.token_urlsafe(16)
-                    logger.warning(f"Generated secure default password for owner: {default_owner_pass}. Please change it immediately after first login.")
-                cursor.execute("""
-                    INSERT INTO users (username, password, role, assignedarea, tenant_id)
-                    VALUES ('owner', %s, 'Owner', 'ALL', 'lynx')
-                """, (hash_password(default_owner_pass),))
+            seed_default_owner(cursor)
 
 def run_live_migrations():
     try:
