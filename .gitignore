@@ -1,0 +1,9 @@
+# Secrets — never commit real passwords
+.streamlit/secrets.toml
+
+# Python / OS
+__pycache__/
+*.py[cod]
+.env
+.venv/
+venv/

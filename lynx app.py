@@ -121,11 +121,24 @@ GLOBAL_TARGET_ORDER = [
 # ==========================================
 # 2. SECURE POOLED DATABASE REGISTRY
 # ==========================================
-try:
-    DB_URL = st.secrets["DB_URL"]
-except Exception as exc:
-    st.error("🔴 Critical Configuration Error: 'DB_URL' is missing from Streamlit Secrets!")
-    st.error("Please create a Streamlit secrets file at .streamlit/secrets.toml with a DB_URL entry.")
+def load_db_url():
+    """Load DB URL from env or Streamlit secrets only (never shown in the UI)."""
+    url = os.environ.get("DB_URL", "").strip()
+    if url:
+        return url
+    try:
+        return st.secrets["DB_URL"]
+    except Exception:
+        return None
+
+
+DB_URL = load_db_url()
+if not DB_URL:
+    st.error("🔴 Critical Configuration Error: DB_URL is not configured.")
+    st.error(
+        "Local: copy `.streamlit/secrets.toml.example` to `secrets.toml` and set DB_URL. "
+        "Cloud: add DB_URL in Streamlit → Settings → Secrets."
+    )
     st.stop()
 
 @st.cache_resource
@@ -133,7 +146,9 @@ def init_connection_pool():
     try:
         return SimpleConnectionPool(1, 20, dsn=DB_URL)
     except Exception as e:
-        st.error(f"🔴 Critical Pool Init Error: {e}")
+        logger.error("Database pool init failed: %s", e)
+        st.error("🔴 Critical Pool Init Error: Could not connect to the database.")
+        st.error("Check DB_URL in secrets or environment variables (password is never shown here).")
         st.stop()
 
 master_pool = init_connection_pool()
