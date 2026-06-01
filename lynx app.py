@@ -131,7 +131,16 @@ except Exception as exc:
 @st.cache_resource
 def init_connection_pool():
     try:
-        return SimpleConnectionPool(1, 20, dsn=DB_URL, connect_timeout=10)
+        # Add SSL mode for Supabase compatibility
+        if 'supabase.co' in DB_URL.lower():
+            # Supabase requires SSL
+            if 'sslmode' not in DB_URL.lower():
+                DB_URL_SSL = DB_URL + '?sslmode=require'
+            else:
+                DB_URL_SSL = DB_URL
+            return SimpleConnectionPool(1, 20, dsn=DB_URL_SSL, connect_timeout=30)
+        else:
+            return SimpleConnectionPool(1, 20, dsn=DB_URL, connect_timeout=10)
     except Exception as e:
         st.error(f"🔴 Critical Pool Init Error: {e}")
         st.error("❌ Database Connection Failed")
@@ -139,24 +148,33 @@ def init_connection_pool():
         ### Troubleshooting Steps:
         
         1. **Check Database URL in secrets.toml**
-           - Format: `postgresql://user:password@host:port/database`
-           - Example: `postgresql://postgres:password@localhost:5432/lynx_erp`
+           - **Local PostgreSQL**: `postgresql://user:password@localhost:5432/database`
+           - **Supabase**: `postgresql://postgres:[YOUR-PASSWORD]@db.[PROJECT-REF].supabase.co:5432/postgres`
         
-        2. **Verify Database Server is Running**
-           - Check if PostgreSQL service is running
-           - Verify host and port are correct
+        2. **For Supabase Users:**
+           - Get connection string from Supabase Dashboard → Settings → Database
+           - Use the "URI" format (not "Connection string")
+           - Ensure SSL is enabled (automatic for Supabase)
+           - Project reference is in your Supabase URL
         
-        3. **Check Network Connectivity**
+        3. **Verify Database Server is Running**
+           - Check if PostgreSQL service is running (local)
+           - Verify Supabase project is active (Supabase)
+        
+        4. **Check Network Connectivity**
            - Ensure you can reach the database server
            - Check firewall settings
+           - For Supabase: No firewall needed (cloud)
         
-        4. **Verify Credentials**
+        5. **Verify Credentials**
            - Username and password are correct
            - User has necessary permissions
+           - For Supabase: Use the postgres user and password from dashboard
         
-        5. **Check Database Exists**
+        6. **Check Database Exists**
            - Database name in URL should exist
            - User has access to the database
+           - For Supabase: Database name is usually "postgres"
         """)
         st.stop()
 
@@ -1119,21 +1137,25 @@ else:
                             ### Connection Timeout - Troubleshooting:
                             
                             1. **Check Database Server Status**
-                               - Ensure PostgreSQL is running
-                               - Verify server is accessible from this network
+                               - Ensure PostgreSQL is running (local)
+                               - Verify Supabase project is active (Supabase)
                             
                             2. **Verify Database URL in .streamlit/secrets.toml**
-                               - Format: `postgresql://user:password@host:port/database`
-                               - Check host and port are correct
+                               - **Local**: `postgresql://user:password@localhost:5432/database`
+                               - **Supabase**: `postgresql://postgres:[PASSWORD]@db.[REF].supabase.co:5432/postgres`
                             
                             3. **Network Issues**
-                               - Check firewall settings
+                               - Check firewall settings (local)
                                - Verify DNS resolution
                                - Test connectivity to database host
                             
                             4. **Database Load**
                                - Database might be overloaded
                                - Check database server resources
+                            
+                            5. **Supabase Specific**
+                               - Check if Supabase project is paused
+                               - Verify project is not at free tier limits
                             """)
                         elif 'connection refused' in error_str:
                             st.error("❌ Database Connection Refused")
@@ -1141,7 +1163,7 @@ else:
                             ### Connection Refused - Troubleshooting:
                             
                             1. **Check PostgreSQL is Running**
-                               - Service might be stopped
+                               - Service might be stopped (local)
                                - Restart PostgreSQL service
                             
                             2. **Verify Port**
@@ -1151,6 +1173,10 @@ else:
                             3. **Check Host**
                                - Verify hostname/IP is correct
                                - Try using localhost instead of 127.0.0.1 or vice versa
+                            
+                            4. **Supabase Specific**
+                               - Verify project reference is correct
+                               - Check if database is enabled in project
                             """)
                         elif 'password' in error_str or 'authentication' in error_str:
                             st.error("❌ Database Authentication Failed")
@@ -1167,6 +1193,28 @@ else:
                             
                             3. **Database Exists**
                                - Verify database name in URL exists
+                            
+                            4. **Supabase Specific**
+                               - Use the postgres user from Supabase dashboard
+                               - Get password from: Project Settings → Database
+                               - Ensure password is not expired
+                            """)
+                        elif 'ssl' in error_str or 'certificate' in error_str:
+                            st.error("❌ SSL/TLS Connection Error")
+                            st.markdown("""
+                            ### SSL Error - Troubleshooting:
+                            
+                            1. **Supabase Requires SSL**
+                               - SSL is automatically enabled for Supabase
+                               - The app adds `?sslmode=require` automatically
+                            
+                            2. **Local PostgreSQL**
+                               - SSL may not be required for local connections
+                               - Remove sslmode from DB_URL if not needed
+                            
+                            3. **Certificate Issues**
+                               - Ensure your system has up-to-date SSL certificates
+                               - For local: SSL may be disabled in PostgreSQL config
                             """)
                         else:
                             st.error("❌ Database connection failed. Please check your database configuration.")
