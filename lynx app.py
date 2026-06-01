@@ -122,10 +122,20 @@ GLOBAL_TARGET_ORDER = [
 # 2. SECURE POOLED DATABASE REGISTRY
 # ==========================================
 try:
-    DB_URL = st.secrets["DB_URL"]
-except Exception as exc:
-    st.error("🔴 Critical Configuration Error: 'DB_URL' is missing from Streamlit Secrets!")
-    st.error("Please create a Streamlit secrets file at .streamlit/secrets.toml with a DB_URL entry.")
+    DB_URL = st.secrets.get("DB_URL") if hasattr(st, "secrets") else None
+except Exception:
+    DB_URL = None
+
+if not DB_URL:
+    DB_URL = os.getenv("DB_URL", None)
+
+# Fallback (only use for local/testing). Replace with secure secret in production.
+if not DB_URL:
+    DB_URL = "postgresql://postgres.hvnqenuoyaefojzshvik:NPHwJmpUpMvAO9Mn@aws-1-ap-southeast-1.pooler.supabase.com:6543/postgres"
+
+if not DB_URL:
+    st.error("🔴 Critical Configuration Error: 'DB_URL' is missing from Streamlit Secrets or environment!")
+    st.error("Please set DB_URL in .streamlit/secrets.toml or as an environment variable.")
     st.stop()
 
 @st.cache_resource
@@ -1671,7 +1681,7 @@ elif routing_node == "📘 ISP Guide":
                 "<li><b>Add Packages:</b> Create new internet packages (e.g., 10Mbps, 20Mbps)</li>"
                 "<li><b>Set Area-Specific Rates:</b> Different prices for different areas</li>"
                 "<li><b>Update Prices:</b> Change rates when needed (affects new customers only)</li>"
-                "<li><b>Delete Packages:</b> Remove packages not in use</li>"
+                "<li><b>DELETE Packages:</b> Remove packages not in use</li>"
                 "</ol>"
                 
                 "<h4>🗺️ Area Hubs Management</h4>"
@@ -1760,81 +1770,81 @@ elif routing_node == "📘 ISP Guide":
                 "<li><b>مکمل سرور بیک اپ:</b> ایک ہی وقت میں تمام ٹیننٹس کا ڈیٹا ایکسپورٹ کریں</li>"
                 "</ol>"
                 
-                "<h4>👥 اسٹاف صارفین کا انتظام (Access Accounts Management)</h4>"
+                "<h4>👥 Managing Staff Users (Access Accounts Management)</h4>"
                 "<p>جائیں <b>System Access Control → Access Accounts Management</b></p>"
                 "<ol>"
-                "<li><b>اسٹاف اکاؤنٹس بنائیں:</b> یوزرنیم اور پاس ورڈ کے ساتھ نئے اسٹاف صارفین شامل کریں</li>"
-                "<li><b>رولز تفویض کریں:</b> صارفین کو Admin یا Staff کے طور پر سیٹ کریں</li>"
-                "<li><b>علاقے تفویض کریں:</b> اسٹاف کو مخصوص علاقوں تک محدود کریں یا 'ALL' رسائی دیں</li>"
-                "<li><b>پرمیشنز سیٹ کریں:</b> کنٹرول کریں کہ اسٹاف کون سے فیلڈز ایڈٹ کر سکتا ہے (نام، فون، بل amount، status، وغیرہ)</li>"
-                "<li><b>پاس ورڈ ری سیٹ:</b> ضرورت پڑنے پر اسٹاف پاس ورڈز تبدیل کریں</li>"
+                "<li><b>Create Staff Accounts:</b> Add new staff users with username and password</li>"
+                "<li><b>Assign Roles:</b> Set users as Admin or Staff</li>"
+                "<li><b>Assign Areas:</b> Restrict staff to specific areas or give 'ALL' access</li>"
+                "<li><b>Set Permissions:</b> Control what fields staff can edit (name, phone, bill amount, status, etc.)</li>"
+                "<li><b>Reset Passwords:</b> Change staff passwords when needed</li>"
                 "</ol>"
                 
-                "<h4>💰 پیکج پرائسنگ میٹرکس</h4>"
+                "<h4>💰 Package Pricing Matrix</h4>"
                 "<p>جائیں <b>System Access Control → Fixed Packages Pricing Matrix</b></p>"
                 "<ol>"
-                "<li><b>پیکجز شامل کریں:</b> نئے انٹرنیٹ پیکجز بنائیں (مثلاً 10Mbps، 20Mbps)</li>"
-                "<li><b>علاقے کے مطابق rates سیٹ کریں:</b> مختلف علاقوں کے لیے مختلف قیمتیں</li>"
-                "<li><b>قیمتیں اپ ڈیٹ کریں:</b> ضرورت پڑنے پر rates تبدیل کریں (صرف نئے صارفین پر اثر ڈالتا ہے)</li>"
-                "<li><b>پیکجز حذف کریں:</b> استعمال میں نہیں پیکجز ہٹا دیں</li>"
+                "<li><b>Add Packages:</b> Create new internet packages (e.g., 10Mbps, 20Mbps)</li>"
+                "<li><b>Set Area-Specific Rates:</b> Different prices for different areas</li>"
+                "<li><b>Update Prices:</b> Change rates when needed (affects new customers only)</li>"
+                "<li><b>DELETE Packages:</b> Remove packages not in use</li>"
                 "</ol>"
                 
-                "<h4>🗺️ Area Hubs کا انتظام</h4>"
+                "<h4>🗺️ Area Hubs Management</h4>"
                 "<p>جائیں <b>System Access Control → Dynamic Area Hubs Sector</b></p>"
                 "<ol>"
-                "<li><b>علاقے شامل کریں:</b> نئے سروس علاقے بنائیں (مثلاً گلشن، نارتھ ناظم آباد)</li>"
-                "<li><b>ٹیننٹس کو تفویض کریں:</b> علاقوں کو مخصوص ISP ٹیننٹس کو تفویض کریں</li>"
-                "<li><b>علاقے ہٹا دیں:</b> استعمال میں نہیں علاقے حذف کریں</li>"
+                "<li><b>Add Areas:</b> Create new service areas (e.g., Gulshan, North Nazimabad)</li>"
+                "<li><b>Assign to Tenants:</b> Allocate areas to specific ISP tenants</li>"
+                "<li><b>Remove Areas:</b> Delete areas not in use</li>"
                 "</ol>"
                 
-                "<h4>📱 WhatsApp کنفیگریشن</h4>"
+                "<h4>📱 WhatsApp Configuration</h4>"
                 "<p>جائیں <b>System Access Control → Branding & WhatsApp Controls</b></p>"
                 "<ol>"
-                "<li><b>Green-API کریڈینشلز حاصل کریں:</b> green-api.com پر رجسٹر کریں</li>"
-                "<li><b>Instance ID درج کریں:</b> آپ کا Green-API instance ID</li>"
-                "<li><b>API Token درج کریں:</b> آپ کا Green-API token</li>"
-                "<li><b>WhatsApp فعال کریں:</b> WhatsApp نوٹیفیکیشنز آن کریں</li>"
-                "<li><b>ٹیمپلیٹس کسٹمائز کریں:</b> مختلف واقعات کے لیے میسج ٹیمپلیٹس ایڈٹ کریں</li>"
+                "<li><b>Get Green-API Credentials:</b> Register at green-api.com</li>"
+                "<li><b>Enter Instance ID:</b> Your Green-API instance ID</li>"
+                "<li><b>Enter API Token:</b> Your Green-API token</li>"
+                "<li><b>Enable WhatsApp:</b> Turn on WhatsApp notifications</li>"
+                "<li><b>Customize Templates:</b> Edit message templates for different events</li>"
                 "</ol>"
                 
                 "<h4>📊 Activity Logs</h4>"
                 "<p>جائیں <b>System Access Control → System Activity Logs</b></p>"
                 "<ul>"
-                "<li><b>تمام ایکشنز دیکھیں:</b> تمام صارفین کے ذریعے کیے گئے ہر ایکشن دیکھیں</li>"
-                "<li><b>ٹیننٹ کے ذریعے فلٹر کریں:</b> مخصوص ISP کمپنیوں کے لیے logs دیکھیں</li>"
-                "<li><b>سیکورٹی ٹریک کریں:</b> لاگ ان کوششوں اور سسٹم تبدیلیوں کو مانیٹر کریں</li>"
-                "<li><b>آڈٹ ٹریل:</b> کامپلائنس اور ڈیبگنگ کے لیے مکمل تاریخ</li>"
+                "<li><b>View All Actions:</b> See every action taken by all users</li>"
+                "<li><b>Filter by Tenant:</b> View logs for specific ISP companies</li>"
+                "<li><b>Track Security:</b> Monitor login attempts and system changes</li>"
+                "<li><b>Audit Trail:</b> Complete history for compliance and debugging</li>"
                 "</ul>"
                 
-                "<h4>💾 ڈیٹا بیک اپ اور ریسٹور</h4>"
+                "<h4>💾 Data Backup & Restore</h4>"
                 "<p>جائیں <b>System Access Control → Data Backup Vault</b></p>"
                 "<ol>"
-                "<li><b>ٹیننٹ بیک اپ:</b> سنگل ٹیننٹ ڈیٹا ایکسپورٹ کریں (JSON فارمیٹ)</li>"
-                "<li><b>مکمل سرور بیک اپ:</b> ایک ہی وقت میں تمام ٹیننٹس کا ڈیٹا ایکسپورٹ کریں</li>"
-                "<li><b>بیک اپ ڈاؤن لوڈ کریں:</b> بیک اپ فائل کو اپنے کمپیوٹر پر محفوظ کریں</li>"
-                "<li><b>ریسٹور:</b> ریسٹور اسسٹنس کے لیے ٹیکنیکل سپورٹ سے رابطہ کریں</li>"
+                "<li><b>Tenant Backup:</b> Export single tenant data (JSON format)</li>"
+                "<li><b>Full Server Backup:</b> Export ALL tenant data at once</li>"
+                "<li><b>Download Backup:</b> Save backup file to your computer</li>"
+                "<li><b>Restore:</b> Contact technical support for restore assistance</li>"
                 "</ol>"
                 
-                "<h4>🗑️ ڈیٹا پرج (تخریبی)</h4>"
+                "<h4>🗑️ Data Purge (Destructive)</h4>"
                 "<p>جائیں <b>System Access Control → Core Structural Destruct Engine</b></p>"
                 "<div style='background: #fef2f2; padding: 10px; border-left: 4px solid #ef4444; margin: 10px 0;'>"
-                "<b>⚠️ انتباہ:</b> یہ ایکشن غیر قابل واپسی ہے اور ٹیننٹ کا تمام ڈیٹا حذف کر دے گا۔"
+                "<b>⚠️ WARNING:</b> This action is irreversible and will delete ALL data for a tenant."
                 "</div>"
                 "<ol>"
-                "<li><b>پاس ورڈ درج کریں:</b> اپنے پاس ورڈ کے ساتھ تصدیق کریں</li>"
-                "<li><b>ٹیننٹ منتخب کریں:</b> کون سا ٹیننٹ حذف کرنا ہے منتخب کریں</li>"
-                "<li><b>تصدیق کریں:</b> یہ صارفین، بلنگ، علاقے، پیکجز، صارفین حذف کر دیتا ہے</li>"
-                "<li><b>صرف استعمال کریں:</b> جب کسی کسٹمر کا ISP کاروبار مستقل طور پر بند کر رہے ہوں</li>"
+                "<li><b>Enter Password:</b> Authenticate with your password</li>"
+                "<li><b>Select Tenant:</b> Choose which tenant to delete</li>"
+                "<li><b>Confirm:</b> This deletes customers, billing, areas, packages, users</li>"
+                "<li><b>Use Only:</b> When closing a customer's ISP business permanently</li>"
                 "</ol>"
                 
-                "<h4>🎯 Master Owner کے لیے بہترین طریقے</h4>"
+                "<h4>🎯 Best Practices for Master Owner</h4>"
                 "<ul>"
-                "<li><b>باقاعدہ بیک اپ:</b> ہفتہ وار مکمل سرور بیک اپ لیں</li>"
-                "<li><b>لائسنس مانیٹر کریں:</h> ماہانہ ٹیننٹ ایکسپائر ڈیٹس چیک کریں</li>"
-                "<li><b>Logs جائزہ لیں:</h> شکوک و شبہات کی سرگرمی کے لیے activity logs چیک کریں</li>"
-                "<li><b>اسٹاف سپورٹ:</b> ٹیننٹس کو تکنیکی مسائل میں مدد کریں</li>"
-                "<li><b>سیکورٹی:</h> ماسٹر پاس ورڈ باقاعدہ تبدیل کریں</li>"
-                "<li><b>دستاویزی:</b> ٹیننٹ کنفیگریشنز کا ریکارڈ رکھیں</li>"
+                "<li><b>Regular Backups:</b> Take full server backups weekly</li>"
+                "<li><b>Monitor Licenses:</b> Check tenant expiry dates monthly</li>"
+                "<li><b>Review Logs:</b> Check activity logs for suspicious activity</li>"
+                "<li><b>Support Staff:</b> Help tenants with technical issues</li>"
+                "<li><b>Security:</b> Change master password regularly</li>"
+                "<li><b>Documentation:</b> Keep records of tenant configurations</li>"
                 "</ul>",
                 unsafe_allow_html=True
             )
@@ -1858,13 +1868,13 @@ elif routing_node == "📘 ISP Guide":
             "<li>After login, the user's role and assigned areas are loaded.</li>"
             "<li>Dashboard shows overview and arrears summaries.</li>"
             "<li>Operational Billing Center enables recording payments, updating arrears and editing customer profiles.</li>"
-            "<li>To mark a customer as free, set Monthly Rate to 0 and Status to 'FREE'.</li>"
+            "<li>کسی صارف کو مفت قرار دینے کے لیے Monthly Rate 0 اور Status 'FREE' کریں۔</li>"
             "</ol>"
             "<h4>🛠️ Owner/Admin Notes</h4>"
             "<ul>"
             "<li>Owner/Admin can manage staff permissions and tenant-wide settings.</li>"
             "<li>Owner/Admin has full access to view all assigned areas or 'ALL'.</li>"
-            "<li>This role is responsible for maintaining billing accuracy and customer statuses.</li>"
+            "<li>یہ رول billing اور customer statuses کی درستگی کا ذمہ دار ہے۔</li>"
             "</ul>"
             "<p>Use Dashboard, Operational Billing Center and Ledger History for full operational control.</p>",
             unsafe_allow_html=True
@@ -1892,7 +1902,7 @@ elif routing_node == "📘 ISP Guide":
             "</ol>"
             "<h4>🛠️ Owner/Admin کے نوٹس</h4>"
             "<ul>"
-            "<li>Owner/Admin اسٹاف پرمیشنز اور ٹیننٹ سیٹنگز مینیج کرسکتا ہے۔</li>"
+            "<li>Owner/Admin اسٹاف پرمیشنز اور ٹیننٹ سیٹنگز مینج کرسکتا ہے۔</li>"
             "<li>Owner/Admin کو تمام assigned areas یا 'ALL' دیکھنے کی مکمل اجازت ہے۔</li>"
             "<li>یہ رول billing اور customer statuses کی درستگی کا ذمہ دار ہے۔</li>"
             "</ul>"
@@ -1915,7 +1925,7 @@ elif routing_node == "📘 ISP Guide":
             "<li>Send arrears reminder via WhatsApp from the subscriber row actions.</li>"
             "<li>Manage free accounts by setting package or billamount to 0.</li>"
             "</ul>"
-            "<p>You cannot edit system settings or staff permissions; those are Owner/Admin responsibilities.</p>"
+            "<p>System settings یا staff permissions edit کرنے کی اجازت نہیں ہے؛ یہ Owner/Admin کے لیے مخصوص ہے۔</p>"
             "<p>Where to find daily tasks: Dashboard → Operational Billing Center → Ledger History.</p>",
             unsafe_allow_html=True
         )
@@ -2719,7 +2729,6 @@ elif routing_node == "👥 Operational Billing Center":
                     raw_stat = str(edit_row_dict.get('status', 'UNPAID')).upper()
                     safe_stat = raw_stat if raw_stat in ["PAID", "PARTIAL", "UNPAID", "SUSPENDED", "FREE"] else "UNPAID"
                     up_status = st.selectbox("Line Status", ["PAID", "PARTIAL", "UNPAID", "SUSPENDED", "FREE"], index=["PAID", "PARTIAL", "UNPAID", "SUSPENDED", "FREE"].index(safe_stat), disabled=is_status_disabled)
-                    st.caption("🆓 To make a subscriber free: set Monthly Rate to 0 and choose status FREE.")
                     # Expiry date field - editable only by Owner/Admin
                     is_expiry_disabled = not is_management
                     existing_expiry = str(edit_row_dict.get('expirydate', '')).strip()
