@@ -131,9 +131,33 @@ except Exception as exc:
 @st.cache_resource
 def init_connection_pool():
     try:
-        return SimpleConnectionPool(1, 20, dsn=DB_URL)
+        return SimpleConnectionPool(1, 20, dsn=DB_URL, connect_timeout=10)
     except Exception as e:
         st.error(f"🔴 Critical Pool Init Error: {e}")
+        st.error("❌ Database Connection Failed")
+        st.markdown("""
+        ### Troubleshooting Steps:
+        
+        1. **Check Database URL in secrets.toml**
+           - Format: `postgresql://user:password@host:port/database`
+           - Example: `postgresql://postgres:password@localhost:5432/lynx_erp`
+        
+        2. **Verify Database Server is Running**
+           - Check if PostgreSQL service is running
+           - Verify host and port are correct
+        
+        3. **Check Network Connectivity**
+           - Ensure you can reach the database server
+           - Check firewall settings
+        
+        4. **Verify Credentials**
+           - Username and password are correct
+           - User has necessary permissions
+        
+        5. **Check Database Exists**
+           - Database name in URL should exist
+           - User has access to the database
+        """)
         st.stop()
 
 master_pool = init_connection_pool()
@@ -1088,8 +1112,65 @@ else:
                                         st.error("❌ Invalid username or password.")
                     except Exception as db_error:
                         logger.error(f"Database connection error: {db_error}")
-                        st.error("❌ Database connection failed. Please check your database configuration.")
-                        st.info(f"Error details: {str(db_error)}")
+                        error_str = str(db_error).lower()
+                        if 'timeout' in error_str or 'timed out' in error_str:
+                            st.error("❌ Database Connection Timeout")
+                            st.markdown("""
+                            ### Connection Timeout - Troubleshooting:
+                            
+                            1. **Check Database Server Status**
+                               - Ensure PostgreSQL is running
+                               - Verify server is accessible from this network
+                            
+                            2. **Verify Database URL in .streamlit/secrets.toml**
+                               - Format: `postgresql://user:password@host:port/database`
+                               - Check host and port are correct
+                            
+                            3. **Network Issues**
+                               - Check firewall settings
+                               - Verify DNS resolution
+                               - Test connectivity to database host
+                            
+                            4. **Database Load**
+                               - Database might be overloaded
+                               - Check database server resources
+                            """)
+                        elif 'connection refused' in error_str:
+                            st.error("❌ Database Connection Refused")
+                            st.markdown("""
+                            ### Connection Refused - Troubleshooting:
+                            
+                            1. **Check PostgreSQL is Running**
+                               - Service might be stopped
+                               - Restart PostgreSQL service
+                            
+                            2. **Verify Port**
+                               - Default PostgreSQL port is 5432
+                               - Check if port is correct in DB_URL
+                            
+                            3. **Check Host**
+                               - Verify hostname/IP is correct
+                               - Try using localhost instead of 127.0.0.1 or vice versa
+                            """)
+                        elif 'password' in error_str or 'authentication' in error_str:
+                            st.error("❌ Database Authentication Failed")
+                            st.markdown("""
+                            ### Authentication Failed - Troubleshooting:
+                            
+                            1. **Check Credentials**
+                               - Username and password in DB_URL
+                               - Verify password is correct
+                            
+                            2. **User Permissions**
+                               - User must have CONNECT privilege
+                               - User must have access to the database
+                            
+                            3. **Database Exists**
+                               - Verify database name in URL exists
+                            """)
+                        else:
+                            st.error("❌ Database connection failed. Please check your database configuration.")
+                            st.info(f"Error details: {str(db_error)}")
         with register_tab:
             st.markdown(f"<h3 style='text-align:center; color:{active_theme['accent']};'>SaaS Tenant Onboarding</h3>", unsafe_allow_html=True)
             with st.form("saas_tenant_registration_form"):
