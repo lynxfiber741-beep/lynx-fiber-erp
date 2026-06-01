@@ -23,6 +23,8 @@ import bcrypt
 DISTRIBUTOR_NAME = "Lynx Fiber Internet"
 MASTER_NOTIFY_NUMBERS = ["03215943786", "03118808741"]
 GENERIC_TEXT = "Lynx Fiber Internet"
+# App login accounts (not Supabase auth.users / public.users)
+ERP_USERS_TABLE = "lynx_users"
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -275,7 +277,7 @@ def validate_session():
         with get_db_connection() as conn:
             with conn.cursor() as cursor:
                 cursor.execute(
-                    "SELECT password_changed_at FROM users WHERE username = %s AND tenant_id = %s",
+                    f"SELECT password_changed_at FROM {ERP_USERS_TABLE} WHERE username = %s AND tenant_id = %s",
                     (st.session_state.get('username', ''), st.session_state.get('tenant_id', ''))
                 )
                 result = cursor.fetchone()
@@ -337,7 +339,7 @@ def restore_login_from_query_params():
         with get_db_connection() as conn:
             with conn.cursor() as cursor:
                 cursor.execute(
-                    "SELECT role, username, assignedarea FROM users WHERE LOWER(username) = %s AND tenant_id = %s",
+                    f"SELECT role, username, assignedarea FROM {ERP_USERS_TABLE} WHERE LOWER(username) = %s AND tenant_id = %s",
                     (user_key, tenant)
                 )
                 user_match = cursor.fetchone()
@@ -482,11 +484,11 @@ def apply_schema_migrations(cursor):
         ("system_tenants", "whatsapp_token", "TEXT DEFAULT ''"),
         ("system_tenants", "whatsapp_enabled", "BOOLEAN DEFAULT FALSE"),
         ("system_tenants", "whatsapp_templates", "TEXT DEFAULT ''"),
-        ("users", "tenant_id", "TEXT NOT NULL DEFAULT 'lynx'"),
-        ("users", "assignedarea", "TEXT DEFAULT 'ALL'"),
-        ("users", "role", "TEXT"),
-        ("users", "password", "TEXT"),
-        ("users", "password_changed_at", "TEXT DEFAULT ''"),
+        (ERP_USERS_TABLE, "tenant_id", "TEXT NOT NULL DEFAULT 'lynx'"),
+        (ERP_USERS_TABLE, "assignedarea", "TEXT DEFAULT 'ALL'"),
+        (ERP_USERS_TABLE, "role", "TEXT"),
+        (ERP_USERS_TABLE, "password", "TEXT"),
+        (ERP_USERS_TABLE, "password_changed_at", "TEXT DEFAULT ''"),
         ("customers", "tenant_id", "TEXT NOT NULL DEFAULT 'lynx'"),
         ("customers", "balanceshift", "INTEGER NOT NULL DEFAULT 0"),
         ("customers", "status", "TEXT NOT NULL DEFAULT 'UNPAID'"),
@@ -525,39 +527,9 @@ def _get_public_table_columns(cursor, table_name):
 
 
 def ensure_users_table(cursor):
-    """Use Lynx ERP users schema; rename foreign/incompatible public.users tables."""
-    cols = _get_public_table_columns(cursor, "users")
-    incompatible = False
-    if cols:
-        if not LYNX_USERS_REQUIRED_COLUMNS.issubset(cols):
-            incompatible = True
-        else:
-            cursor.execute("""
-                SELECT column_name FROM information_schema.columns
-                WHERE table_schema = 'public' AND table_name = 'users'
-                  AND is_nullable = 'NO' AND column_default IS NULL
-            """)
-            strict_not_null = {row[0] for row in cursor.fetchall()}
-            insertable = {"username", "password", "role", "tenant_id", "assignedarea"}
-            if strict_not_null - insertable:
-                incompatible = True
-    if incompatible:
-        legacy_name = "users_legacy_backup"
-        cursor.execute(
-            "SELECT 1 FROM information_schema.tables "
-            "WHERE table_schema = 'public' AND table_name = %s",
-            (legacy_name,),
-        )
-        if cursor.fetchone():
-            legacy_name = f"users_legacy_{uuid.uuid4().hex[:8]}"
-        logger.warning(
-            "Renaming incompatible public.users (%s) to %s",
-            sorted(cols),
-            legacy_name,
-        )
-        cursor.execute(f"ALTER TABLE users RENAME TO {legacy_name}")
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS users (
+    """Create Lynx ERP accounts table (not public.users — avoids Supabase conflicts)."""
+    cursor.execute(f"""
+        CREATE TABLE IF NOT EXISTS {ERP_USERS_TABLE} (
             username TEXT NOT NULL,
             password TEXT NOT NULL,
             role TEXT NOT NULL,
@@ -569,45 +541,64 @@ def ensure_users_table(cursor):
     """)
 
 
-def seed_default_owner(cursor):
+def migrate_legacy_users_data(cursor):
+    """Copy rows from an old public.users table into lynx_users when schema matches."""
     cursor.execute(
-        "UPDATE users SET tenant_id = 'lynx' "
-        "WHERE username = 'owner' AND (tenant_id IS NULL OR tenant_id = '')"
+        "SELECT 1 FROM information_schema.tables "
+        "WHERE table_schema = 'public' AND table_name = 'users'"
     )
-    cursor.execute(
-        "SELECT COUNT(*) FROM users WHERE username = %s AND tenant_id = %s",
-        ("owner", "lynx"),
-    )
-    if cursor.fetchone()[0] > 0:
+    if not cursor.fetchone():
         return
-    cursor.execute("SELECT COUNT(*) FROM users WHERE username = %s", ("owner",))
-    if cursor.fetchone()[0] > 0:
-        cursor.execute("""
-            UPDATE users
-            SET tenant_id = 'lynx',
-                role = COALESCE(NULLIF(role, ''), 'Owner'),
-                assignedarea = COALESCE(NULLIF(assignedarea, ''), 'ALL')
-            WHERE username = 'owner'
+    cols = _get_public_table_columns(cursor, "users")
+    if not LYNX_USERS_REQUIRED_COLUMNS.issubset(cols):
+        return
+    extra = cols - LYNX_USERS_REQUIRED_COLUMNS - {"password_changed_at"}
+    if extra:
+        return
+    if "password_changed_at" in cols:
+        cursor.execute(f"""
+            INSERT INTO {ERP_USERS_TABLE} (
+                username, password, role, assignedarea, tenant_id, password_changed_at
+            )
+            SELECT
+                username, password, role,
+                COALESCE(assignedarea, 'ALL'),
+                COALESCE(tenant_id, 'lynx'),
+                COALESCE(password_changed_at, '')
+            FROM users
+            ON CONFLICT (username, tenant_id) DO NOTHING
         """)
-        return
-    default_owner_pass = os.getenv("DEFAULT_OWNER_PASSWORD")
+    else:
+        cursor.execute(f"""
+            INSERT INTO {ERP_USERS_TABLE} (username, password, role, assignedarea, tenant_id)
+            SELECT
+                username, password, role,
+                COALESCE(assignedarea, 'ALL'),
+                COALESCE(tenant_id, 'lynx')
+            FROM users
+            ON CONFLICT (username, tenant_id) DO NOTHING
+        """)
+
+
+def seed_default_owner(cursor):
+    default_owner_pass = (
+        os.getenv("DEFAULT_OWNER_PASSWORD")
+        or (st.secrets.get("DEFAULT_OWNER_PASSWORD") if hasattr(st, "secrets") else None)
+    )
     if not default_owner_pass:
-        import secrets
-        default_owner_pass = secrets.token_urlsafe(16)
+        default_owner_pass = "LynxOwner@2024"
         logger.warning(
-            "Generated secure default password for owner: %s. Change it after first login.",
-            default_owner_pass,
+            "DEFAULT_OWNER_PASSWORD not set; using built-in default. "
+            "Set DEFAULT_OWNER_PASSWORD in Streamlit secrets and change after login."
         )
-    try:
-        cursor.execute(
-            """
-            INSERT INTO users (username, password, role, assignedarea, tenant_id)
-            VALUES ('owner', %s, 'Owner', 'ALL', 'lynx')
-            """,
-            (hash_password(default_owner_pass),),
-        )
-    except psycopg2.errors.UniqueViolation:
-        logger.info("Default owner row already present; insert skipped.")
+    cursor.execute(
+        f"""
+        INSERT INTO {ERP_USERS_TABLE} (username, password, role, assignedarea, tenant_id)
+        VALUES ('owner', %s, 'Owner', 'ALL', 'lynx')
+        ON CONFLICT (username, tenant_id) DO NOTHING
+        """,
+        (hash_password(default_owner_pass),),
+    )
 
 
 def build_database_schema():
@@ -630,6 +621,7 @@ def build_database_schema():
                 )
             """)
             ensure_users_table(cursor)
+            migrate_legacy_users_data(cursor)
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS customers (
                     username TEXT NOT NULL,
@@ -1194,10 +1186,10 @@ else:
                                 # First check if users table exists
                                 cursor.execute("""
                                     SELECT EXISTS (
-                                        SELECT FROM information_schema.tables 
-                                        WHERE table_name = 'users'
+                                        SELECT FROM information_schema.tables
+                                        WHERE table_schema = 'public' AND table_name = %s
                                     )
-                                """)
+                                """, (ERP_USERS_TABLE,))
                                 table_exists = cursor.fetchone()[0]
                                 
                                 if not table_exists:
@@ -1209,13 +1201,13 @@ else:
                                 else:
                                     try:
                                         # Try to select with password_changed_at column
-                                        cursor.execute("SELECT role, username, assignedarea, password, password_changed_at FROM users WHERE LOWER(username) = %s AND tenant_id = %s", (user_input, input_tenant))
+                                        cursor.execute(f"SELECT role, username, assignedarea, password, password_changed_at FROM {ERP_USERS_TABLE} WHERE LOWER(username) = %s AND tenant_id = %s", (user_input, input_tenant))
                                         user_match = cursor.fetchone()
                                         password_changed_at = user_match[4] if user_match and len(user_match) > 4 else ''
                                     except Exception as col_error:
                                         # Fallback if password_changed_at column doesn't exist
                                         logger.warning(f"password_changed_at column missing: {col_error}")
-                                        cursor.execute("SELECT role, username, assignedarea, password FROM users WHERE LOWER(username) = %s AND tenant_id = %s", (user_input, input_tenant))
+                                        cursor.execute(f"SELECT role, username, assignedarea, password FROM {ERP_USERS_TABLE} WHERE LOWER(username) = %s AND tenant_id = %s", (user_input, input_tenant))
                                         user_match = cursor.fetchone()
                                         password_changed_at = ''
                                     
@@ -1373,8 +1365,8 @@ else:
                                             INSERT INTO system_tenants (tenant_id, company_name, support_phone, owner_username, license_active, registration_date, license_expiry_date, staff_permissions, whatsapp_templates)
                                             VALUES (%s, %s, %s, %s, FALSE, %s, '', '', %s)
                                         """, (reg_tenant_id, reg_company_name, reg_support_phone, reg_owner_user, datetime.now().strftime("%Y-%m-%d"), json.dumps(DEFAULT_WA_TEMPLATES)))
-                                        cursor.execute("""
-                                            INSERT INTO users (username, password, role, assignedarea, tenant_id)
+                                        cursor.execute(f"""
+                                            INSERT INTO {ERP_USERS_TABLE} (username, password, role, assignedarea, tenant_id)
                                             VALUES (%s, %s, 'Owner', 'ALL', %s)
                                         """, (reg_owner_user, hash_password(reg_owner_pass), reg_tenant_id))
                                         insert_activity_log(reg_tenant_id, reg_owner_user, "REGISTRATION", f"New tenant application generated for {reg_company_name}")
@@ -3142,16 +3134,16 @@ elif routing_node == "🔐 System Access Control":
                                         cursor.execute("""
                                             UPDATE system_tenants SET tenant_id = %s, company_name = %s, support_phone = %s, owner_username = %s, license_active = %s, license_expiry_date = %s WHERE tenant_id = %s
                                         """, (m_tenant_id.strip().lower(), m_company_name.strip(), m_support_phone.strip(), m_owner_username.strip().lower(), m_license_toggle, m_expiry_input.strip(), chosen_target_tenant))
-                                        cursor.execute("""
-                                            UPDATE users SET username = %s, tenant_id = %s WHERE username = %s AND tenant_id = %s
+                                        cursor.execute(f"""
+                                            UPDATE {ERP_USERS_TABLE} SET username = %s, tenant_id = %s WHERE username = %s AND tenant_id = %s
                                         """, (m_owner_username.strip().lower(), m_tenant_id.strip().lower(), tenant_record["owner_username"], chosen_target_tenant))
                                         if m_new_pass.strip():
                                             hashed_f = hash_password(m_new_pass.strip())
-                                            cursor.execute("""
-                                                UPDATE users SET password = %s, password_changed_at = %s WHERE username = %s AND tenant_id = %s
+                                            cursor.execute(f"""
+                                                UPDATE {ERP_USERS_TABLE} SET password = %s, password_changed_at = %s WHERE username = %s AND tenant_id = %s
                                             """, (hashed_f, datetime.now().isoformat(), m_owner_username.strip().lower(), m_tenant_id.strip().lower()))
                                         if m_tenant_id.strip().lower() != chosen_target_tenant:
-                                            cursor.execute("UPDATE users SET tenant_id = %s WHERE tenant_id = %s", (m_tenant_id.strip().lower(), chosen_target_tenant))
+                                            cursor.execute(f"UPDATE {ERP_USERS_TABLE} SET tenant_id = %s WHERE tenant_id = %s", (m_tenant_id.strip().lower(), chosen_target_tenant))
                                             cursor.execute("UPDATE customers SET tenant_id = %s WHERE tenant_id = %s", (m_tenant_id.strip().lower(), chosen_target_tenant))
                                             cursor.execute("UPDATE areas SET tenant_id = %s WHERE tenant_id = %s", (m_tenant_id.strip().lower(), chosen_target_tenant))
                                             cursor.execute("UPDATE packages SET tenant_id = %s WHERE tenant_id = %s", (m_tenant_id.strip().lower(), chosen_target_tenant))
@@ -3247,10 +3239,10 @@ elif routing_node == "🔐 System Access Control":
                     else:
                         with get_db_connection() as conn:
                             with conn.cursor() as cursor:
-                                cursor.execute("SELECT password FROM users WHERE username = %s AND tenant_id = %s", (st.session_state['username'], st.session_state['tenant_id']))
+                                cursor.execute(f"SELECT password FROM {ERP_USERS_TABLE} WHERE username = %s AND tenant_id = %s", (st.session_state['username'], st.session_state['tenant_id']))
                                 current_pwd_row = cursor.fetchone()
                                 if current_pwd_row and verify_password(current_self_pass, current_pwd_row[0]):
-                                    cursor.execute("UPDATE users SET password = %s, password_changed_at = %s WHERE username = %s AND tenant_id = %s", (hash_password(new_self_pass), datetime.now().isoformat(), st.session_state['username'], st.session_state['tenant_id']))
+                                    cursor.execute(f"UPDATE {ERP_USERS_TABLE} SET password = %s, password_changed_at = %s WHERE username = %s AND tenant_id = %s", (hash_password(new_self_pass), datetime.now().isoformat(), st.session_state['username'], st.session_state['tenant_id']))
                                     insert_activity_log(st.session_state['tenant_id'], st.session_state['username'], "CHANGE_PASSWORD", "System password updated.")
                                     st.success("🎉 Your credentials updated successfully! You will be logged out for security.")
                                     # Force logout after password change
@@ -3295,8 +3287,8 @@ elif routing_node == "🔐 System Access Control":
                         assigned_areas_str = "ALL" if "ALL" in selected_clearance else ",".join(selected_clearance)
                         with get_db_connection() as conn:
                             with conn.cursor() as cursor:
-                                cursor.execute("""
-                                    INSERT INTO users (username, password, role, assignedarea, tenant_id) VALUES (%s, %s, %s, %s, %s)
+                                cursor.execute(f"""
+                                    INSERT INTO {ERP_USERS_TABLE} (username, password, role, assignedarea, tenant_id) VALUES (%s, %s, %s, %s, %s)
                                     ON CONFLICT (username, tenant_id) DO UPDATE SET password=EXCLUDED.password, role=EXCLUDED.role, assignedarea=EXCLUDED.assignedarea
                                 """, (new_username, hash_password(new_password), new_role, assigned_areas_str, st.session_state['tenant_id']))
                                 insert_activity_log(st.session_state['tenant_id'], st.session_state['username'], "CREATE_SUB_USER", f"Provisioned sub-user {new_username}")
@@ -3307,7 +3299,7 @@ elif routing_node == "🔐 System Access Control":
             st.markdown("#### 👥 Current Staff Directory")
             with get_db_connection() as conn:
                 with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-                    cur.execute("SELECT username, role, assignedarea FROM users WHERE tenant_id = %s", (st.session_state['tenant_id'],))
+                    cur.execute(f"SELECT username, role, assignedarea FROM {ERP_USERS_TABLE} WHERE tenant_id = %s", (st.session_state['tenant_id'],))
                     staff_rows = cur.fetchall()
             if staff_rows:
                 df_staff = pd.DataFrame(staff_rows)
@@ -3320,7 +3312,7 @@ elif routing_node == "🔐 System Access Control":
                     if st.button("🗑️ DELETE STAFF PROFILE", type="primary"):
                         with get_db_connection() as conn:
                             with conn.cursor() as cursor:
-                                cursor.execute("DELETE FROM users WHERE username = %s AND tenant_id = %s", (del_staff_user, st.session_state['tenant_id']))
+                                cursor.execute(f"DELETE FROM {ERP_USERS_TABLE} WHERE username = %s AND tenant_id = %s", (del_staff_user, st.session_state['tenant_id']))
                                 insert_activity_log(st.session_state['tenant_id'], st.session_state['username'], "DELETE_SUB_USER", f"Removed staff {del_staff_user}.")
                         st.success(f"✅ Staff connection successfully terminated!")
                         st.rerun()
@@ -3407,7 +3399,7 @@ elif routing_node == "🔐 System Access Control":
                 if st.button("☢️ INITIATE COMPLETE SEGMENT DATA PURGE"):
                     with get_db_connection() as conn:
                         with conn.cursor() as cursor:
-                            cursor.execute("SELECT password FROM users WHERE username = %s AND tenant_id = %s", (st.session_state['username'], st.session_state['tenant_id']))
+                            cursor.execute(f"SELECT password FROM {ERP_USERS_TABLE} WHERE username = %s AND tenant_id = %s", (st.session_state['username'], st.session_state['tenant_id']))
                             pwd_row = cursor.fetchone()
                             if pwd_row and verify_password(purge_password, pwd_row[0]):
                                 cursor.execute("DELETE FROM billing_history WHERE tenant_id = %s", (st.session_state['tenant_id'],))
@@ -3447,7 +3439,7 @@ elif routing_node == "🔐 System Access Control":
                 with st.spinner("Database snapshot collect kiya ja raha hai..."):
                     try:
                         backup_payload = {}
-                        tables = ['system_tenants', 'users', 'customers', 'areas', 'packages', 'billing_history', 'activity_logs']
+                        tables = ['system_tenants', ERP_USERS_TABLE, 'customers', 'areas', 'packages', 'billing_history', 'activity_logs']
                         with get_db_connection() as conn:
                             for t_name in tables:
                                 # Use parameterized query to prevent SQL injection
