@@ -473,6 +473,41 @@ def generate_receipt_pdf(company_name, phone_ref, inv_id, c_id, c_name, area, pa
 # ==========================================
 # 3. AUTO-REPAIR MULTI-TENANT SCHEMA ENGINE
 # ==========================================
+def apply_schema_migrations(cursor):
+    """Add columns missing on tables created by older schemas (IF NOT EXISTS does not alter)."""
+    migrations = [
+        ("system_tenants", "license_expiry_date", "TEXT NOT NULL DEFAULT ''"),
+        ("system_tenants", "staff_permissions", "TEXT DEFAULT ''"),
+        ("system_tenants", "whatsapp_instance_id", "TEXT DEFAULT ''"),
+        ("system_tenants", "whatsapp_token", "TEXT DEFAULT ''"),
+        ("system_tenants", "whatsapp_enabled", "BOOLEAN DEFAULT FALSE"),
+        ("system_tenants", "whatsapp_templates", "TEXT DEFAULT ''"),
+        ("users", "tenant_id", "TEXT NOT NULL DEFAULT 'lynx'"),
+        ("users", "assignedarea", "TEXT DEFAULT 'ALL'"),
+        ("users", "role", "TEXT"),
+        ("users", "password", "TEXT"),
+        ("users", "password_changed_at", "TEXT DEFAULT ''"),
+        ("customers", "tenant_id", "TEXT NOT NULL DEFAULT 'lynx'"),
+        ("customers", "balanceshift", "INTEGER NOT NULL DEFAULT 0"),
+        ("customers", "status", "TEXT NOT NULL DEFAULT 'UNPAID'"),
+        ("customers", "cnic", "TEXT DEFAULT ''"),
+        ("customers", "address", "TEXT DEFAULT ''"),
+        ("customers", "onuserialnumber", "TEXT DEFAULT ''"),
+        ("areas", "tenant_id", "TEXT NOT NULL DEFAULT 'lynx'"),
+        ("packages", "tenant_id", "TEXT NOT NULL DEFAULT 'lynx'"),
+        ("packages", "packagerate", "INTEGER NOT NULL DEFAULT 0"),
+        ("billing_history", "tenant_id", "TEXT NOT NULL DEFAULT 'lynx'"),
+        ("billing_history", "discountgiven", "INTEGER DEFAULT 0"),
+        ("activity_logs", "tenant_id", "TEXT NOT NULL DEFAULT 'lynx'"),
+        ("activity_logs", "timestamp", "TEXT NOT NULL DEFAULT ''"),
+        ("activity_logs", "description", "TEXT NOT NULL DEFAULT ''"),
+    ]
+    for table, column, col_type in migrations:
+        cursor.execute(
+            f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS {column} {col_type}"
+        )
+
+
 def build_database_schema():
     with get_db_connection() as conn:
         with conn.cursor() as cursor:
@@ -564,6 +599,7 @@ def build_database_schema():
                     timestamp TEXT NOT NULL DEFAULT ''
                 )
             """)
+            apply_schema_migrations(cursor)
             cursor.execute("SELECT COUNT(*) FROM system_tenants WHERE tenant_id = 'lynx'")
             if cursor.fetchone()[0] == 0:
                 cursor.execute("""
@@ -588,16 +624,7 @@ def run_live_migrations():
     try:
         with get_db_connection() as conn:
             with conn.cursor() as cursor:
-                # Remove redundant ALTER statements for activity_logs since columns already exist in CREATE TABLE
-                # cursor.execute("ALTER TABLE activity_logs ADD COLUMN IF NOT EXISTS timestamp TEXT NOT NULL DEFAULT '';")
-                # cursor.execute("ALTER TABLE activity_logs ADD COLUMN IF NOT EXISTS description TEXT NOT NULL DEFAULT '';")
-                cursor.execute("ALTER TABLE system_tenants ADD COLUMN IF NOT EXISTS staff_permissions TEXT DEFAULT '';")
-                cursor.execute("ALTER TABLE system_tenants ADD COLUMN IF NOT EXISTS whatsapp_instance_id TEXT DEFAULT '';")
-                cursor.execute("ALTER TABLE system_tenants ADD COLUMN IF NOT EXISTS whatsapp_token TEXT DEFAULT '';")
-                cursor.execute("ALTER TABLE system_tenants ADD COLUMN IF NOT EXISTS whatsapp_enabled BOOLEAN DEFAULT FALSE;")
-                cursor.execute("ALTER TABLE system_tenants ADD COLUMN IF NOT EXISTS whatsapp_templates TEXT DEFAULT '';")
-                # Add password_changed_at column to users table for session security
-                cursor.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS password_changed_at TEXT DEFAULT '';")
+                apply_schema_migrations(cursor)
                 # Migrate existing expiry dates to datetime format
                 cursor.execute("""
                     UPDATE customers 
