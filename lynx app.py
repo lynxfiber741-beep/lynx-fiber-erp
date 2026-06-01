@@ -1023,52 +1023,73 @@ else:
                 elif is_account_locked(f"{input_tenant}:{user_input}"):
                     st.error(f"⚠️ Account locked due to too many failed attempts. Please try again in {LOCKOUT_DURATION_MINUTES} minutes.")
                 else:
-                    with get_db_connection() as conn:
-                        with conn.cursor() as cursor:
-                            try:
-                                # Try to select with password_changed_at column
-                                cursor.execute("SELECT role, username, assignedarea, password, password_changed_at FROM users WHERE LOWER(username) = %s AND tenant_id = %s", (user_input, input_tenant))
-                                user_match = cursor.fetchone()
-                                password_changed_at = user_match[4] if user_match and len(user_match) > 4 else ''
-                            except Exception:
-                                # Fallback if password_changed_at column doesn't exist
-                                cursor.execute("SELECT role, username, assignedarea, password FROM users WHERE LOWER(username) = %s AND tenant_id = %s", (user_input, input_tenant))
-                                user_match = cursor.fetchone()
-                                password_changed_at = ''
-                            
-                            if user_match and verify_password(pass_input, user_match[3]):
-                                record_login_attempt(f"{input_tenant}:{user_input}", success=True)
-                                t_meta = fetch_active_tenant_metadata(input_tenant)
-                                _, valid_chk = calculate_license_days(t_meta.get("expiry_date", ""))
-                                if not t_meta["active"] or not valid_chk:
-                                    st.error("⚠️ This system access instance is locked or license has expired.")
+                    try:
+                        with get_db_connection() as conn:
+                            with conn.cursor() as cursor:
+                                # First check if users table exists
+                                cursor.execute("""
+                                    SELECT EXISTS (
+                                        SELECT FROM information_schema.tables 
+                                        WHERE table_name = 'users'
+                                    )
+                                """)
+                                table_exists = cursor.fetchone()[0]
+                                
+                                if not table_exists:
+                                    st.error("❌ Database schema not initialized. Please restart the application to create tables.")
+                                    st.info("The system will automatically create the required tables on restart.")
+                                    # Try to create schema
+                                    build_database_schema()
+                                    st.success("✅ Database schema created. Please try logging in again.")
                                 else:
-                                    st.session_state['authenticated'] = True
-                                    st.session_state['user_role'] = user_match[0] if user_match[0] else "Staff"
-                                    st.session_state['username'] = user_match[1] if user_match[1] else user_input
-                                    st.session_state['tenant_id'] = input_tenant
-                                    st.session_state['password_changed_at'] = password_changed_at
-                                    raw_areas = user_match[2] if user_match[2] else "ALL"
-                                    if str(user_match[0]).lower() in ["owner", "admin"] or raw_areas == "ALL":
-                                        st.session_state['assigned_areas'] = ["ALL"]
-                                    else:
-                                        st.session_state['assigned_areas'] = [a.strip() for a in raw_areas.split(",") if a.strip()]
-                                    st.session_state['current_node'] = "📊 Lynx Dashboard"
-                                    insert_activity_log(input_tenant, st.session_state['username'], "LOGIN", "System initialized successfully via secure portal node.")
-                                    # Use st.query_params instead of deprecated experimental_set_query_params
                                     try:
-                                        st.query_params['auth'] = '1'
-                                        st.query_params['tenant'] = input_tenant
-                                        st.query_params['user'] = st.session_state['username']
-                                    except AttributeError:
-                                        # Fallback for older Streamlit versions
-                                        if hasattr(st, 'experimental_set_query_params'):
-                                            st.experimental_set_query_params(auth='1', tenant=input_tenant, user=st.session_state['username'])
-                                    st.cache_data.clear()
-                                    st.rerun()
-                            else:
-                                record_login_attempt(f"{input_tenant}:{user_input}", success=False)
-                                st.error("❌ Invalid Tenant, Username, or Password Variant.")
+                                        # Try to select with password_changed_at column
+                                        cursor.execute("SELECT role, username, assignedarea, password, password_changed_at FROM users WHERE LOWER(username) = %s AND tenant_id = %s", (user_input, input_tenant))
+                                        user_match = cursor.fetchone()
+                                        password_changed_at = user_match[4] if user_match and len(user_match) > 4 else ''
+                                    except Exception as col_error:
+                                        # Fallback if password_changed_at column doesn't exist
+                                        logger.warning(f"password_changed_at column missing: {col_error}")
+                                        cursor.execute("SELECT role, username, assignedarea, password FROM users WHERE LOWER(username) = %s AND tenant_id = %s", (user_input, input_tenant))
+                                        user_match = cursor.fetchone()
+                                        password_changed_at = ''
+                                    
+                                    if user_match and verify_password(pass_input, user_match[3]):
+                                        record_login_attempt(f"{input_tenant}:{user_input}", success=True)
+                                        t_meta = fetch_active_tenant_metadata(input_tenant)
+                                        _, valid_chk = calculate_license_days(t_meta.get("expiry_date", ""))
+                                        if not t_meta["active"] or not valid_chk:
+                                            st.error("⚠️ This system access instance is locked or license has expired.")
+                                        else:
+                                            st.session_state['authenticated'] = True
+                                            st.session_state['user_role'] = user_match[0] if user_match[0] else "Staff"
+                                            st.session_state['username'] = user_match[1] if user_match[1] else user_input
+                                            st.session_state['tenant_id'] = input_tenant
+                                            st.session_state['password_changed_at'] = password_changed_at
+                                            raw_areas = user_match[2] if user_match[2] else "ALL"
+                                            if str(user_match[0]).lower() in ["owner", "admin"] or raw_areas == "ALL":
+                                                st.session_state['assigned_areas'] = ["ALL"]
+                                            else:
+                                                st.session_state['assigned_areas'] = [a.strip() for a in raw_areas.split(",") if a.strip()]
+                                            st.session_state['current_node'] = "📊 Lynx Dashboard"
+                                            insert_activity_log(input_tenant, st.session_state['username'], "LOGIN", "System initialized successfully via secure portal node.")
+                                            # Use st.query_params instead of deprecated experimental_set_query_params
+                                            try:
+                                                st.query_params['auth'] = '1'
+                                                st.query_params['tenant'] = input_tenant
+                                                st.query_params['user'] = st.session_state['username']
+                                            except AttributeError:
+                                                # Fallback for older Streamlit versions
+                                                if hasattr(st, 'experimental_set_query_params'):
+                                                    st.experimental_set_query_params(auth='1', tenant=input_tenant, user=st.session_state['username'])
+                                            st.cache_data.clear()
+                                            st.rerun()
+                                    else:
+                                        st.error("❌ Invalid username or password.")
+                    except Exception as db_error:
+                        logger.error(f"Database connection error: {db_error}")
+                        st.error("❌ Database connection failed. Please check your database configuration.")
+                        st.info(f"Error details: {str(db_error)}")
         with register_tab:
             st.markdown(f"<h3 style='text-align:center; color:{active_theme['accent']};'>SaaS Tenant Onboarding</h3>", unsafe_allow_html=True)
             with st.form("saas_tenant_registration_form"):
