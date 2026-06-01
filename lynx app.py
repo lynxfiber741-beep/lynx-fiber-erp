@@ -1025,8 +1025,17 @@ else:
                 else:
                     with get_db_connection() as conn:
                         with conn.cursor() as cursor:
-                            cursor.execute("SELECT role, username, assignedarea, password, password_changed_at FROM users WHERE LOWER(username) = %s AND tenant_id = %s", (user_input, input_tenant))
-                            user_match = cursor.fetchone()
+                            try:
+                                # Try to select with password_changed_at column
+                                cursor.execute("SELECT role, username, assignedarea, password, password_changed_at FROM users WHERE LOWER(username) = %s AND tenant_id = %s", (user_input, input_tenant))
+                                user_match = cursor.fetchone()
+                                password_changed_at = user_match[4] if user_match and len(user_match) > 4 else ''
+                            except Exception:
+                                # Fallback if password_changed_at column doesn't exist
+                                cursor.execute("SELECT role, username, assignedarea, password FROM users WHERE LOWER(username) = %s AND tenant_id = %s", (user_input, input_tenant))
+                                user_match = cursor.fetchone()
+                                password_changed_at = ''
+                            
                             if user_match and verify_password(pass_input, user_match[3]):
                                 record_login_attempt(f"{input_tenant}:{user_input}", success=True)
                                 t_meta = fetch_active_tenant_metadata(input_tenant)
@@ -1038,7 +1047,7 @@ else:
                                     st.session_state['user_role'] = user_match[0] if user_match[0] else "Staff"
                                     st.session_state['username'] = user_match[1] if user_match[1] else user_input
                                     st.session_state['tenant_id'] = input_tenant
-                                    st.session_state['password_changed_at'] = user_match[4] if user_match[4] else ''
+                                    st.session_state['password_changed_at'] = password_changed_at
                                     raw_areas = user_match[2] if user_match[2] else "ALL"
                                     if str(user_match[0]).lower() in ["owner", "admin"] or raw_areas == "ALL":
                                         st.session_state['assigned_areas'] = ["ALL"]
