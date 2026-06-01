@@ -23,6 +23,8 @@ import bcrypt
 DISTRIBUTOR_NAME = "Lynx Fiber Internet"
 MASTER_NOTIFY_NUMBERS = ["03215943786", "03118808741"]
 GENERIC_TEXT = "Lynx Fiber Internet"
+# App login accounts (not Supabase auth.users / public.users)
+ERP_USERS_TABLE = "lynx_users"
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -121,19 +123,77 @@ GLOBAL_TARGET_ORDER = [
 # ==========================================
 # 2. SECURE POOLED DATABASE REGISTRY
 # ==========================================
+def get_db_connect_kwargs():
+    """Build psycopg2 kwargs from [database] in secrets or DB_URL."""
+    if "database" in st.secrets:
+        db = st.secrets["database"]
+        return {
+            "host": db["host"],
+            "port": int(db.get("port", 5432)),
+            "dbname": db.get("dbname", "postgres"),
+            "user": db["user"],
+            "password": db["password"],
+            "sslmode": db.get("sslmode", "require"),
+        }
+
+    db_url = st.secrets["DB_URL"]
+    parsed = urllib.parse.urlparse(db_url)
+    query = urllib.parse.parse_qs(parsed.query)
+    kwargs = {
+        "host": parsed.hostname,
+        "port": parsed.port or 5432,
+        "dbname": (parsed.path or "/postgres").lstrip("/") or "postgres",
+        "user": urllib.parse.unquote(parsed.username) if parsed.username else None,
+        "password": urllib.parse.unquote(parsed.password) if parsed.password else None,
+    }
+    if "sslmode" in query:
+        kwargs["sslmode"] = query["sslmode"][0]
+    elif parsed.hostname and "supabase.co" in parsed.hostname.lower():
+        kwargs["sslmode"] = "require"
+    return {k: v for k, v in kwargs.items() if v is not None}
+
+
 try:
-    DB_URL = st.secrets["DB_URL"]
-except Exception as exc:
-    st.error("🔴 Critical Configuration Error: 'DB_URL' is missing from Streamlit Secrets!")
-    st.error("Please create a Streamlit secrets file at .streamlit/secrets.toml with a DB_URL entry.")
+    if "database" not in st.secrets and "DB_URL" not in st.secrets:
+        raise KeyError("database or DB_URL")
+except Exception:
+    st.error("🔴 Critical Configuration Error: database settings missing from Streamlit Secrets!")
+    st.error("Add a `[database]` section or `DB_URL` in `.streamlit/secrets.toml`.")
     st.stop()
 
 @st.cache_resource
 def init_connection_pool():
     try:
-        return SimpleConnectionPool(1, 20, dsn=DB_URL)
+        kwargs = get_db_connect_kwargs()
+        host = str(kwargs.get("host", "")).lower()
+        timeout = 30 if "supabase.co" in host else 10
+        return SimpleConnectionPool(1, 20, connect_timeout=timeout, **kwargs)
     except Exception as e:
         st.error(f"🔴 Critical Pool Init Error: {e}")
+        st.error("❌ Database Connection Failed")
+        err = str(e).lower()
+        if "password authentication failed" in err:
+            st.warning(
+                "**Supabase password galat hai.** Dashboard → **Project Settings** → **Database** → "
+                "**Reset database password**, phir naya password `.streamlit/secrets.toml` ke "
+                "`[database].password` mein likhein. Pooler ke liye user: `postgres.hvnqenuoyaefojzshvik`"
+            )
+        st.markdown("""
+        ### Troubleshooting Steps:
+        
+        1. **Supabase credentials (`.streamlit/secrets.toml`)**
+           - `[database]` section: `host`, `port`, `user`, `password`, `dbname`, `sslmode`
+           - Pooler user: `postgres.<project-ref>` (e.g. `postgres.hvnqenuoyaefojzshvik`)
+           - Password: **Database password** from Supabase (Connect → URI), not anon/service keys
+        
+        2. **Ports**
+           - Session pooler (recommended for this app): port **5432**
+           - Transaction pooler: port **6543**
+        
+        3. **Reset password** if auth fails: Supabase Dashboard → Settings → Database → Reset database password
+        
+        4. **Local PostgreSQL**: `host=localhost`, `user`/`password` as configured on your machine
+        """)
         st.stop()
 
 master_pool = init_connection_pool()
@@ -217,7 +277,7 @@ def validate_session():
         with get_db_connection() as conn:
             with conn.cursor() as cursor:
                 cursor.execute(
-                    "SELECT password_changed_at FROM users WHERE username = %s AND tenant_id = %s",
+                    f"SELECT password_changed_at FROM {ERP_USERS_TABLE} WHERE username = %s AND tenant_id = %s",
                     (st.session_state.get('username', ''), st.session_state.get('tenant_id', ''))
                 )
                 result = cursor.fetchone()
@@ -279,7 +339,7 @@ def restore_login_from_query_params():
         with get_db_connection() as conn:
             with conn.cursor() as cursor:
                 cursor.execute(
-                    "SELECT role, username, assignedarea FROM users WHERE LOWER(username) = %s AND tenant_id = %s",
+                    f"SELECT role, username, assignedarea FROM {ERP_USERS_TABLE} WHERE LOWER(username) = %s AND tenant_id = %s",
                     (user_key, tenant)
                 )
                 user_match = cursor.fetchone()
@@ -415,6 +475,132 @@ def generate_receipt_pdf(company_name, phone_ref, inv_id, c_id, c_name, area, pa
 # ==========================================
 # 3. AUTO-REPAIR MULTI-TENANT SCHEMA ENGINE
 # ==========================================
+def apply_schema_migrations(cursor):
+    """Add columns missing on tables created by older schemas (IF NOT EXISTS does not alter)."""
+    migrations = [
+        ("system_tenants", "license_expiry_date", "TEXT NOT NULL DEFAULT ''"),
+        ("system_tenants", "staff_permissions", "TEXT DEFAULT ''"),
+        ("system_tenants", "whatsapp_instance_id", "TEXT DEFAULT ''"),
+        ("system_tenants", "whatsapp_token", "TEXT DEFAULT ''"),
+        ("system_tenants", "whatsapp_enabled", "BOOLEAN DEFAULT FALSE"),
+        ("system_tenants", "whatsapp_templates", "TEXT DEFAULT ''"),
+        (ERP_USERS_TABLE, "tenant_id", "TEXT NOT NULL DEFAULT 'lynx'"),
+        (ERP_USERS_TABLE, "assignedarea", "TEXT DEFAULT 'ALL'"),
+        (ERP_USERS_TABLE, "role", "TEXT"),
+        (ERP_USERS_TABLE, "password", "TEXT"),
+        (ERP_USERS_TABLE, "password_changed_at", "TEXT DEFAULT ''"),
+        ("customers", "tenant_id", "TEXT NOT NULL DEFAULT 'lynx'"),
+        ("customers", "balanceshift", "INTEGER NOT NULL DEFAULT 0"),
+        ("customers", "status", "TEXT NOT NULL DEFAULT 'UNPAID'"),
+        ("customers", "cnic", "TEXT DEFAULT ''"),
+        ("customers", "address", "TEXT DEFAULT ''"),
+        ("customers", "onuserialnumber", "TEXT DEFAULT ''"),
+        ("areas", "tenant_id", "TEXT NOT NULL DEFAULT 'lynx'"),
+        ("packages", "tenant_id", "TEXT NOT NULL DEFAULT 'lynx'"),
+        ("packages", "packagerate", "INTEGER NOT NULL DEFAULT 0"),
+        ("billing_history", "tenant_id", "TEXT NOT NULL DEFAULT 'lynx'"),
+        ("billing_history", "discountgiven", "INTEGER DEFAULT 0"),
+        ("activity_logs", "tenant_id", "TEXT NOT NULL DEFAULT 'lynx'"),
+        ("activity_logs", "timestamp", "TEXT NOT NULL DEFAULT ''"),
+        ("activity_logs", "description", "TEXT NOT NULL DEFAULT ''"),
+    ]
+    for table, column, col_type in migrations:
+        cursor.execute(
+            f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS {column} {col_type}"
+        )
+
+
+LYNX_USERS_REQUIRED_COLUMNS = frozenset({
+    "username", "password", "role", "tenant_id", "assignedarea",
+})
+
+
+def _get_public_table_columns(cursor, table_name):
+    cursor.execute(
+        """
+        SELECT column_name FROM information_schema.columns
+        WHERE table_schema = 'public' AND table_name = %s
+        """,
+        (table_name,),
+    )
+    return {row[0] for row in cursor.fetchall()}
+
+
+def ensure_users_table(cursor):
+    """Create Lynx ERP accounts table (not public.users — avoids Supabase conflicts)."""
+    cursor.execute(f"""
+        CREATE TABLE IF NOT EXISTS {ERP_USERS_TABLE} (
+            username TEXT NOT NULL,
+            password TEXT NOT NULL,
+            role TEXT NOT NULL,
+            assignedarea TEXT DEFAULT 'ALL',
+            tenant_id TEXT NOT NULL DEFAULT 'lynx',
+            password_changed_at TEXT DEFAULT '',
+            PRIMARY KEY (username, tenant_id)
+        )
+    """)
+
+
+def migrate_legacy_users_data(cursor):
+    """Copy rows from an old public.users table into lynx_users when schema matches."""
+    cursor.execute(
+        "SELECT 1 FROM information_schema.tables "
+        "WHERE table_schema = 'public' AND table_name = 'users'"
+    )
+    if not cursor.fetchone():
+        return
+    cols = _get_public_table_columns(cursor, "users")
+    if not LYNX_USERS_REQUIRED_COLUMNS.issubset(cols):
+        return
+    extra = cols - LYNX_USERS_REQUIRED_COLUMNS - {"password_changed_at"}
+    if extra:
+        return
+    if "password_changed_at" in cols:
+        cursor.execute(f"""
+            INSERT INTO {ERP_USERS_TABLE} (
+                username, password, role, assignedarea, tenant_id, password_changed_at
+            )
+            SELECT
+                username, password, role,
+                COALESCE(assignedarea, 'ALL'),
+                COALESCE(tenant_id, 'lynx'),
+                COALESCE(password_changed_at, '')
+            FROM users
+            ON CONFLICT (username, tenant_id) DO NOTHING
+        """)
+    else:
+        cursor.execute(f"""
+            INSERT INTO {ERP_USERS_TABLE} (username, password, role, assignedarea, tenant_id)
+            SELECT
+                username, password, role,
+                COALESCE(assignedarea, 'ALL'),
+                COALESCE(tenant_id, 'lynx')
+            FROM users
+            ON CONFLICT (username, tenant_id) DO NOTHING
+        """)
+
+
+def seed_default_owner(cursor):
+    default_owner_pass = (
+        os.getenv("DEFAULT_OWNER_PASSWORD")
+        or (st.secrets.get("DEFAULT_OWNER_PASSWORD") if hasattr(st, "secrets") else None)
+    )
+    if not default_owner_pass:
+        default_owner_pass = "LynxOwner@2024"
+        logger.warning(
+            "DEFAULT_OWNER_PASSWORD not set; using built-in default. "
+            "Set DEFAULT_OWNER_PASSWORD in Streamlit secrets and change after login."
+        )
+    cursor.execute(
+        f"""
+        INSERT INTO {ERP_USERS_TABLE} (username, password, role, assignedarea, tenant_id)
+        VALUES ('owner', %s, 'Owner', 'ALL', 'lynx')
+        ON CONFLICT (username, tenant_id) DO NOTHING
+        """,
+        (hash_password(default_owner_pass),),
+    )
+
+
 def build_database_schema():
     with get_db_connection() as conn:
         with conn.cursor() as cursor:
@@ -434,17 +620,8 @@ def build_database_schema():
                     whatsapp_templates TEXT DEFAULT ''
                 )
             """)
-            cursor.execute("""
-                CREATE TABLE IF NOT EXISTS users (
-                    username TEXT NOT NULL,
-                    password TEXT NOT NULL,
-                    role TEXT NOT NULL,
-                    assignedarea TEXT DEFAULT 'ALL',
-                    tenant_id TEXT NOT NULL DEFAULT 'lynx',
-                    password_changed_at TEXT DEFAULT '',
-                    PRIMARY KEY (username, tenant_id)
-                )
-            """)
+            ensure_users_table(cursor)
+            migrate_legacy_users_data(cursor)
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS customers (
                     username TEXT NOT NULL,
@@ -506,40 +683,20 @@ def build_database_schema():
                     timestamp TEXT NOT NULL DEFAULT ''
                 )
             """)
+            apply_schema_migrations(cursor)
             cursor.execute("SELECT COUNT(*) FROM system_tenants WHERE tenant_id = 'lynx'")
             if cursor.fetchone()[0] == 0:
                 cursor.execute("""
                     INSERT INTO system_tenants (tenant_id, company_name, support_phone, owner_username, license_active, registration_date, license_expiry_date, staff_permissions, whatsapp_templates)
                     VALUES ('lynx', 'Lynx Fiber Pvt Ltd', '03135776263', 'owner', TRUE, %s, '', '', %s)
                 """, (datetime.now().strftime("%Y-%m-%d"), json.dumps(DEFAULT_WA_TEMPLATES)))
-            cursor.execute("SELECT COUNT(*) FROM users WHERE username = 'owner' AND tenant_id = 'lynx'")
-            if cursor.fetchone()[0] == 0:
-                # Use environment variable for default password, or generate a secure random password
-                default_owner_pass = os.getenv('DEFAULT_OWNER_PASSWORD', None)
-                if not default_owner_pass:
-                    # Generate secure random password if not provided
-                    import secrets
-                    default_owner_pass = secrets.token_urlsafe(16)
-                    logger.warning(f"Generated secure default password for owner: {default_owner_pass}. Please change it immediately after first login.")
-                cursor.execute("""
-                    INSERT INTO users (username, password, role, assignedarea, tenant_id)
-                    VALUES ('owner', %s, 'Owner', 'ALL', 'lynx')
-                """, (hash_password(default_owner_pass),))
+            seed_default_owner(cursor)
 
 def run_live_migrations():
     try:
         with get_db_connection() as conn:
             with conn.cursor() as cursor:
-                # Remove redundant ALTER statements for activity_logs since columns already exist in CREATE TABLE
-                # cursor.execute("ALTER TABLE activity_logs ADD COLUMN IF NOT EXISTS timestamp TEXT NOT NULL DEFAULT '';")
-                # cursor.execute("ALTER TABLE activity_logs ADD COLUMN IF NOT EXISTS description TEXT NOT NULL DEFAULT '';")
-                cursor.execute("ALTER TABLE system_tenants ADD COLUMN IF NOT EXISTS staff_permissions TEXT DEFAULT '';")
-                cursor.execute("ALTER TABLE system_tenants ADD COLUMN IF NOT EXISTS whatsapp_instance_id TEXT DEFAULT '';")
-                cursor.execute("ALTER TABLE system_tenants ADD COLUMN IF NOT EXISTS whatsapp_token TEXT DEFAULT '';")
-                cursor.execute("ALTER TABLE system_tenants ADD COLUMN IF NOT EXISTS whatsapp_enabled BOOLEAN DEFAULT FALSE;")
-                cursor.execute("ALTER TABLE system_tenants ADD COLUMN IF NOT EXISTS whatsapp_templates TEXT DEFAULT '';")
-                # Add password_changed_at column to users table for session security
-                cursor.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS password_changed_at TEXT DEFAULT '';")
+                apply_schema_migrations(cursor)
                 # Migrate existing expiry dates to datetime format
                 cursor.execute("""
                     UPDATE customers 
@@ -1023,43 +1180,160 @@ else:
                 elif is_account_locked(f"{input_tenant}:{user_input}"):
                     st.error(f"⚠️ Account locked due to too many failed attempts. Please try again in {LOCKOUT_DURATION_MINUTES} minutes.")
                 else:
-                    with get_db_connection() as conn:
-                        with conn.cursor() as cursor:
-                            cursor.execute("SELECT role, username, assignedarea, password, password_changed_at FROM users WHERE LOWER(username) = %s AND tenant_id = %s", (user_input, input_tenant))
-                            user_match = cursor.fetchone()
-                            if user_match and verify_password(pass_input, user_match[3]):
-                                record_login_attempt(f"{input_tenant}:{user_input}", success=True)
-                                t_meta = fetch_active_tenant_metadata(input_tenant)
-                                _, valid_chk = calculate_license_days(t_meta.get("expiry_date", ""))
-                                if not t_meta["active"] or not valid_chk:
-                                    st.error("⚠️ This system access instance is locked or license has expired.")
+                    try:
+                        with get_db_connection() as conn:
+                            with conn.cursor() as cursor:
+                                # First check if users table exists
+                                cursor.execute("""
+                                    SELECT EXISTS (
+                                        SELECT FROM information_schema.tables
+                                        WHERE table_schema = 'public' AND table_name = %s
+                                    )
+                                """, (ERP_USERS_TABLE,))
+                                table_exists = cursor.fetchone()[0]
+                                
+                                if not table_exists:
+                                    st.error("❌ Database schema not initialized. Please restart the application to create tables.")
+                                    st.info("The system will automatically create the required tables on restart.")
+                                    # Try to create schema
+                                    build_database_schema()
+                                    st.success("✅ Database schema created. Please try logging in again.")
                                 else:
-                                    st.session_state['authenticated'] = True
-                                    st.session_state['user_role'] = user_match[0] if user_match[0] else "Staff"
-                                    st.session_state['username'] = user_match[1] if user_match[1] else user_input
-                                    st.session_state['tenant_id'] = input_tenant
-                                    st.session_state['password_changed_at'] = user_match[4] if user_match[4] else ''
-                                    raw_areas = user_match[2] if user_match[2] else "ALL"
-                                    if str(user_match[0]).lower() in ["owner", "admin"] or raw_areas == "ALL":
-                                        st.session_state['assigned_areas'] = ["ALL"]
-                                    else:
-                                        st.session_state['assigned_areas'] = [a.strip() for a in raw_areas.split(",") if a.strip()]
-                                    st.session_state['current_node'] = "📊 Lynx Dashboard"
-                                    insert_activity_log(input_tenant, st.session_state['username'], "LOGIN", "System initialized successfully via secure portal node.")
-                                    # Use st.query_params instead of deprecated experimental_set_query_params
                                     try:
-                                        st.query_params['auth'] = '1'
-                                        st.query_params['tenant'] = input_tenant
-                                        st.query_params['user'] = st.session_state['username']
-                                    except AttributeError:
-                                        # Fallback for older Streamlit versions
-                                        if hasattr(st, 'experimental_set_query_params'):
-                                            st.experimental_set_query_params(auth='1', tenant=input_tenant, user=st.session_state['username'])
-                                    st.cache_data.clear()
-                                    st.rerun()
-                            else:
-                                record_login_attempt(f"{input_tenant}:{user_input}", success=False)
-                                st.error("❌ Invalid Tenant, Username, or Password Variant.")
+                                        # Try to select with password_changed_at column
+                                        cursor.execute(f"SELECT role, username, assignedarea, password, password_changed_at FROM {ERP_USERS_TABLE} WHERE LOWER(username) = %s AND tenant_id = %s", (user_input, input_tenant))
+                                        user_match = cursor.fetchone()
+                                        password_changed_at = user_match[4] if user_match and len(user_match) > 4 else ''
+                                    except Exception as col_error:
+                                        # Fallback if password_changed_at column doesn't exist
+                                        logger.warning(f"password_changed_at column missing: {col_error}")
+                                        cursor.execute(f"SELECT role, username, assignedarea, password FROM {ERP_USERS_TABLE} WHERE LOWER(username) = %s AND tenant_id = %s", (user_input, input_tenant))
+                                        user_match = cursor.fetchone()
+                                        password_changed_at = ''
+                                    
+                                    if user_match and verify_password(pass_input, user_match[3]):
+                                        record_login_attempt(f"{input_tenant}:{user_input}", success=True)
+                                        t_meta = fetch_active_tenant_metadata(input_tenant)
+                                        _, valid_chk = calculate_license_days(t_meta.get("expiry_date", ""))
+                                        if not t_meta["active"] or not valid_chk:
+                                            st.error("⚠️ This system access instance is locked or license has expired.")
+                                        else:
+                                            st.session_state['authenticated'] = True
+                                            st.session_state['user_role'] = user_match[0] if user_match[0] else "Staff"
+                                            st.session_state['username'] = user_match[1] if user_match[1] else user_input
+                                            st.session_state['tenant_id'] = input_tenant
+                                            st.session_state['password_changed_at'] = password_changed_at
+                                            raw_areas = user_match[2] if user_match[2] else "ALL"
+                                            if str(user_match[0]).lower() in ["owner", "admin"] or raw_areas == "ALL":
+                                                st.session_state['assigned_areas'] = ["ALL"]
+                                            else:
+                                                st.session_state['assigned_areas'] = [a.strip() for a in raw_areas.split(",") if a.strip()]
+                                            st.session_state['current_node'] = "📊 Lynx Dashboard"
+                                            insert_activity_log(input_tenant, st.session_state['username'], "LOGIN", "System initialized successfully via secure portal node.")
+                                            # Use st.query_params instead of deprecated experimental_set_query_params
+                                            try:
+                                                st.query_params['auth'] = '1'
+                                                st.query_params['tenant'] = input_tenant
+                                                st.query_params['user'] = st.session_state['username']
+                                            except AttributeError:
+                                                # Fallback for older Streamlit versions
+                                                if hasattr(st, 'experimental_set_query_params'):
+                                                    st.experimental_set_query_params(auth='1', tenant=input_tenant, user=st.session_state['username'])
+                                            st.cache_data.clear()
+                                            st.rerun()
+                                    else:
+                                        st.error("❌ Invalid username or password.")
+                    except Exception as db_error:
+                        logger.error(f"Database connection error: {db_error}")
+                        error_str = str(db_error).lower()
+                        if 'timeout' in error_str or 'timed out' in error_str:
+                            st.error("❌ Database Connection Timeout")
+                            st.markdown("""
+                            ### Connection Timeout - Troubleshooting:
+                            
+                            1. **Check Database Server Status**
+                               - Ensure PostgreSQL is running (local)
+                               - Verify Supabase project is active (Supabase)
+                            
+                            2. **Verify Database URL in .streamlit/secrets.toml**
+                               - **Local**: `postgresql://user:password@localhost:5432/database`
+                               - **Supabase**: `postgresql://postgres:[PASSWORD]@db.[REF].supabase.co:5432/postgres`
+                            
+                            3. **Network Issues**
+                               - Check firewall settings (local)
+                               - Verify DNS resolution
+                               - Test connectivity to database host
+                            
+                            4. **Database Load**
+                               - Database might be overloaded
+                               - Check database server resources
+                            
+                            5. **Supabase Specific**
+                               - Check if Supabase project is paused
+                               - Verify project is not at free tier limits
+                            """)
+                        elif 'connection refused' in error_str:
+                            st.error("❌ Database Connection Refused")
+                            st.markdown("""
+                            ### Connection Refused - Troubleshooting:
+                            
+                            1. **Check PostgreSQL is Running**
+                               - Service might be stopped (local)
+                               - Restart PostgreSQL service
+                            
+                            2. **Verify Port**
+                               - Default PostgreSQL port is 5432
+                               - Check if port is correct in DB_URL
+                            
+                            3. **Check Host**
+                               - Verify hostname/IP is correct
+                               - Try using localhost instead of 127.0.0.1 or vice versa
+                            
+                            4. **Supabase Specific**
+                               - Verify project reference is correct
+                               - Check if database is enabled in project
+                            """)
+                        elif 'password' in error_str or 'authentication' in error_str:
+                            st.error("❌ Database Authentication Failed")
+                            st.markdown("""
+                            ### Authentication Failed - Troubleshooting:
+                            
+                            1. **Check Credentials**
+                               - Username and password in DB_URL
+                               - Verify password is correct
+                            
+                            2. **User Permissions**
+                               - User must have CONNECT privilege
+                               - User must have access to the database
+                            
+                            3. **Database Exists**
+                               - Verify database name in URL exists
+                            
+                            4. **Supabase Specific**
+                               - Use the postgres user from Supabase dashboard
+                               - Get password from: Project Settings → Database
+                               - Ensure password is not expired
+                            """)
+                        elif 'ssl' in error_str or 'certificate' in error_str:
+                            st.error("❌ SSL/TLS Connection Error")
+                            st.markdown("""
+                            ### SSL Error - Troubleshooting:
+                            
+                            1. **Supabase Requires SSL**
+                               - SSL is automatically enabled for Supabase
+                               - The app adds `?sslmode=require` automatically
+                            
+                            2. **Local PostgreSQL**
+                               - SSL may not be required for local connections
+                               - Remove sslmode from DB_URL if not needed
+                            
+                            3. **Certificate Issues**
+                               - Ensure your system has up-to-date SSL certificates
+                               - For local: SSL may be disabled in PostgreSQL config
+                            """)
+                        else:
+                            st.error("❌ Database connection failed. Please check your database configuration.")
+                            st.info(f"Error details: {str(db_error)}")
         with register_tab:
             st.markdown(f"<h3 style='text-align:center; color:{active_theme['accent']};'>SaaS Tenant Onboarding</h3>", unsafe_allow_html=True)
             with st.form("saas_tenant_registration_form"):
@@ -1091,8 +1365,8 @@ else:
                                             INSERT INTO system_tenants (tenant_id, company_name, support_phone, owner_username, license_active, registration_date, license_expiry_date, staff_permissions, whatsapp_templates)
                                             VALUES (%s, %s, %s, %s, FALSE, %s, '', '', %s)
                                         """, (reg_tenant_id, reg_company_name, reg_support_phone, reg_owner_user, datetime.now().strftime("%Y-%m-%d"), json.dumps(DEFAULT_WA_TEMPLATES)))
-                                        cursor.execute("""
-                                            INSERT INTO users (username, password, role, assignedarea, tenant_id)
+                                        cursor.execute(f"""
+                                            INSERT INTO {ERP_USERS_TABLE} (username, password, role, assignedarea, tenant_id)
                                             VALUES (%s, %s, 'Owner', 'ALL', %s)
                                         """, (reg_owner_user, hash_password(reg_owner_pass), reg_tenant_id))
                                         insert_activity_log(reg_tenant_id, reg_owner_user, "REGISTRATION", f"New tenant application generated for {reg_company_name}")
@@ -1542,6 +1816,22 @@ if routing_node in ["📊 Core Analytics Dashboard", "📊 Lynx Dashboard"]:
                     </div>
                     """, unsafe_allow_html=True)
 
+                    # Customer Details Confirmation
+                    st.markdown("---")
+                    st.markdown("### 👤 Customer Details Confirmation")
+                    st.markdown(f"""
+                    <div style='background: #1e1e1e; padding: 15px; border-radius: 8px; border: 1px solid #333;'>
+                        <p><b>🆔 Username:</b> {selected_uid}</p>
+                        <p><b>👤 Customer Name:</b> {selected_row.get('customername', '')}</p>
+                        <p><b>📱 Phone:</b> {selected_row.get('phone', '')}</p>
+                        <p><b>📍 Area:</b> {selected_row.get('area', '')}</p>
+                        <p><b>📦 Package:</b> {selected_row.get('package', '')}</p>
+                        <p><b>💰 Bill Amount:</b> Rs. {dp_base_bill:,}</p>
+                        <p><b>📅 Current Expiry:</b> {selected_row.get('expirydate', '')}</p>
+                    </div>
+                    """, unsafe_allow_html=True)
+                    st.warning("⚠️ Please verify the customer details above before proceeding with payment.")
+
                     if st.button("💳 SETTLE THIS UNPAID ACCOUNT", key=f"dashboard_pay_{selected_uid}", use_container_width=True):
                         # Check if already paid this month
                         current_month = datetime.now().strftime("%Y-%m")
@@ -1552,8 +1842,8 @@ if routing_node in ["📊 Core Analytics Dashboard", "📊 Lynx Dashboard"]:
                                     WHERE customerid = %s 
                                     AND tenant_id = %s 
                                     AND transactiontype = 'BILL_PAYMENT'
-                                    AND TO_CHAR(datetimestamp, 'YYYY-MM') = %s
-                                """, (selected_uid, st.session_state['tenant_id'], current_month))
+                                    AND datetimestamp LIKE %s
+                                """, (selected_uid, st.session_state['tenant_id'], current_month + '%'))
                                 payment_count = cursor.fetchone()[0]
                         
                         if payment_count > 0:
@@ -2245,6 +2535,22 @@ elif routing_node == "👥 Operational Billing Center":
                         <p>💾 <b>New Balanceshift/Arrears Log:</b> Rs. {future_shift:,}</p>
                     </div>
                     """, unsafe_allow_html=True)
+
+                    # Customer Details Confirmation
+                    st.markdown("---")
+                    st.markdown("### 👤 Customer Details Confirmation")
+                    st.markdown(f"""
+                    <div style='background: #1e1e1e; padding: 15px; border-radius: 8px; border: 1px solid #333;'>
+                        <p><b>🆔 Username:</b> {resolved_uid}</p>
+                        <p><b>👤 Customer Name:</b> {node_row_dict.get('customername', '')}</p>
+                        <p><b>📱 Phone:</b> {node_row_dict.get('phone', '')}</p>
+                        <p><b>📍 Area:</b> {node_row_dict.get('area', '')}</p>
+                        <p><b>📦 Package:</b> {node_row_dict.get('package', '')}</p>
+                        <p><b>💰 Bill Amount:</b> Rs. {base_bill:,}</p>
+                        <p><b>📅 Current Expiry:</b> {node_row_dict.get('expirydate', '')}</p>
+                    </div>
+                    """, unsafe_allow_html=True)
+                    st.warning("⚠️ Please verify the customer details above before proceeding with payment.")
                     
                     if st.button("💳 POST TRANSACTION & EXTEND LINE", use_container_width=True):
                         # Check if already paid this month
@@ -2256,8 +2562,8 @@ elif routing_node == "👥 Operational Billing Center":
                                     WHERE customerid = %s 
                                     AND tenant_id = %s 
                                     AND transactiontype = 'BILL_PAYMENT'
-                                    AND TO_CHAR(datetimestamp, 'YYYY-MM') = %s
-                                """, (resolved_uid, st.session_state['tenant_id'], current_month))
+                                    AND datetimestamp LIKE %s
+                                """, (resolved_uid, st.session_state['tenant_id'], current_month + '%'))
                                 payment_count = cursor.fetchone()[0]
                         
                         if payment_count > 0:
@@ -2828,16 +3134,16 @@ elif routing_node == "🔐 System Access Control":
                                         cursor.execute("""
                                             UPDATE system_tenants SET tenant_id = %s, company_name = %s, support_phone = %s, owner_username = %s, license_active = %s, license_expiry_date = %s WHERE tenant_id = %s
                                         """, (m_tenant_id.strip().lower(), m_company_name.strip(), m_support_phone.strip(), m_owner_username.strip().lower(), m_license_toggle, m_expiry_input.strip(), chosen_target_tenant))
-                                        cursor.execute("""
-                                            UPDATE users SET username = %s, tenant_id = %s WHERE username = %s AND tenant_id = %s
+                                        cursor.execute(f"""
+                                            UPDATE {ERP_USERS_TABLE} SET username = %s, tenant_id = %s WHERE username = %s AND tenant_id = %s
                                         """, (m_owner_username.strip().lower(), m_tenant_id.strip().lower(), tenant_record["owner_username"], chosen_target_tenant))
                                         if m_new_pass.strip():
                                             hashed_f = hash_password(m_new_pass.strip())
-                                            cursor.execute("""
-                                                UPDATE users SET password = %s, password_changed_at = %s WHERE username = %s AND tenant_id = %s
+                                            cursor.execute(f"""
+                                                UPDATE {ERP_USERS_TABLE} SET password = %s, password_changed_at = %s WHERE username = %s AND tenant_id = %s
                                             """, (hashed_f, datetime.now().isoformat(), m_owner_username.strip().lower(), m_tenant_id.strip().lower()))
                                         if m_tenant_id.strip().lower() != chosen_target_tenant:
-                                            cursor.execute("UPDATE users SET tenant_id = %s WHERE tenant_id = %s", (m_tenant_id.strip().lower(), chosen_target_tenant))
+                                            cursor.execute(f"UPDATE {ERP_USERS_TABLE} SET tenant_id = %s WHERE tenant_id = %s", (m_tenant_id.strip().lower(), chosen_target_tenant))
                                             cursor.execute("UPDATE customers SET tenant_id = %s WHERE tenant_id = %s", (m_tenant_id.strip().lower(), chosen_target_tenant))
                                             cursor.execute("UPDATE areas SET tenant_id = %s WHERE tenant_id = %s", (m_tenant_id.strip().lower(), chosen_target_tenant))
                                             cursor.execute("UPDATE packages SET tenant_id = %s WHERE tenant_id = %s", (m_tenant_id.strip().lower(), chosen_target_tenant))
@@ -2933,10 +3239,10 @@ elif routing_node == "🔐 System Access Control":
                     else:
                         with get_db_connection() as conn:
                             with conn.cursor() as cursor:
-                                cursor.execute("SELECT password FROM users WHERE username = %s AND tenant_id = %s", (st.session_state['username'], st.session_state['tenant_id']))
+                                cursor.execute(f"SELECT password FROM {ERP_USERS_TABLE} WHERE username = %s AND tenant_id = %s", (st.session_state['username'], st.session_state['tenant_id']))
                                 current_pwd_row = cursor.fetchone()
                                 if current_pwd_row and verify_password(current_self_pass, current_pwd_row[0]):
-                                    cursor.execute("UPDATE users SET password = %s, password_changed_at = %s WHERE username = %s AND tenant_id = %s", (hash_password(new_self_pass), datetime.now().isoformat(), st.session_state['username'], st.session_state['tenant_id']))
+                                    cursor.execute(f"UPDATE {ERP_USERS_TABLE} SET password = %s, password_changed_at = %s WHERE username = %s AND tenant_id = %s", (hash_password(new_self_pass), datetime.now().isoformat(), st.session_state['username'], st.session_state['tenant_id']))
                                     insert_activity_log(st.session_state['tenant_id'], st.session_state['username'], "CHANGE_PASSWORD", "System password updated.")
                                     st.success("🎉 Your credentials updated successfully! You will be logged out for security.")
                                     # Force logout after password change
@@ -2981,8 +3287,8 @@ elif routing_node == "🔐 System Access Control":
                         assigned_areas_str = "ALL" if "ALL" in selected_clearance else ",".join(selected_clearance)
                         with get_db_connection() as conn:
                             with conn.cursor() as cursor:
-                                cursor.execute("""
-                                    INSERT INTO users (username, password, role, assignedarea, tenant_id) VALUES (%s, %s, %s, %s, %s)
+                                cursor.execute(f"""
+                                    INSERT INTO {ERP_USERS_TABLE} (username, password, role, assignedarea, tenant_id) VALUES (%s, %s, %s, %s, %s)
                                     ON CONFLICT (username, tenant_id) DO UPDATE SET password=EXCLUDED.password, role=EXCLUDED.role, assignedarea=EXCLUDED.assignedarea
                                 """, (new_username, hash_password(new_password), new_role, assigned_areas_str, st.session_state['tenant_id']))
                                 insert_activity_log(st.session_state['tenant_id'], st.session_state['username'], "CREATE_SUB_USER", f"Provisioned sub-user {new_username}")
@@ -2993,7 +3299,7 @@ elif routing_node == "🔐 System Access Control":
             st.markdown("#### 👥 Current Staff Directory")
             with get_db_connection() as conn:
                 with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-                    cur.execute("SELECT username, role, assignedarea FROM users WHERE tenant_id = %s", (st.session_state['tenant_id'],))
+                    cur.execute(f"SELECT username, role, assignedarea FROM {ERP_USERS_TABLE} WHERE tenant_id = %s", (st.session_state['tenant_id'],))
                     staff_rows = cur.fetchall()
             if staff_rows:
                 df_staff = pd.DataFrame(staff_rows)
@@ -3006,7 +3312,7 @@ elif routing_node == "🔐 System Access Control":
                     if st.button("🗑️ DELETE STAFF PROFILE", type="primary"):
                         with get_db_connection() as conn:
                             with conn.cursor() as cursor:
-                                cursor.execute("DELETE FROM users WHERE username = %s AND tenant_id = %s", (del_staff_user, st.session_state['tenant_id']))
+                                cursor.execute(f"DELETE FROM {ERP_USERS_TABLE} WHERE username = %s AND tenant_id = %s", (del_staff_user, st.session_state['tenant_id']))
                                 insert_activity_log(st.session_state['tenant_id'], st.session_state['username'], "DELETE_SUB_USER", f"Removed staff {del_staff_user}.")
                         st.success(f"✅ Staff connection successfully terminated!")
                         st.rerun()
@@ -3093,7 +3399,7 @@ elif routing_node == "🔐 System Access Control":
                 if st.button("☢️ INITIATE COMPLETE SEGMENT DATA PURGE"):
                     with get_db_connection() as conn:
                         with conn.cursor() as cursor:
-                            cursor.execute("SELECT password FROM users WHERE username = %s AND tenant_id = %s", (st.session_state['username'], st.session_state['tenant_id']))
+                            cursor.execute(f"SELECT password FROM {ERP_USERS_TABLE} WHERE username = %s AND tenant_id = %s", (st.session_state['username'], st.session_state['tenant_id']))
                             pwd_row = cursor.fetchone()
                             if pwd_row and verify_password(purge_password, pwd_row[0]):
                                 cursor.execute("DELETE FROM billing_history WHERE tenant_id = %s", (st.session_state['tenant_id'],))
@@ -3133,7 +3439,7 @@ elif routing_node == "🔐 System Access Control":
                 with st.spinner("Database snapshot collect kiya ja raha hai..."):
                     try:
                         backup_payload = {}
-                        tables = ['system_tenants', 'users', 'customers', 'areas', 'packages', 'billing_history', 'activity_logs']
+                        tables = ['system_tenants', ERP_USERS_TABLE, 'customers', 'areas', 'packages', 'billing_history', 'activity_logs']
                         with get_db_connection() as conn:
                             for t_name in tables:
                                 # Use parameterized query to prevent SQL injection
